@@ -1,0 +1,12 @@
+# Keil build artifacts
+project/MDK_V5/objects/
+project/MDK_V5/listings/
+project/MDK_V5/build_log.txt
+project/MDK_V5/flash_log.txt
+
+# Editor/IDE
+*.bak
+*.tmp
+*.swp
+JLinkLog.txt
+EventRecorderStub.scvd
