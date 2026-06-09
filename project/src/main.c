@@ -146,11 +146,11 @@ int main(void)
   /* init dma1 channel3 */
   wk_dma1_channel3_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL3, 
-                        (uint32_t)&ADCCOM->codt, 
-                        DMA1_CHANNEL3_MEMORY_BASE_ADDR, 
+  wk_dma_channel_config(DMA1_CHANNEL3,
+                        (uint32_t)&ADCCOM->codt,
+                        DMA1_CHANNEL3_MEMORY_BASE_ADDR,
                         DMA1_CHANNEL3_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL3, TRUE);
 
@@ -178,44 +178,44 @@ int main(void)
   /* init dma1 channel1 */
   wk_dma1_channel1_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL1, 
-                        (uint32_t)&USART3->dt, 
-                        DMA1_CHANNEL1_MEMORY_BASE_ADDR, 
+  wk_dma_channel_config(DMA1_CHANNEL1,
+                        (uint32_t)&USART3->dt,
+                        DMA1_CHANNEL1_MEMORY_BASE_ADDR,
                         DMA1_CHANNEL1_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL1, TRUE);
 
   /* init dma1 channel2 */
   wk_dma1_channel2_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL2, 
-                        (uint32_t)&USART3->dt, 
-                        DMA1_CHANNEL2_MEMORY_BASE_ADDR, 
+  wk_dma_channel_config(DMA1_CHANNEL2,
+                        (uint32_t)&USART3->dt,
+                        DMA1_CHANNEL2_MEMORY_BASE_ADDR,
                         DMA1_CHANNEL2_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL2, TRUE);
 
   /* init dma1 channel4 */
   wk_dma1_channel4_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL4, 
-                        (uint32_t)&USART1->dt, 
-                        DMA1_CHANNEL4_MEMORY_BASE_ADDR, 
+  wk_dma_channel_config(DMA1_CHANNEL4,
+                        (uint32_t)&USART1->dt,
+                        DMA1_CHANNEL4_MEMORY_BASE_ADDR,
                         DMA1_CHANNEL4_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL4, TRUE);
 
   /* init dma1 channel5 */
   wk_dma1_channel5_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL5, 
-                        (uint32_t)&USART1->dt, 
-                        DMA1_CHANNEL5_MEMORY_BASE_ADDR, 
+  wk_dma_channel_config(DMA1_CHANNEL5,
+                        (uint32_t)&USART1->dt,
+                        DMA1_CHANNEL5_MEMORY_BASE_ADDR,
                         DMA1_CHANNEL5_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL5, TRUE);
 
@@ -320,56 +320,43 @@ int main(void)
 
     if(systick_ms - last_tick >= 1000) {
       last_tick = systick_ms;
-      printf("---- 1s status ----\r\n");
-      printf("INT: PCCE=%u OCCE=%u DMA=%u TCF=%u\r\n",
-             adc_pcce_count, adc_occe_count,
-             dma_fdt3_count, adc_tcf_count);
+//       printf("---- 1s status ----\r\n");
+//       printf("INT: PCCE=%u OCCE=%u DMA=%u TCF=%u\r\n",
+//              adc_pcce_count, adc_occe_count,
+//              dma_fdt3_count, adc_tcf_count);
 
-      /* Read raw ADC values for debug */
-      int32_t raw_a = (int32_t)adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
-      int32_t raw_b = (int32_t)adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);
+//       /* Read raw ADC values for debug */
+//       int32_t raw_a = (int32_t)adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
+//       int32_t raw_b = (int32_t)adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);
 
-      printf("ADC: i_a=%d i_b=%d (raw_a=%d raw_b=%d offs_a=%d offs_b=%d)\r\n",
-             g_foc_current.i_a_raw, g_foc_current.i_b_raw,
-             raw_a, raw_b, g_adc_offset_a, g_adc_offset_b);
-      extern volatile uint16_t g_udc_volt;
-      printf("     temp_m=%dC temp_mos=%dC vdc=%uV (raw=%u) so_c=%u\r\n",
-             MotorTemperatureInquiry((uint16_t)g_temp_motor_raw),
-             TemperatureInquiry((uint16_t)g_temp_mos_raw),
-             (unsigned)g_udc_volt, (unsigned int)g_vdc_raw,
-             g_so_c_raw);
+//       printf("ADC: i_a=%d i_b=%d (raw_a=%d raw_b=%d offs_a=%d offs_b=%d)\r\n",
+//              g_foc_current.i_a_raw, g_foc_current.i_b_raw,
+//              raw_a, raw_b, g_adc_offset_a, g_adc_offset_b);
+//       extern volatile uint16_t g_udc_volt;
+//       printf("     temp_m=%dC temp_mos=%dC vdc=%uV (raw=%u) so_c=%u\r\n",
+//              MotorTemperatureInquiry((uint16_t)g_temp_motor_raw),
+//              TemperatureInquiry((uint16_t)g_temp_mos_raw),
+//              (unsigned)g_udc_volt, (unsigned int)g_vdc_raw,
+//              g_so_c_raw);
 
-      /* DPT encoder read test */
-      DPT_Angles angles;
-      DPT_GetLatestAngles(&angles);
-      uint32_t ok, ce, le, bs;
-      DPT_GetAsyncStats(&ok, &ce, &le, &bs);
-      printf("DPT: inner=%.2f outer=%.2f (async ok=%u crc=%u len=%u busy=%u)\r\n",
-             angles.inner_deg, angles.outer_deg,
-             (unsigned)ok, (unsigned)ce, (unsigned)le, (unsigned)bs);
+//       /* DPT encoder read test */
+//       DPT_Angles angles;
+//       DPT_GetLatestAngles(&angles);
+//       uint32_t ok, ce, le, bs;
+//       DPT_GetAsyncStats(&ok, &ce, &le, &bs);
+//       printf("DPT: inner=%.2f outer=%.2f (async ok=%u crc=%u len=%u busy=%u)\r\n",
+//              angles.inner_deg, angles.outer_deg,
+//              (unsigned)ok, (unsigned)ce, (unsigned)le, (unsigned)bs);
 
-      /* FOC state */
-      printf("FOC: run=%d mode=%d openloop=%d\r\n",
-             controller_eyou.foc_run, controller_eyou.controller_mode,
-             g_foc_openloop_enable);
-      printf("     I_d=%ld I_q=%ld I_q_ref=%ld theta_e=%ld pos_out=%ld dtheta=%ld\r\n",
-             (long)controller_eyou.I_d, (long)controller_eyou.I_q,
-             (long)controller_eyou.I_q_ref, (long)controller_eyou.theta_elec_raw,
-             (long)controller_eyou.real_position_out,
-             (long)controller_eyou.dtheta_mech);
-
-      /* USART1 RX diagnostic */
-      {
-        extern volatile uint32_t g_usart1_idle_cnt;
-        extern volatile uint32_t g_usart1_rx_bytes_total;
-        extern volatile uint32_t g_usart1_err_cnt;
-        printf("USART1: idle=%u bytes=%u err=%u rx_len=%u dtcnt=%u\r\n",
-               (unsigned)g_usart1_idle_cnt,
-               (unsigned)g_usart1_rx_bytes_total,
-               (unsigned)g_usart1_err_cnt,
-               (unsigned)usart_rx_len,
-               (unsigned)DMA1_CHANNEL4->dtcnt);
-      }
+//       /* FOC state */
+//       printf("FOC: run=%d mode=%d openloop=%d\r\n",
+//              controller_eyou.foc_run, controller_eyou.controller_mode,
+//              g_foc_openloop_enable);
+//       printf("     I_d=%ld I_q=%ld I_q_ref=%ld theta_e=%ld pos_out=%ld dtheta=%ld\r\n",
+//              (long)controller_eyou.I_d, (long)controller_eyou.I_q,
+//              (long)controller_eyou.I_q_ref, (long)controller_eyou.theta_elec_raw,
+//              (long)controller_eyou.real_position_out,
+//              (long)controller_eyou.dtheta_mech);
     }
     /* add user code end 3 */
   }

@@ -126,6 +126,7 @@
             <ParametersSub name="OC2ImmediatelyMode_PWM" value="TRUE"/>
             <ParametersSub name="OCMode_3" value="TMR_OUTPUT_CONTROL_PWM_MODE_B"/>
             <ParametersSub name="OC3ImmediatelyMode_PWM" value="TRUE"/>
+            <ParametersSub name="ChannelData_4" value="9599"/>
             <ParametersSub name="OCPolarity_4" value="TMR_OUTPUT_ACTIVE_LOW"/>
         </Parameters>
         <Interrupts>

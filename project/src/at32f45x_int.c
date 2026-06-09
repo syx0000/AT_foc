@@ -274,7 +274,10 @@ void DMA1_Channel3_IRQHandler(void)
 void ADC1_2_IRQHandler(void)
 {
   /* add user code begin ADC1_2_IRQ 0 */
-
+  extern volatile uint32_t g_adc_isr_in_cycles, g_adc_isr_out_cycles;
+  extern volatile uint32_t g_adc_isr_cycles, g_adc_isr_cycles_max;
+  uint32_t _isr_entry = DWT->CYCCNT;
+  g_adc_isr_in_cycles = _isr_entry;
   /* add user code end ADC1_2_IRQ 0 */
 
   if(adc_interrupt_flag_get(ADC1, ADC_OCCE_FLAG) != RESET)
@@ -313,11 +316,8 @@ void ADC1_2_IRQHandler(void)
     /* Read injected group (FOC current sampling, 10kHz) */
     adc_foc_on_injected_done();
 
-    /* Kick DPT async transaction (~50µs round-trip @ 2.5Mbps, fits in 100µs PCCE
-     * window). Internally no-ops until DPT_Async_Init() has run. ElecAngleEstimate
-     * runs *during* Init_foc and needs valid encoder data, so DPT must run before
-     * the FOC scheduler — that's why this is outside the g_foc_init_done guard. */
-    DPT_AsyncRequest();
+    /* DPT async now triggered by CC4 ISR (ahead of ADC, see TMR1_CH_IRQHandler).
+     * Encoder data is ready by the time ADC ISR runs (Enc_done < T0). */
 
     /* ============================================================
      * FOC scheduling (10kHz, migrated from cubemx_yxsui adc.c:551-596)
@@ -358,7 +358,13 @@ void ADC1_2_IRQHandler(void)
   }
 
   /* add user code begin ADC1_2_IRQ 1 */
-
+  {
+    uint32_t _isr_exit = DWT->CYCCNT;
+    uint32_t dt = _isr_exit - _isr_entry;
+    g_adc_isr_cycles = dt;
+    if (dt > g_adc_isr_cycles_max) g_adc_isr_cycles_max = dt;
+    g_adc_isr_out_cycles = _isr_exit;
+  }
   /* add user code end ADC1_2_IRQ 1 */
 }
 
@@ -413,7 +419,10 @@ void CAN1_ERR_IRQHandler(void)
 void TMR1_CH_IRQHandler(void)
 {
   /* add user code begin TMR1_CH_IRQ 0 */
-
+  extern volatile uint32_t g_tim1_cc4_cycles, g_tim1_cc4_exit_cycles;
+  uint32_t _cc4_entry = DWT->CYCCNT;
+  uint8_t _cc4_is_upcount = !(TMR1->ctrl1 & (1u << 4));
+  if (_cc4_is_upcount) g_tim1_cc4_cycles = _cc4_entry;
   /* add user code end TMR1_CH_IRQ 0 */
 
   /* channel4 interrupt management */
@@ -424,10 +433,15 @@ void TMR1_CH_IRQHandler(void)
     tmr_flag_clear(TMR1, TMR_C4_FLAG);
     tmr1_ch4_int_count++;
 
-    /* isr_print test: print every 10000 ticks (~1Hz @10kHz) */
-    if ((tmr1_ch4_int_count % 10000) == 0) {
-      isr_print("[ISR] TMR1 CH4 tick\r\n");
-    }
+    /* Only trigger DPT on downcount (first match in period).
+     * ctrl1 bit4 (DIR): 0=counting up, 1=counting down */
+    /* Trigger DPT encoder async read (ahead of next ADC ISR) */
+    if (_cc4_is_upcount) DPT_AsyncRequest();
+
+    // /* isr_print test: print every 10000 ticks (~1Hz @10kHz) */
+    // if ((tmr1_ch4_int_count % 10000) == 0) {
+    //   isr_print("[ISR] TMR1 CH4 tick\r\n");
+    // }
 
 //		gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
 //		gpio_bits_set(TP_TEST_GPIO_PORT, TP_TEST_PIN);
@@ -436,7 +450,7 @@ void TMR1_CH_IRQHandler(void)
   }
 
   /* add user code begin TMR1_CH_IRQ 1 */
-
+  if (_cc4_is_upcount) g_tim1_cc4_exit_cycles = DWT->CYCCNT;
   /* add user code end TMR1_CH_IRQ 1 */
 }
 
@@ -456,13 +470,9 @@ void USART1_IRQHandler(void)
     (usart_interrupt_flag_get(USART1, USART_FERR_FLAG) != RESET))
   {
     /* add user code begin USART1_USART_NERR_FLAG, USART_ROERR_FLAG or USART_FERR_FLAG */
-    extern volatile uint32_t g_usart1_err_cnt;
-    g_usart1_err_cnt++;
     /* clear flag */
     usart_flag_clear(USART1, USART_NERR_FLAG | USART_ROERR_FLAG | USART_FERR_FLAG);
-    /* Read DT to clear errors */
-    (void)USART1->dt;
-    /* add user code end  USART1_USART_NERR_FLAG, USART_ROERR_FLAG or USART_FERR_FLAG */
+    /* add user code end  USART1_USART_NERR_FLAG, USART_ROERR_FLAG or USART_FERR_FLAG */ 
   }
 
   if(usart_interrupt_flag_get(USART1, USART_IDLEF_FLAG) != RESET)

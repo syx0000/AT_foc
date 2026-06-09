@@ -18,6 +18,8 @@
 #include "foc_controller.h"
 #include "foc_api.h"
 #include "foc_data.h"
+#include "ifly_fault.h"
+#include "flash_port.h"
 #include "wk_adc.h"
 #include "wk_tmr.h"
 #include "wk_usart.h"
@@ -39,9 +41,14 @@ volatile uint16_t dbgLogFlag   = 0;   /* log id: 10/11/30/40/50/100/110/120/150/
 volatile uint16_t testLogFlag  = 0;   /* test mode flag */
 volatile uint16_t logPriodMs   = 100; /* log print period in ms (default 100ms) */
 
-/* Stub: ADC ISR total cycles (not yet used by AT32 port) */
+/* ISR timing instrumentation (DWT cycle stamps @192MHz) */
 volatile uint32_t g_adc_isr_cycles = 0;
 volatile uint32_t g_adc_isr_cycles_max = 0;
+volatile uint32_t g_adc_isr_in_cycles = 0;   /* ADC ISR entry DWT */
+volatile uint32_t g_adc_isr_out_cycles = 0;  /* ADC ISR exit DWT */
+volatile uint32_t g_tim1_cc4_cycles = 0;     /* TMR1 CC4 ISR entry DWT */
+volatile uint32_t g_tim1_cc4_exit_cycles = 0;/* TMR1 CC4 ISR exit DWT */
+volatile uint32_t g_tim1_enc_done_cycles = 0;/* DPT encoder IDLE done DWT */
 
 /* ============================================================
  * HPMicro platform stubs (kept empty for AT32 - hardware init in wk_*.c)
@@ -347,13 +354,16 @@ void dbg_log_print(void)
         break;
 
     case 11: {
-        /* Encoder raw + processed */
+        /* Output encoder debug: inner_raw update check */
         DPT_Angles angles;
         DPT_GetLatestAngles(&angles);
-        printf("Enc: in_raw=%lu out_raw=%lu pos_out=%ld\r\n",
+        printf("Out_enc: in_raw=%lu out_raw=%lu | pos_out=%ld pos_pre=%ld | old_cnt=%ld circle=%d\r\n",
                (unsigned long)angles.inner_raw,
                (unsigned long)angles.outer_raw,
-               (long)controller_eyou.real_position_out);
+               (long)controller_eyou.real_position_out,
+               (long)controller_eyou.real_position_out_pre,
+               (long)controller_eyou.old_angle_count_out,
+               controller_eyou.circle_count_out);
         break;
     }
 
@@ -364,20 +374,38 @@ void dbg_log_print(void)
         break;
 
     case 40:
-        /* Current PI input/output */
-        printf("CurPI: I_q=%ld I_d=%ld V_q=%ld V_d=%ld I_qref=%ld I_dref=%ld\r\n",
-               (long)controller_eyou.I_q, (long)controller_eyou.I_d,
-               (long)controller_eyou.V_q, (long)controller_eyou.V_d,
-               (long)controller_eyou.I_q_ref, (long)controller_eyou.I_d_ref);
+        /* Current PI: Iq/Id/Vq/Vd/Iq_ref/Id_ref/Iq_filt */
+        printf("CurPI: %ld, %ld, %ld, %ld, %ld, %ld, %ld\r\n",
+               (long)controller_eyou.I_q,
+               (long)controller_eyou.I_d,
+               (long)controller_eyou.V_q,
+               (long)controller_eyou.V_d,
+               (long)controller_eyou.I_q_ref,
+               (long)controller_eyou.I_d_ref,
+               (long)controller_eyou.I_q_ref_filterd);
         break;
 
     case 50:
-        /* Speed loop status (rpm) */
-        printf("Spd(rpm): ref=%ld filt=%ld act=%ld err=%ld\r\n",
-               (long)(controller_eyou.velocity_ref / 1024),
-               (long)(controller_eyou.velocity_ref_filterd / 1024),
-               (long)(controller_eyou.dtheta_mech / 1024),
-               (long)((controller_eyou.velocity_ref - controller_eyou.dtheta_mech) / 1024));
+        /* Speed: ref(rpm), filt(rpm), motor(rpm), output(0.1rpm), err(rpm) */
+        printf("Spd: %ld, %ld, %ld, %ld, %ld\r\n",
+               (long)controller_eyou.velocity_ref / 1024,
+               (long)controller_eyou.velocity_ref_filterd / 1024,
+               (long)controller_eyou.dtheta_mech / 1024,
+               (long)(controller_eyou.dtheta_mech_out * 10) / 1024,
+               (long)(controller_eyou.velocity_ref - controller_eyou.dtheta_mech) / 1024);
+        break;
+
+    case 60:
+        /* CCR values (PWM compare) */
+        printf("CCR: %d, %d, %d\r\n",
+               controller_eyou.CCR2, controller_eyou.CCR3, controller_eyou.CCR4);
+        break;
+
+    case 70:
+        /* CCR + phase currents */
+        printf("CCR+I: %d,%d,%d  I:%ld,%ld,%ld\r\n",
+               controller_eyou.CCR2, controller_eyou.CCR3, controller_eyou.CCR4,
+               (long)controller_eyou.I_a, (long)controller_eyou.I_b, (long)controller_eyou.I_c);
         break;
 
     case 90:
@@ -397,19 +425,15 @@ void dbg_log_print(void)
         break;
 
     case 110: {
-        /* ADC ISR timing breakdown (us @192MHz) */
-        uint32_t freq_mhz = 192;
-        printf("ISR_us: read=%lu/%lu enc=%lu/%lu pos=%lu/%lu vel=%lu/%lu cur=%lu/%lu\r\n",
-               (unsigned long)(g_adc_isr_t_read / freq_mhz),
-               (unsigned long)(g_adc_isr_t_read_max / freq_mhz),
-               (unsigned long)(g_adc_isr_t_enc / freq_mhz),
-               (unsigned long)(g_adc_isr_t_enc_max / freq_mhz),
-               (unsigned long)(g_adc_isr_t_pos / freq_mhz),
-               (unsigned long)(g_adc_isr_t_pos_max / freq_mhz),
-               (unsigned long)(g_adc_isr_t_vel / freq_mhz),
-               (unsigned long)(g_adc_isr_t_vel_max / freq_mhz),
-               (unsigned long)(g_adc_isr_t_cur / freq_mhz),
-               (unsigned long)(g_adc_isr_t_cur_max / freq_mhz));
+        /* ADC ISR timing breakdown (us @192MHz, format: last/max) */
+        uint32_t f = 192;
+        printf("ISR_us tot:%lu/%lu read:%lu/%lu enc:%lu/%lu pos:%lu/%lu vel:%lu/%lu cur:%lu/%lu\r\n",
+               (unsigned long)(g_adc_isr_cycles / f),     (unsigned long)(g_adc_isr_cycles_max / f),
+               (unsigned long)(g_adc_isr_t_read / f),     (unsigned long)(g_adc_isr_t_read_max / f),
+               (unsigned long)(g_adc_isr_t_enc / f),      (unsigned long)(g_adc_isr_t_enc_max / f),
+               (unsigned long)(g_adc_isr_t_pos / f),      (unsigned long)(g_adc_isr_t_pos_max / f),
+               (unsigned long)(g_adc_isr_t_vel / f),      (unsigned long)(g_adc_isr_t_vel_max / f),
+               (unsigned long)(g_adc_isr_t_cur / f),      (unsigned long)(g_adc_isr_t_cur_max / f));
         break;
     }
 
@@ -426,6 +450,57 @@ void dbg_log_print(void)
                (long)controller_eyou.I_b,
                (long)controller_eyou.I_c,
                v_d_test, v_q_test);
+        break;
+    }
+
+    case 130: {
+        /* DPT encoder statistics (1 Hz) */
+        static uint32_t t130 = 0;
+        uint32_t now = systick_ms;
+        if (now - t130 < 1000) break;
+        t130 = now;
+
+        uint32_t ok, crc_err, len_err, busy;
+        DPT_GetAsyncStats(&ok, &crc_err, &len_err, &busy);
+
+        DPT_Angles angles;
+        DPT_GetLatestAngles(&angles);
+
+        printf("DPT: in=%.2f out=%.2f | ok=%lu crc=%lu len=%lu busy=%lu\r\n",
+               angles.inner_deg, angles.outer_deg,
+               (unsigned long)ok, (unsigned long)crc_err,
+               (unsigned long)len_err, (unsigned long)busy);
+        break;
+    }
+
+    case 140: {
+        /* CC4 / Enc / ADC relative timing (T0 = ADC ISR entry, 1 Hz)
+         * AT32 @192MHz, DWT cycles / 192 = us */
+        static uint32_t t140 = 0;
+        uint32_t now = systick_ms;
+        if (now - t140 < 1000) break;
+        t140 = now;
+
+        extern volatile uint32_t g_adc_isr_in_cycles, g_adc_isr_out_cycles;
+        extern volatile uint32_t g_tim1_cc4_cycles, g_tim1_cc4_exit_cycles;
+        extern volatile uint32_t g_tim1_enc_done_cycles;
+        uint32_t t_adc_in   = g_adc_isr_in_cycles;
+        uint32_t t_adc_out  = g_adc_isr_out_cycles;
+        uint32_t t_cc4_in   = g_tim1_cc4_cycles;
+        uint32_t t_cc4_out  = g_tim1_cc4_exit_cycles;
+        uint32_t t_enc_done = g_tim1_enc_done_cycles;
+
+        int32_t d_adc_out  = (int32_t)(t_adc_out  - t_adc_in) / 192;
+        int32_t d_cc4_in   = (int32_t)(t_cc4_in   - t_adc_in) / 192;
+        int32_t d_cc4_out  = (int32_t)(t_cc4_out  - t_adc_in) / 192;
+        int32_t d_enc_done = (int32_t)(t_enc_done - t_adc_in) / 192;
+        /* Encoder done may be from previous period; negative → add 100us */
+        if (d_enc_done < 0) d_enc_done += 100;
+        if (d_cc4_in < 0) d_cc4_in += 100;
+        if (d_cc4_out < 0) d_cc4_out += 100;
+
+        printf("T0=ADC_in | ADC_out=%+ldus CC4_in=%+ldus CC4_out=%+ldus Enc_done=%+ldus\r\n",
+               (long)d_adc_out, (long)d_cc4_in, (long)d_cc4_out, (long)d_enc_done);
         break;
     }
 
@@ -451,18 +526,82 @@ void dbg_log_print(void)
     }
 
     case 151: {
-        /* Vdc + Temperature monitoring (1 Hz) */
+        /* Vdc + Temperature monitoring (1 Hz) with conversion */
         static uint32_t t151 = 0;
         uint32_t now = systick_ms;
         if (now - t151 < 1000) break;
         t151 = now;
-        printf("Mon: VDC=%lu Tmot=%u Tmos=%u so_c=%u\r\n",
-               (unsigned long)g_vdc_raw,
-               (unsigned)g_temp_motor_raw,
-               (unsigned)g_temp_mos_raw,
+        extern volatile uint16_t g_udc_volt;
+        int16_t t_mos = TemperatureInquiry((uint16_t)g_temp_mos_raw);
+        int16_t t_mot = MotorTemperatureInquiry((uint16_t)g_temp_motor_raw);
+        printf("Mon: VDC=%uV(raw=%lu) Tmos=%dC Tmot=%dC so_c=%u\r\n",
+               (unsigned)g_udc_volt, (unsigned long)g_vdc_raw,
+               (int)t_mos, (int)t_mot,
                (unsigned)g_so_c_raw);
         break;
     }
+
+    case 160:
+        /* Write Flash: save current FlashData */
+        WriteDataToFlash();
+        printf("WriteDataToFlash done\r\n");
+        dbgLogFlag = 0;
+        break;
+
+    case 161:
+        /* Erase Flash sector */
+        if (Flash_EraseSector() == HAL_OK) {
+            printf("Flash erase OK\r\n");
+        } else {
+            printf("Flash erase FAIL\r\n");
+        }
+        dbgLogFlag = 0;
+        break;
+
+    case 162: {
+        /* Dump FlashData: RAM vs Flash comparison */
+        FlashSavedData flash_copy;
+        Flash_ReadData(FLASH_USER_START_ADDR, &flash_copy, sizeof(FlashSavedData));
+        FlashSavedData *ram = &controller_eyou.FlashData;
+        FlashSavedData *fls = &flash_copy;
+        printf("===== FlashData (RAM / Flash) =====\r\n");
+        printf("  Ver       %u / %u\r\n", ram->StructVersion, fls->StructVersion);
+        printf("  Ia_off    %u / %u\r\n", ram->Ia_offset, fls->Ia_offset);
+        printf("  Ib_off    %u / %u\r\n", ram->Ib_offset, fls->Ib_offset);
+        printf("  elec_off  %u / %u\r\n", ram->elec_offset, fls->elec_offset);
+        printf("  CurPID    %lu/%lu/%lu / %lu/%lu/%lu\r\n",
+               (unsigned long)ram->Current_Kp, (unsigned long)ram->Current_Ki, (unsigned long)ram->Current_Kd,
+               (unsigned long)fls->Current_Kp, (unsigned long)fls->Current_Ki, (unsigned long)fls->Current_Kd);
+        printf("  SpdPID    %lu/%lu/%lu / %lu/%lu/%lu\r\n",
+               (unsigned long)ram->Speed_Kp, (unsigned long)ram->Speed_Ki, (unsigned long)ram->Speed_Kd,
+               (unsigned long)fls->Speed_Kp, (unsigned long)fls->Speed_Ki, (unsigned long)fls->Speed_Kd);
+        printf("  PosPID    %lu/%lu/%lu / %lu/%lu/%lu\r\n",
+               (unsigned long)ram->Position_Kp, (unsigned long)ram->Position_Ki, (unsigned long)ram->Position_Kd,
+               (unsigned long)fls->Position_Kp, (unsigned long)fls->Position_Ki, (unsigned long)fls->Position_Kd);
+        printf("  MaxCur=%u MaxSpd=%ld\r\n", ram->MaxCurrent, (long)ram->MaxSpeed);
+        printf("  Crc       0x%08lX / 0x%08lX\r\n", (unsigned long)ram->Crc, (unsigned long)fls->Crc);
+        printf("===== End =====\r\n");
+        dbgLogFlag = 0;
+        break;
+    }
+
+    case 163:
+        /* Clear all fault flags */
+        ClearFaults(1);
+        printf("All faults cleared\r\n");
+        dbgLogFlag = 0;
+        break;
+
+    case 164:
+        /* Set current position as zero (homing) */
+        controller_eyou.controller_mode = HOMING_MODE;
+        Reset_objReset_Output_Encoder(1);
+        controller_eyou.UserDataSaveFlag = 1;
+        printf("Home set: mech_off_out=%ld\r\n",
+               (long)controller_eyou.FlashData.mech_offest_out);
+        Reset_objReset_Output_Encoder(0);
+        dbgLogFlag = 0;
+        break;
 
     case 165:
         /* Show fault flags */

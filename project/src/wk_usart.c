@@ -26,9 +26,9 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "wk_usart.h"
-#include <string.h>
 
 /* add user code begin 0 */
+#include <string.h>
 
 /* ============================================================
  * isr_print - ring buffer based non-blocking print
@@ -95,7 +95,6 @@ void USART1_DebugRx_Start(void)
 /* Diagnostic counters (visible from main loop) */
 volatile uint32_t g_usart1_idle_cnt = 0;
 volatile uint32_t g_usart1_rx_bytes_total = 0;
-volatile uint32_t g_usart1_err_cnt = 0;
 
 void USART1_IDLE_Handler(void)
 {
@@ -526,6 +525,11 @@ void DPT_USART3_IDLE_Handler(void)
     s_dpt_latest.has_status = 0;
     s_dpt_seq++;
     s_dpt_ok++;
+
+    /* Record encoder-done timestamp for logid 140 timing analysis */
+    extern volatile uint32_t g_tim1_enc_done_cycles;
+    g_tim1_enc_done_cycles = DWT->CYCCNT;
+
     s_dpt_state = DPT_ST_IDLE;
 }
 
