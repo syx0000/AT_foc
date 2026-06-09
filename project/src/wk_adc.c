@@ -79,14 +79,24 @@ void adc_foc_on_injected_done(void)
  * @brief  ADC普通组DMA传输完成处理（DMA FDT或OCCE ISR中调用）
  * @note   从adc_ordinary_buffer[4]读取：
  *         [0]=ADC1_CH4(PA4/TEMP_MOTOR), [1]=ADC1_CH5(PA5/TEMP_MOS)
- *         [2]=ADC2_CH2(PA2/SO_C),       [3]=ADC2_CH3(PA3/SO_3)
+ *         [2]=ADC2_CH2(PA2/SO_C),       [3]=ADC2_CH3(PA3/VDC)
  */
 void adc_foc_on_regular_done(void)
 {
     g_temp_motor_raw = adc_ordinary_buffer[0];
     g_temp_mos_raw   = adc_ordinary_buffer[1];
     g_so_c_raw       = adc_ordinary_buffer[2];
-    g_so_3_raw       = adc_ordinary_buffer[3];
+    g_vdc_raw        = adc_ordinary_buffer[3];
+
+    /* Update g_udc_volt (unit: V) for SVPWM
+     * Formula: V = raw * 3.3 * divider_ratio / 4095
+     * divider_ratio = 21 (hardware voltage divider)
+     * Simplified: raw * 33 * 21 / 4095 / 10 */
+    extern volatile uint16_t g_udc_volt;
+    uint16_t udc_v = (uint16_t)(g_vdc_raw * 33U * 21U / 4095U / 10U);
+    if (udc_v < 10) udc_v = 10;  /* prevent div-by-zero in SVPWM */
+    g_udc_volt = udc_v;
+
     g_reg_callback_count++;
 }
 

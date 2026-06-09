@@ -478,11 +478,13 @@ uint8_t DPT_AsyncRequest(void)
     }
 
     /* Arm RX BEFORE TX (so first response byte never gets lost) */
+    dma_channel_enable(DMA1_CHANNEL2, FALSE);
     DMA1_CHANNEL2->dtcnt = DPT_RX_BUF_SIZE;
     DMA1_CHANNEL2->maddr = (uint32_t)s_dpt_rx;
     dma_channel_enable(DMA1_CHANNEL2, TRUE);
 
     /* Arm TX */
+    dma_channel_enable(DMA1_CHANNEL1, FALSE);
     s_dpt_tx[0] = DPT_CMD_READ_DUAL_ANGLE;
     DMA1_CHANNEL1->dtcnt = 1;
     DMA1_CHANNEL1->maddr = (uint32_t)s_dpt_tx;

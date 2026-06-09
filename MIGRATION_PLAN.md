@@ -655,7 +655,7 @@ OTA：             ⏸️ stub（待bootloader移植）
 | 移植的FOC代码量 | 8400+行 |
 | AT32 BSP兼容代码（foc_bsp.h） | 50行宏映射 |
 | 平台抽象代码（DWT+isr_print） | 100行 |
-| 当前编译规模 | Code=60322 + RO=5102 ≈ 63.7KB |
+| 当前编译规模 | Code=62190 + RO=5346 ≈ 65.9KB |
 | 0 Error / 4 Warning（typedef redef） | - |
 
 ---

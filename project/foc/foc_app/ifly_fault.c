@@ -26,11 +26,12 @@ extern volatile uint32_t g_vdc_raw;
 extern volatile uint32_t g_temp_motor_raw;
 extern volatile uint32_t g_temp_mos_raw;
 
-/* VDC 分压比：ADC 16bit 3.3V 满量程，硬件分压 21:1（motor_h7 实测）
- * 转换为 0.1V 单位：Udc_01V = raw * 3.3 * 21 / 65535 * 10 = raw * 693 / 65535
- * 简化：raw * 693 / 65535 ≈ raw / 94.6 */
+/* VDC 分压比：ADC 12bit 3.3V 满量程，硬件分压 21:1（motor_h7 实测）
+ * 转换为 0.1V 单位：Udc_01V = raw * 3.3 * 21 / 4095 * 10 = raw * 693 / 4095
+ * AT32 ADC = 12bit, 满量程 4095 */
+#define ADC_FULL_SCALE     4095
 #define VDC_DIVIDER_RATIO  21
-#define VDC_ADC_TO_01V(raw) ((uint32_t)(raw) * 33 * VDC_DIVIDER_RATIO / 65535)
+#define VDC_ADC_TO_01V(raw) ((uint32_t)(raw) * 33 * VDC_DIVIDER_RATIO / ADC_FULL_SCALE)
 
 /* 故障滤波计数器 */
 static uint8_t ovp_filter_cnt = 0;
@@ -77,7 +78,7 @@ void adc_convert(void) {
 /*******************************************************************************
  * TemperatureInquiry - MOS NTC ADC 值转温度（°C）
  * B 值公式：1/T = 1/T0 + ln(R/R0)/B
- * 硬件：10k 分压 + 10k NTC，ADC 16bit 3.3V
+ * 硬件：10k 分压 + 10k NTC，ADC 12bit 3.3V
  * MOS NTC B=3950（motor_h7 实测）
  ******************************************************************************/
 #include <math.h>
@@ -89,9 +90,9 @@ void adc_convert(void) {
 #define NTC_ABS_ZERO     273.15f
 
 int16_t TemperatureInquiry(uint16_t adc_value) {
-    if (adc_value == 0 || adc_value >= 65535) return 0;
+    if (adc_value == 0 || adc_value >= ADC_FULL_SCALE) return 0;
 
-    float ratio = (float)adc_value / 65535.0f;
+    float ratio = (float)adc_value / (float)ADC_FULL_SCALE;
     float r_ntc = NTC_R_DIVIDER * ratio / (1.0f - ratio);
 
     float temp_k = 1.0f / ((1.0f / NTC_T_REF) + logf(r_ntc / NTC_R_REF) / NTC_B_VALUE);
@@ -103,7 +104,7 @@ int16_t TemperatureInquiry(uint16_t adc_value) {
 /*******************************************************************************
  * MotorTemperatureInquiry - 绕组 NTC ADC 值转温度（°C）
  * 规格：R25=10kΩ ±1%, B25/85=3435K ±1%
- * 硬件：10k 上拉 + NTC 下拉，ADC 16bit 3.3V (TEMP_MOTOR 通道)
+ * 硬件：10k 上拉 + NTC 下拉，ADC 12bit 3.3V (TEMP_MOTOR 通道)
  * 实现：查表 + 线性插值，覆盖 -20~200°C 每 5°C 一个点（Rnom，单位 Ω）
  * Beta 公式在 -40~0°C / 100~200°C 误差较大（>10%），故用查表
  ******************************************************************************/
@@ -136,13 +137,13 @@ static const uint16_t motor_ntc_r_nom[MOTOR_NTC_NPTS] = {
 
 int16_t MotorTemperatureInquiry(uint16_t adc_value) {
     /* raw 接近满量程 = NTC 开路 (未连接 / 接线断 / 引脚浮空被上拉)
-     * 阈值 64000: 对应 R_ntc ≈ 416kΩ, 远超 -40°C 时的 ~330kΩ 上限
+     * 阈值 4000: 对应 R_ntc ≈ 420kΩ, 远超 -40°C 时的 ~330kΩ 上限
      * 返回 0 而非 MOTOR_NTC_TMIN, 避免下游误判极冷导致逻辑异常 */
-    if (adc_value == 0 || adc_value >= 64000) return 0;
+    if (adc_value == 0 || adc_value >= 4000) return 0;
 
     /* V_adc/Vref = R_ntc/(R_pullup + R_ntc) -> R_ntc = R_pullup * adc/(FS-adc)
      * 用 64 位中间量避免溢出 */
-    uint32_t fs_minus = 65535U - adc_value;
+    uint32_t fs_minus = (uint32_t)ADC_FULL_SCALE - adc_value;
     uint32_t r_ntc = (uint32_t)((uint64_t)10000U * adc_value / fs_minus);
 
     /* 查表（电阻随温度递减）：找到 r_ntc 落入的区间 [r_hi, r_lo] */

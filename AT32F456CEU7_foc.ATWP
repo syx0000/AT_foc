@@ -203,25 +203,26 @@
         </USART3_TX>
     </DMA>
     <NVIC>
+        <ShowType>1</ShowType>
         <SysTick_Handler>1;15;0;0;0;1</SysTick_Handler>
         <FLASH_IRQHandler>0;0;0;0;0;0</FLASH_IRQHandler>
         <CRM_IRQHandler>0;0;0;0;0;0</CRM_IRQHandler>
         <DMA1_Channel1_IRQHandler>0;0;0;0;0;0</DMA1_Channel1_IRQHandler>
         <DMA1_Channel2_IRQHandler>0;0;0;0;0;0</DMA1_Channel2_IRQHandler>
-        <DMA1_Channel3_IRQHandler>1;0;0;0;0;1</DMA1_Channel3_IRQHandler>
+        <DMA1_Channel3_IRQHandler>1;4;0;0;0;1</DMA1_Channel3_IRQHandler>
         <DMA1_Channel4_IRQHandler>0;0;0;0;0;0</DMA1_Channel4_IRQHandler>
         <DMA1_Channel5_IRQHandler>0;0;0;0;0;0</DMA1_Channel5_IRQHandler>
         <ADC1_2_IRQHandler>1;0;0;0;0;1</ADC1_2_IRQHandler>
         <CAN1_TX_IRQHandler>0;0;0;0;0;0</CAN1_TX_IRQHandler>
-        <CAN1_RX_IRQHandler>1;0;0;0;0;1</CAN1_RX_IRQHandler>
+        <CAN1_RX_IRQHandler>1;6;0;0;0;1</CAN1_RX_IRQHandler>
         <CAN1_STAT_IRQHandler>0;0;0;0;0;0</CAN1_STAT_IRQHandler>
-        <CAN1_ERR_IRQHandler>1;0;0;0;0;1</CAN1_ERR_IRQHandler>
+        <CAN1_ERR_IRQHandler>1;6;0;0;0;1</CAN1_ERR_IRQHandler>
         <TMR1_BRK_TMR9_IRQHandler>0;0;0;0;0;0</TMR1_BRK_TMR9_IRQHandler>
         <TMR1_OVF_TMR10_IRQHandler>0;0;0;0;0;0</TMR1_OVF_TMR10_IRQHandler>
         <TMR1_TRG_HALL_TMR11_IRQHandler>0;0;0;0;0;0</TMR1_TRG_HALL_TMR11_IRQHandler>
-        <TMR1_CH_IRQHandler>1;0;0;0;0;1</TMR1_CH_IRQHandler>
-        <USART1_IRQHandler>1;0;0;0;0;1</USART1_IRQHandler>
-        <USART3_IRQHandler>1;0;0;0;0;1</USART3_IRQHandler>
+        <TMR1_CH_IRQHandler>1;2;0;0;0;1</TMR1_CH_IRQHandler>
+        <USART1_IRQHandler>1;8;0;0;0;1</USART1_IRQHandler>
+        <USART3_IRQHandler>1;2;0;0;0;1</USART3_IRQHandler>
         <TMR6_DAC_GLOBAL_IRQHandler>0;0;0;0;0;0</TMR6_DAC_GLOBAL_IRQHandler>
         <FPU_IRQHandler>0;0;0;0;0;0</FPU_IRQHandler>
         <DMAMUX_IRQHandler>0;0;0;0;0;0</DMAMUX_IRQHandler>
@@ -333,7 +334,7 @@
     </PINInfo>
     <ProjectInfomation>
         <ProjectName>AT32F456CEU7_foc</ProjectName>
-        <ProjectLocation>C:/Users/yx/Desktop</ProjectLocation>
+        <ProjectLocation>C:/Users/syx19/Desktop/X</ProjectLocation>
         <ToolchainIDE>MDK_V5</ToolchainIDE>
         <ARMCompiler>0</ARMCompiler>
         <BackupCode>true</BackupCode>

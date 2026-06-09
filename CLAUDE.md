@@ -108,7 +108,7 @@ cubemx_yxsui/
 | SOA (ADC1_IN0) | PA0 | A相电流采样 |
 | SOB (ADC2_IN1) | PA1 | B相电流采样 |
 | SOC (ADC2_IN2) | PA2 | C相电流采样 |
-| SO3 (ADC2_IN3) | PA3 | 第4路电流采样 |
+| VDC (ADC2_IN3) | PA3 | 母线电压采样 |
 | TEMP_MOTOR (ADC1_IN4) | PA4 | 电机温度 |
 | TEMP_MOS (ADC1_IN5) | PA5 | MOS温度 |
 | **其他** |||
@@ -133,9 +133,9 @@ cubemx_yxsui/
 - ADC1 采样时间: 2.5 cycles
 - 读取方式: **软件读取**（在ADC1_2_IRQHandler的PCCE中断里）
 
-**普通组（Ordinary，500Hz）- 温度等慢速数据**
+**普通组（Ordinary，1kHz）- 温度/电压慢速数据**
 - ADC1: CH4 (PA4 TEMP_MOTOR), CH5 (PA5 TEMP_MOS)
-- ADC2: CH2 (PA2 SOC), CH3 (PA3 SO3)
+- ADC2: CH2 (PA2 SOC), CH3 (PA3 VDC)
 - 触发源: TMR6 TRGO，上升沿（ADC2 NONE，从机自动同步）
 - 采样时间: 2.5 cycles
 - 序列长度: 2
@@ -193,12 +193,16 @@ cubemx_yxsui/
 ### NVIC中断配置
 
 ```c
-nvic_irq_enable(DMA1_Channel3_IRQn, 0, 0);  // ADC DMA
-nvic_irq_enable(ADC1_2_IRQn, 0, 0);         // ADC转换完成
-nvic_irq_enable(CAN1_RX_IRQn, 0, 0);        // CAN接收
-nvic_irq_enable(TMR1_CH_IRQn, 0, 0);        // TMR1 CH4
-nvic_irq_enable(USART1_IRQn, 0, 0);
-nvic_irq_enable(USART3_IRQn, 0, 0);
+/* 优先级分层（NVIC_PRIORITY_GROUP_4，全抢占式）
+ * 参照STM32H7参考工程的分层设计 */
+nvic_irq_enable(ADC1_2_IRQn, 0, 0);         // FOC主循环（最高优先级，不可打断）
+nvic_irq_enable(TMR1_CH_IRQn, 2, 0);        // DPT编码器预触发
+nvic_irq_enable(USART3_IRQn, 2, 0);         // DPT编码器IDLE/Error
+nvic_irq_enable(DMA1_Channel3_IRQn, 4, 0);  // ADC普通组DMA（温度/VDC）
+nvic_irq_enable(CAN1_RX_IRQn, 6, 0);       // CAN通信
+nvic_irq_enable(CAN1_ERR_IRQn, 6, 0);      // CAN错误
+nvic_irq_enable(USART1_IRQn, 8, 0);        // 调试串口
+// SysTick: 优先级15（系统时基）
 ```
 
 ## 中断处理函数（at32f45x_int.c）
@@ -220,12 +224,14 @@ extern uint16_t adc_ordinary_buffer[4];  // DMA缓冲区
 | 中断 | 处理动作 |
 |------|---------|
 | `SysTick_Handler` | `systick_ms++` |
-| `DMA1_Channel3_IRQHandler` (FDT3) | 清标志 + `dma_fdt3_count++` + 翻转TP_TEST(PB11) |
-| `ADC1_2_IRQHandler` (OCCE) | 清标志 + `adc_occe_count++` + 调用 `adc_ordinary_convert_recovery()` |
-| `ADC1_2_IRQHandler` (PCCE) | 清标志 + `adc_pcce_count++` |
-| `ADC1_2_IRQHandler` (TCF) | 清标志 + `adc_tcf_count++` + 调用 `adc_ordinary_convert_recovery()` |
+| `DMA1_Channel3_IRQHandler` (FDT3) | 清标志 + `dma_fdt3_count++` |
+| `ADC1_2_IRQHandler` (OCCE) | 清标志 + `adc_foc_on_regular_done()` + g_udc_volt更新 |
+| `ADC1_2_IRQHandler` (PCCE) | 清标志 + `adc_foc_on_injected_done()` + `DPT_AsyncRequest()` + FOC调度 |
+| `ADC1_2_IRQHandler` (TCF) | 清标志 + `adc_tcf_count++` + `adc_ordinary_convert_recovery()` |
 | `TMR1_CH_IRQHandler` (CH4) | 清标志 + `tmr1_ch4_int_count++` |
-| `CAN1_RX_IRQHandler` | CAN接收处理 |
+| `CAN1_RX_IRQHandler` | `wk_can1_rx_dispatch()` |
+| `USART3_IRQHandler` (IDLE) | `DPT_USART3_IDLE_Handler()` 解析编码器帧 |
+| `USART1_IRQHandler` (IDLE) | `USART1_IDLE_Handler()` 调试命令接收 |
 
 ## 关键函数（wk_adc.c）
 
@@ -348,23 +354,33 @@ project/
 ```c
 // main.c
 uint16_t adc_ordinary_buffer[4]; // HALFWORD: 2x ADC1 + 2x ADC2
-// 实际数据排列: [ADC1_CH4, ADC2_CH2, ADC1_CH5, ADC2_CH3]
+// 实际数据排列: [ADC1_CH4(TEMP_MOTOR), ADC2_CH2(SOC), ADC1_CH5(TEMP_MOS), ADC2_CH3(VDC)]
 ```
 
 ## 调试输出格式
 
 ```
 FOC start
-PCCE=10000 OCCE=500 DMA=10 TCF=0
-PCCE=20000 OCCE=1000 DMA=20 TCF=0
-...
+---- 1s status ----
+INT: PCCE=10001 OCCE=1000 DMA=1000 TCF=0
+ADC: i_a=3 i_b=3 (raw_a=2068 raw_b=2065 offs_a=2065 offs_b=2062)
+     temp_m=0C temp_mos=24C vdc=39V (raw=2349) so_c=1018
+DPT: inner=183.80 outer=319.61 (async ok=10001 crc=0 len=0 busy=0)
+FOC: run=0 mode=4 openloop=1
+     I_d=0 I_q=0 I_q_ref=0 theta_e=0 pos_out=-180405 dtheta=0
 ```
 
 **期望频率：**
-- PCCE: ~10kHz
-- OCCE: ~500Hz（或1kHz，看TMR6实际频率）
-- DMA: 与OCCE接近（每次OCCE后recovery重置DMA）
-- TCF: 应为0（无错误）
+- PCCE: ~10kHz（注入组采样，FOC主循环）
+- OCCE: ~1kHz（普通组采样，温度/VDC）
+- DMA: 与OCCE一致（普通组DMA传输）
+- TCF: 应为0（无触发冲突错误）
+
+**ADC转换公式（12bit，满量程4095）：**
+- 温度（MOS NTC B=3950）：B值公式 + 10k分压
+- 温度（电机NTC B=3435）：查表+线性插值，-20~200°C
+- VDC：`raw * 33 * 21 / 4095 / 10`（分压比21:1，单位V）
+- 电流：`(raw - offset) * 528 / 8`（Q10格式，0.00125Ω采样电阻）
 
 ## 编译方法
 
@@ -402,7 +418,7 @@ cat build_log.txt | tail -10
 
 **编译规模：**
 ```
-Program Size: Code=60322 RO-data=5102 RW-data=252 ZI-data=14044
+Program Size: Code=62190 RO-data=5346 RW-data=252 ZI-data=14036
 ".\objects\AT32F456CEU7_foc.axf" - 0 Error(s), 0 Warning(s).
 ```
 
@@ -868,5 +884,32 @@ can_wly_tick_1ms();     // 1ms周期调用
 can_debug_poll();       // 处理OTA数据帧
 ```
 
-**编译规模：** Code=60322 RO-data=5102 RW-data=252 ZI-data=14044
-（CAN协议层+调试日志，总Flash≈63.7KB，RAM≈14.3KB）
+**编译规模：** Code=62190 RO-data=5346 RW-data=252 ZI-data=14036
+（含温度/VDC转换+logid命令+DPT异步修复，总Flash≈65.9KB，RAM≈14.3KB）
+
+### 阶段7：硬件首次验证（已完成 ✅）
+
+**目标**：上电验证基础功能
+
+**验证结果（2026-06-09）：**
+```
+INT: PCCE=10001/s OCCE=1000/s DMA=1000/s TCF=0
+ADC: i_a≈0 i_b≈0 (offset_a=2062 offset_b=2058, 12bit中点正常)
+     temp_m=0C(NTC未接) temp_mos=24C(室温正确) vdc=39V(raw=2349)
+DPT: async ok=10kHz crc=0 len=0 busy=0 (10kHz全部成功)
+SO_C: raw≈1018 (偏离中点，C相运放偏置异常，不影响FOC双电阻采样)
+```
+
+**发现并修复的问题：**
+1. ✅ **NVIC优先级全0** → 分层：ADC=0, DPT=2, DMA=4, CAN=6, USART1=8, SysTick=15
+2. ✅ **DPT异步卡死(busy持续增长)** → DMA TX/RX启动前必须先disable通道
+3. ✅ **VDC始终为0** → PA3(ADC2_CH3)实际是VDC，原误标为so_3
+4. ✅ **g_udc_volt恒定48V** → 在adc_foc_on_regular_done()中实时更新
+5. ✅ **温度转换满量程错误** → 65535→4095（16bit→12bit适配）
+6. ✅ **电流转换增益错误** → NUMERATOR 33→528（补偿12bit/16bit 16倍差异）
+7. ✅ **logid/logfreq命令缺失** → dbg_cmd_set()中补充
+8. ✅ **串口°C乱码** → 改用ASCII "C"
+
+**已知遗留问题：**
+- SO_C(PA2) raw≈1018，偏离2048中点 → C相运放偏置异常（不影响双电阻FOC）
+- temp_m=4095 → 电机NTC未接线（返回0°C保护值）

@@ -284,6 +284,21 @@ void dbg_cmd_set(void)
         printf("v_q_test=%d\r\n", v_q_test);
     }
 
+    /* logid<N>: set debug log id */
+    if (NULL != (loc = strstr((char *)dbgRecvBuf, "logid"))) {
+        uint16_t id = (uint16_t)atoi(loc + 5);
+        dbgLogFlag = id;
+        printf("logid=%d\r\n", id);
+    }
+
+    /* logfreq<ms>: set debug log period */
+    if (NULL != (loc = strstr((char *)dbgRecvBuf, "logfreq"))) {
+        uint16_t ms = (uint16_t)atoi(loc + 7);
+        if (ms < 10) ms = 10;
+        logPriodMs = ms;
+        printf("logfreq=%dms\r\n", ms);
+    }
+
     /* getparams: print all key parameters */
     if (NULL != strstr((char *)dbgRecvBuf, "getparams")) {
         extern uint8_t NPP;
@@ -441,12 +456,11 @@ void dbg_log_print(void)
         uint32_t now = systick_ms;
         if (now - t151 < 1000) break;
         t151 = now;
-        printf("Mon: VDC=%lu Tmot=%u Tmos=%u so_c=%u so_3=%u\r\n",
+        printf("Mon: VDC=%lu Tmot=%u Tmos=%u so_c=%u\r\n",
                (unsigned long)g_vdc_raw,
                (unsigned)g_temp_motor_raw,
                (unsigned)g_temp_mos_raw,
-               (unsigned)g_so_c_raw,
-               (unsigned)g_so_3_raw);
+               (unsigned)g_so_c_raw);
         break;
     }
 

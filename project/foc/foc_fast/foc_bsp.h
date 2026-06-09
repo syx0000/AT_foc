@@ -95,11 +95,13 @@ typedef uint8_t  BOOL;
 
 /**********************************************************************************************/
 // STM32H7 16位ADC + 10x运放 + 采样电阻 (两板硬件支持)
-//   板 V1 (0.0025Ω):  I_Q10 = (raw-offset) * 33 / 16   ← 当前默认
-//   板 V2 (0.00125Ω): I_Q10 = (raw-offset) * 33 / 8    (量程加倍, 切板时改 DENOMINATOR=8)
-// 推导: I_Q10 = (raw-offset) * 3.3 * 1024 / 65535 / 10 / Rshunt
-#define CURRENT_TRANS_NUMERATOR 33
-#define CURRENT_TRANS_DENOMINATOR 8    /* V1 板, 切 V2 板改 8 */
+//   板 V1 (0.0025Ω):  I_Q10 = (raw-offset) * 33 / 16   ← STM32 16bit ADC
+//   板 V2 (0.00125Ω): I_Q10 = (raw-offset) * 33 / 8    (STM32 16bit ADC)
+// AT32 12bit ADC: 满量程4095 vs STM32 65535, 比值16x
+// 推导: I_Q10 = (raw-offset) * 3.3 * 1024 / 4095 / 10 / Rshunt
+//   板 V2 (0.00125Ω): I_Q10 = (raw-offset) * 528 / 8 = (raw-offset) * 66
+#define CURRENT_TRANS_NUMERATOR 528
+#define CURRENT_TRANS_DENOMINATOR 8    /* AT32 12bit + V2 板 0.00125Ω */
 
 //
 // 编码器分辨率常量 - DPT 双磁编码器 24位

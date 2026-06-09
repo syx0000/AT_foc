@@ -40,6 +40,7 @@
 #include "foc_controller.h"
 #include "foc_data.h"
 #include "encoder_calc.h"
+#include "ifly_fault.h"
 /* add user code end private includes */
 
 /* private typedef -----------------------------------------------------------*/
@@ -76,7 +77,6 @@ extern volatile FOC_CurrentSample_t g_foc_current;
 extern volatile uint16_t g_temp_motor_raw;
 extern volatile uint16_t g_temp_mos_raw;
 extern volatile uint16_t g_so_c_raw;
-extern volatile uint16_t g_so_3_raw;
 
 /* FOC layer (from foc_api.c) */
 extern ControllerStruct controller_eyou;
@@ -332,9 +332,12 @@ int main(void)
       printf("ADC: i_a=%d i_b=%d (raw_a=%d raw_b=%d offs_a=%d offs_b=%d)\r\n",
              g_foc_current.i_a_raw, g_foc_current.i_b_raw,
              raw_a, raw_b, g_adc_offset_a, g_adc_offset_b);
-      printf("     temp_m=%u temp_mos=%u so_c=%u so_3=%u vdc=%u\r\n",
-             g_temp_motor_raw, g_temp_mos_raw, g_so_c_raw, g_so_3_raw,
-             (unsigned int)g_vdc_raw);
+      extern volatile uint16_t g_udc_volt;
+      printf("     temp_m=%dC temp_mos=%dC vdc=%uV (raw=%u) so_c=%u\r\n",
+             MotorTemperatureInquiry((uint16_t)g_temp_motor_raw),
+             TemperatureInquiry((uint16_t)g_temp_mos_raw),
+             (unsigned)g_udc_volt, (unsigned int)g_vdc_raw,
+             g_so_c_raw);
 
       /* DPT encoder read test */
       DPT_Angles angles;
