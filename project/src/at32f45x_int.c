@@ -35,6 +35,7 @@
 #include "foc_api.h"
 #include "foc_controller.h"
 #include "foc_current_loop.h"
+#include "encoder_calc.h"
 /* add user code end private includes */
 
 /* private typedef -----------------------------------------------------------*/
@@ -324,6 +325,10 @@ void ADC1_2_IRQHandler(void)
      * Guard: skip FOC code until Init_foc() is complete (g_foc_init_done=1)
      * ============================================================ */
     if (g_foc_init_done) {
+			/* Encoder calculation (10kHz, unconditional - runs regardless of foc_run)
+			 * Reference: cubemx_yxsui/Core/Src/adc.c:574-575 */
+			Encoder_data_Calculate(&controller_eyou, 10000);
+			Encoder_out_data_Calculate(&controller_eyou, 10000);
       /* Get raw ADC values for FOC (before offset subtraction) */
       uint16_t raw_a = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
       uint16_t raw_b = adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);

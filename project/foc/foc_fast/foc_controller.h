@@ -25,7 +25,7 @@
 /* Runtime-controllable serial debug flag (0=off, 1=on). Replaces compile-time macro USART_CONTROL. */
 extern volatile uint8_t USART_CONTROL;
 #define USE_RTOS_LOG_PRINT 0       // RTOS的log打印功能
-#define USEFOC_OPEN_TEST 1         // 使用FOC开环测试
+#define USEFOC_OPEN_TEST 0         // 使用FOC开环测试
 #define USE_DMA_SEND 0             // 使用dma发送
 #define CIA_402_AXIS               // 使用CIA的轴宏
 /*电机参数*/

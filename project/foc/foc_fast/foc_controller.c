@@ -52,11 +52,11 @@ void set_ver_par(uint8_t id) {
     NPP               = 8;
     DEFAULT_MAX_SPEED = 110 * 25 * 1024;       // 110rpm 输出端, 给 100rpm 工作点留 10% 裕量
 
-    INC_PID_POSITION_KP = 800;
-    INC_PID_POSITION_KI = 5;
+    INC_PID_POSITION_KP = 600;
+    INC_PID_POSITION_KI = 0;
     INC_PID_POSITION_KD = 0;
-    INC_PID_SPEED_KP    = 1500;
-    INC_PID_SPEED_KI    = 12;
+    INC_PID_SPEED_KP    = 1200;
+    INC_PID_SPEED_KI    = 8;
     INC_PID_SPEED_KD    = 0;
     POSERRFF_KP         = 300;
     INC_PID_CURRENT_KP  = 55;                // 保守起步

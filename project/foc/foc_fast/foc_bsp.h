@@ -101,7 +101,7 @@ typedef uint8_t  BOOL;
 // 推导: I_Q10 = (raw-offset) * 3.3 * 1024 / 4095 / 10 / Rshunt
 //   板 V2 (0.00125Ω): I_Q10 = (raw-offset) * 528 / 8 = (raw-offset) * 66
 #define CURRENT_TRANS_NUMERATOR 528
-#define CURRENT_TRANS_DENOMINATOR 8    /* AT32 12bit + V2 板 0.00125Ω */
+#define CURRENT_TRANS_DENOMINATOR 4    /* AT32 12bit + V2 板 0.00125Ω */
 
 //
 // 编码器分辨率常量 - DPT 双磁编码器 24位

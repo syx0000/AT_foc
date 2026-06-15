@@ -88,7 +88,7 @@ extern volatile uint32_t g_vdc_raw;
  * Migrated from cubemx_yxsui/Core/Src/main.c:64-66 */
 uint8_t open_loop_mode = 0;  /* 0=auto rotate, 1=encoder follow */
 int16_t v_d_test = 0;        /* d-axis voltage (Q10 format) */
-int16_t v_q_test = 512;      /* q-axis voltage (Q10 ~0.5V) */
+int16_t v_q_test = 800;      /* q-axis voltage (Q10 ~0.5V) */
 
 /* CAN protocol calibration request flag (set by CAN 0x2F01 cmd) */
 volatile uint8_t g_can_cali_request = 0;

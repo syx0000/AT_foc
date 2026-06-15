@@ -228,7 +228,7 @@ void dbg_cmd_set(void)
             TMR1->cctrl |= 0x0555u;
 
             if (mode_val == PROFILE_TORQUE_MODE) {
-                int32_t iq = (int32_t)(tar_value * 10.0f * 1024.0f);
+                int32_t iq = (int32_t)(tar_value * 1024.0f);
                 controller_eyou.I_q_ref = iq;
                 printf("Run: torque tar=%.3f iq=%ld\r\n", tar_value, (long)iq);
             } else if (mode_val == PROFILE_VELOCITY_MOCE) {
@@ -304,6 +304,29 @@ void dbg_cmd_set(void)
         if (ms < 10) ms = 10;
         logPriodMs = ms;
         printf("logfreq=%dms\r\n", ms);
+    }
+
+    /* Cali: electrical angle calibration + Flash write */
+    if (NULL != strstr((char *)dbgRecvBuf, "Cali")) {
+        uint8_t old_run = controller_eyou.foc_run;
+        controller_eyou.foc_run = 0;
+        controller_eyou.ServoErrFlag.All_Flag = 0;
+        wk_delay_ms(10);
+
+        /* Re-enable PWM output (may be off after fault) */
+        TMR1->cctrl |= 0x0555u;
+        TMR1->brk |= TIM_BDTR_MOE;
+
+        ElecAngleEstimate(&controller_eyou);
+
+        if (Flash_EraseSector() != HAL_OK) {
+            printf("Cali: Flash erase FAIL\r\n");
+        } else {
+            WriteDataToFlash();
+            printf("Cali done, offset=%u\r\n", controller_eyou.FlashData.elec_offset);
+        }
+
+        controller_eyou.foc_run = old_run;
     }
 
     /* getparams: print all key parameters */
