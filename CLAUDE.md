@@ -160,7 +160,7 @@ cubemx_yxsui/
 - PWM模式: `TMR_OUTPUT_CONTROL_PWM_MODE_B`
 - 死区时间: 80
 - TRGO: `TMR_PRIMARY_SEL_OVERFLOW`
-- CH4比较值: 9599（上数阶段match，T0+51us触发DPT编码器）
+- CH4比较值: 9099（上数阶段match，T0+47us触发DPT编码器）
 - CH4中断使能（用于提前触发DPT异步读取，编码器数据在ADC ISR前就绪）
 
 **TMR6 (普通组触发，1kHz)**
@@ -599,9 +599,9 @@ DPT: inner_raw=8564847 outer_raw=14933413 inner=183.78 outer=320.44
 **编译规模：** Code=20372 RO-data=1356 RW-data=16 ZI-data=8112
 **烧录后：** 原有ADC/PWM/编码器功能保持正常工作
 
-### 阶段4：FOC闭环（部分完成 ⏸️）
+### 阶段4：FOC闭环（已完成 ✅）
 
-**目标**：FOC初始化 + ADC ISR调度 + 调试打印（待硬件验证开环/闭环）
+**目标**：FOC初始化 + ADC ISR调度 + 调试打印 + 硬件验证开环/闭环
 
 **完成内容：**
 
@@ -669,34 +669,43 @@ if(adc_interrupt_flag_get(ADC1, ADC_PCCE_FLAG) != RESET) {
 - `controller_eyou.foc_run` - 闭环使能 [0=禁用, 1=电流环, 2=速度环, 3=位置环]
 - `controller_eyou.controller_mode` - 控制模式 [PROFILE_TORQUE/VELOCITY/POSITION]
 
-**待硬件验证（下次有硬件时）：**
-
-⚠️ **当前是安全状态：foc_run=0, openloop=0, PWM占空比=0，电机不会动**
+**待硬件验证（已通过 ✅ 2026-06-15）：**
 
 **测试步骤：**
 
-1. **基础验证**（无需电机）：
-   - 烧录运行，串口输出"FOC init done: NPP=8 foc_run=0 mode=2"
-   - vdc原始值有数据（接电源后）
-   - 电流/角度都为0
+1. **基础验证** ✅：
+   - 串口输出"FOC init done: NPP=8 foc_run=0 mode=2"
+   - vdc=39V，电流校准后归零
 
-2. **开环测试**（电机能转）：
-   - 修改main.c初始化最后：`g_foc_openloop_enable = 1; v_q_test = 256;`
-   - 烧录后电机应该慢慢自转
-   - 看 `theta_e` 在电角度0~65535周期变化
+2. **开环测试** ✅：
+   - `openloop1` + `vq800` → 电机平稳旋转
+   - `theta_e` 在电角度0~65535周期变化正常
 
-3. **闭环验证**（FOC闭环工作）：
-   - 修改：`controller_eyou.foc_run = 1; controller_eyou.I_q_ref = 1024;` (1A)
-   - I_d→0, I_q→1024 (跟踪给定)
-   - 电机产生扭矩
+3. **电角度校准** ✅：
+   - `Cali` 命令 → 电角度标定 + Flash自动保存
+   - 标定电压2048（2V d轴），NPP=8
+
+4. **电流环** ✅：
+   - `Run cmd1 M2 tar0.5` → I_q跟踪给定，I_d→0
+   - 电流PI: Kp=55 Ki=20
+
+5. **速度环** ✅：
+   - `Run cmd1 M3 tar5` → 转速稳定跟踪
+   - 速度PI: Kp=1200 Ki=8
+
+6. **位置环** ✅：
+   - `Run cmd1 M4 tar180` → 位置精确保持，无静差
+   - 位置PI: Kp=600 Ki=0
 
 **编译规模：** Code约21KB（FOC初始化+调度+调试打印）
 
-**未完成（阶段5+）：**
-- 电流环参数辨识（需要电机 + 硬件验证）
-- 速度环/位置环调试
-- 性能测量（DWT记录ISR耗时）
-- 异步DPT编码器（DMA + ISR触发）
+**关键修正（硬件验证中发现）：**
+- 电流采样增益：分母8→4（12bit实际增益校准）
+- 开环电压：v_q_test默认800（Q10≈0.78V，保证足够力矩）
+- 标定电压：v_d=2048（2V，保证低速电机锁定）
+- Run命令：去除冗余*10因子，tar直接为安培值
+- CC4比较值：9599→9099（编码器提前10us触发，裕量更大）
+- 编码器计算：Encoder_data_Calculate移入ADC ISR无条件执行（不依赖foc_run）
 
 ### 阶段5：USART串口指令移植（已完成 ✅）
 
@@ -969,7 +978,7 @@ T0=ADC_in | ADC_out=+6us CC4_in=+51us CC4_out=+52us Enc_done=+95us
 
 **新架构（阶段8）：**
 - DPT_AsyncRequest() 移到 TMR1 CC4 ISR
-- CC4比较值=9599（上数阶段T0+51us触发）
+- CC4比较值=9099（上数阶段T0+47us触发）
 - 方向判断：只在上数时触发DPT和记录时间戳（`!(TMR1->ctrl1 & (1<<4))`）
 - 编码器数据在下一次 ADC ISR **之前**就绪（T0+95us，提前5us）
 
