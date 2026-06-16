@@ -46,6 +46,7 @@
 #include "can_wly.h"
 #include "can_debug.h"
 #include "flash_port.h"
+#include "ota_app.h"
 /* add user code end private includes */
 
 /* private typedef -----------------------------------------------------------*/
@@ -117,6 +118,9 @@ volatile uint8_t g_can_cali_request = 0;
 int main(void)
 {
   /* add user code begin 1 */
+  /* VTOR重定位: App从0x08004000开始，Bootloader在0x08000000~0x08003FFF */
+  SCB->VTOR = 0x08004000;
+
   /* DWT cycle counter (CPU freq lazy-loaded on first use, no clock dependency) */
   DWT_Init();
   isr_print_init();
@@ -304,6 +308,14 @@ int main(void)
 	can_wly_init();
 	can_debug_init();
 
+	/* OTA subsystem init */
+	ota_init();
+
+	/* Clear boot_count in App Header to confirm stable boot.
+	 * Bootloader increments boot_count before jumping; if we reach here
+	 * the app is running fine so we mark it as stable. */
+	ota_mark_self_stable();
+
   /* add user code end 2 */
 
   while(1)
@@ -314,6 +326,9 @@ int main(void)
 
     /* Serial debug command parser */
     dbg_cmd_set();
+
+    /* OTA background processing (parse frames, write Flash) */
+    ota_process();
 
     /* Bandwidth test done flag poll + result print */
     Test_log_print();

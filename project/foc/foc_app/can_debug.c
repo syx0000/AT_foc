@@ -8,18 +8,10 @@
 #include "foc_controller.h"
 #include "ifly_fault.h"
 // #include "ota_app.h"        /* OTA not yet ported */
+#include "ota_app.h"
 #include "at32f45x_wk_config.h"  /* AT32 BSP (was stm32h7xx_hal.h) */
 #include <string.h>
 #include <stdio.h>
-
-/* OTA stubs (TODO: port ota_app.c) */
-static inline int ota_begin(uint32_t size, uint32_t crc32, uint32_t version)
-    { (void)size; (void)crc32; (void)version; return -1; }
-static inline int ota_end(void)             { return -1; }
-static inline int ota_abort(void)           { return 0; }
-static inline void ota_rx_feed(const uint8_t *d, uint32_t n)
-    { (void)d; (void)n; }
-static inline void ota_process(void)        { }
 
 /* HAL_FDCAN_GetTxFifoFreeLevel stub - AT32 always reports plenty of free space */
 static inline uint32_t HAL_FDCAN_GetTxFifoFreeLevel_stub(void) { return 16; }

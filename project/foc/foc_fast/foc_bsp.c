@@ -27,6 +27,7 @@
 #include "wk_can.h"
 #include "can_wly.h"
 #include "can_debug.h"
+#include "ota_app.h"
 #include <string.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -684,15 +685,26 @@ void dbg_cmd_set(void)
         printf("=== mit%d done ===\r\n", step);
     }
 
-    /* OTA commands (stub - OTA subsystem not yet ported) */
+    /* OTA commands */
     if (NULL != strstr((char *)dbgRecvBuf, "otaswap")) {
-        printf("Reboot...\r\n"); wk_delay_ms(50); NVIC_SystemReset();
+        printf("OTA: rebooting to apply...\r\n"); wk_delay_ms(50); NVIC_SystemReset();
     } else if (NULL != strstr((char *)dbgRecvBuf, "otabegin")) {
-        printf("OTA_ERR not_ported\r\n");
+        /* otabegin <size> <crc32_hex> <version>
+         * Example: otabegin 65536 0xA1B2C3D4 100 */
+        uint32_t sz = 0, crc = 0, ver = 0;
+        char *p = strstr((char *)dbgRecvBuf, "otabegin") + 8;
+        sz  = strtoul(p, &p, 0);
+        crc = strtoul(p, &p, 0);
+        ver = strtoul(p, &p, 0);
+        if (sz == 0) {
+            printf("Usage: otabegin <size> <crc32> <version>\r\n");
+        } else {
+            ota_begin(sz, crc, ver);
+        }
     } else if (NULL != strstr((char *)dbgRecvBuf, "otaend")) {
-        printf("OTA_ERR not_ported\r\n");
+        ota_end();
     } else if (NULL != strstr((char *)dbgRecvBuf, "otaabort")) {
-        printf("OTA_ERR not_ported\r\n");
+        ota_abort();
     }
 
     /* getparams: print all key parameters */

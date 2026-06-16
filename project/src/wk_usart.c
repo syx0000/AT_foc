@@ -29,6 +29,7 @@
 
 /* add user code begin 0 */
 #include <string.h>
+#include "ota_app.h"
 
 /* ============================================================
  * isr_print - ring buffer based non-blocking print
@@ -112,11 +113,17 @@ void USART1_IDLE_Handler(void)
 
     g_usart1_rx_bytes_total += rx_size;
 
-    if (rx_size > 0 && usart_rx_len == 0) {
-        if (rx_size > sizeof(dbgRecvBuf) - 1) rx_size = sizeof(dbgRecvBuf) - 1;
-        memcpy(dbgRecvBuf, usart1_rx_dma_buf, rx_size);
-        dbgRecvBuf[rx_size] = '\0';
-        usart_rx_len = rx_size;
+    if (rx_size > 0) {
+        if (g_ota_rx_mode) {
+            /* OTA mode: feed raw bytes to OTA ring buffer */
+            ota_rx_feed(usart1_rx_dma_buf, rx_size);
+        } else if (usart_rx_len == 0) {
+            /* Normal text command mode */
+            if (rx_size > sizeof(dbgRecvBuf) - 1) rx_size = sizeof(dbgRecvBuf) - 1;
+            memcpy(dbgRecvBuf, usart1_rx_dma_buf, rx_size);
+            dbgRecvBuf[rx_size] = '\0';
+            usart_rx_len = rx_size;
+        }
     }
 
     /* Restart DMA for next reception */

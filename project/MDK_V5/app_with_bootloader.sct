@@ -1,0 +1,17 @@
+; *************************************************************
+; *** AT32F456CEU7 FOC App — Custom scatter (bootloader offset)
+; *** Bootloader: 0x08000000~0x08003FFF (16KB)
+; *** App starts at 0x08004000, max 238KB (0x3B800)
+; *************************************************************
+
+LR_IROM1 0x08004000 0x0003B800  {    ; 238KB App load region
+  ER_IROM1 0x08004000 0x0003B800  {  ; execution address = load address
+   *.o (RESET, +First)
+   *(InRoot$$Sections)
+   .ANY (+RO)
+   .ANY (+XO)
+  }
+  RW_IRAM1 0x20000000 0x00024000  {  ; 144KB SRAM
+   .ANY (+RW +ZI)
+  }
+}
