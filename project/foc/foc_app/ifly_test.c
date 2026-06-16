@@ -273,7 +273,7 @@ void TestDeadtimeCalibration(void) {
 
   printf("\r\n===== Deadtime Calibration =====\r\n");
   printf("WARNING: rotor MUST be locked (held mechanically). Starting in 3s...\r\n");
-  HAL_Delay(3000);
+  wk_delay_ms(3000);
   printf("Rs (Flash) = %.4f Ohm\r\n", Rs);
 
   /* 目标电流序列 (Q10), 从小到大 */
@@ -319,7 +319,7 @@ void TestDeadtimeCalibration(void) {
         goto cleanup;
       }
       controller_eyou.V_d = v_d_q10;
-      HAL_Delay(5);
+      wk_delay_ms(5);
       timeout_ms += 5;
       if (timeout_ms > 10000) {
         printf("FAIL idx=%d: timeout 10s, Vd=%.3fV Ia=%.3fA tar=%.3fA\r\n",
@@ -329,11 +329,11 @@ void TestDeadtimeCalibration(void) {
     }
 
     /* 稳态等待 200ms + 采样 100ms 平均 */
-    HAL_Delay(200);
+    wk_delay_ms(200);
     int64_t sum_ia = 0;
     const int n_samp = 100;
     for (int k = 0; k < n_samp; k++) {
-      HAL_Delay(1);
+      wk_delay_ms(1);
       sum_ia += controller_eyou.I_a;
     }
     int32_t i_a_avg_q10 = (int32_t)(sum_ia / n_samp);
@@ -371,4 +371,9 @@ cleanup:
   }
   printf("};\r\n");
   printf("================================================\r\n");
+}
+
+/* TODO: port from reference project */
+void TestAutoPhaseComp(void) {
+    printf("TestAutoPhaseComp: not yet ported\r\n");
 }

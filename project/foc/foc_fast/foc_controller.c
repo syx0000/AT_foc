@@ -50,7 +50,7 @@ void set_ver_par(uint8_t id) {
   if (id == 90) {
     // motor_h7_0426 配套：pole_pairs=8，25:1减速，初始保守PID，后续再调
     NPP               = 8;
-    DEFAULT_MAX_SPEED = 110 * 25 * 1024;       // 110rpm 输出端, 给 100rpm 工作点留 10% 裕量
+    DEFAULT_MAX_SPEED = (int32_t)(110 * FOC_GEAR_RATIO * 1024);  // 110rpm 输出端, 给 100rpm 工作点留 10% 裕量
 
     INC_PID_POSITION_KP = 600;
     INC_PID_POSITION_KI = 0;
@@ -59,8 +59,8 @@ void set_ver_par(uint8_t id) {
     INC_PID_SPEED_KI    = 8;
     INC_PID_SPEED_KD    = 0;
     POSERRFF_KP         = 300;
-    INC_PID_CURRENT_KP  = 55;                // 保守起步
-    INC_PID_CURRENT_KI  = 3;
+    INC_PID_CURRENT_KP  = 15;                // 保守起步
+    INC_PID_CURRENT_KI  = 2;
     INC_PID_CURRENT_KD  = 0;
   }
   INC_PID_POSITION_LIMIT = DEFAULT_MAX_SPEED;

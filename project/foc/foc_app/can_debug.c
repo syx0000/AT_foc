@@ -554,6 +554,27 @@ void can_debug_ota_data_rx(const uint8_t *data, uint32_t len) {
     send_ota_ack(0x00, seq, 0);  /* ACK */
 }
 
+/* 0x62: OVERLOAD_SET */
+static void h_overload_set(const uint8_t *d, uint32_t n) {
+    if (n >= 4) {
+        uint16_t a = d[1], w = d[2], s = d[3];
+        if (a > 0 && a <= 255 && w > 0 && w <= 60 && s > w && s <= 60) {
+            g_overload_current_A = a;
+            g_overload_warn_s    = w;
+            g_overload_stop_s    = s;
+            printf("CAN: Overload set %uA, warn=%us, stop=%us\r\n", a, w, s);
+        } else {
+            send_err(CAN_DBG_CMD_OVERLOAD_SET, CAN_DBG_ERR_OUT_OF_RANGE);
+            return;
+        }
+    }
+    uint8_t r[5] = {CAN_DBG_CMD_OVERLOAD_SET, CAN_DBG_OK,
+                    (uint8_t)g_overload_current_A,
+                    (uint8_t)g_overload_warn_s,
+                    (uint8_t)g_overload_stop_s};
+    send_resp(r, 5);
+}
+
 /* ===== dispatch ===== */
 static void dispatch(const uint8_t *d, uint32_t n) {
     if (!n) return;
@@ -577,6 +598,7 @@ static void dispatch(const uint8_t *d, uint32_t n) {
     case CAN_DBG_CMD_CALI:       h_cali(d,n); break;
     case CAN_DBG_CMD_BWTEST:     h_bwtest(d,n); break;
     case CAN_DBG_CMD_CANRXDBG:   h_canrxdbg(d,n); break;
+    case CAN_DBG_CMD_OVERLOAD_SET: h_overload_set(d,n); break;
     case CAN_DBG_CMD_OTA_BEGIN:  h_ota_begin(d,n); break;
     case CAN_DBG_CMD_OTA_END:    h_ota_end(d,n); break;
     case CAN_DBG_CMD_OTA_ABORT:  h_ota_abort(d,n); break;

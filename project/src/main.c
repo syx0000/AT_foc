@@ -37,10 +37,15 @@
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
 #include "foc_api.h"
+#include "foc_bsp.h"
 #include "foc_controller.h"
 #include "foc_data.h"
 #include "encoder_calc.h"
 #include "ifly_fault.h"
+#include "ifly_test.h"
+#include "can_wly.h"
+#include "can_debug.h"
+#include "flash_port.h"
 /* add user code end private includes */
 
 /* private typedef -----------------------------------------------------------*/
@@ -88,7 +93,7 @@ extern volatile uint32_t g_vdc_raw;
  * Migrated from cubemx_yxsui/Core/Src/main.c:64-66 */
 uint8_t open_loop_mode = 0;  /* 0=auto rotate, 1=encoder follow */
 int16_t v_d_test = 0;        /* d-axis voltage (Q10 format) */
-int16_t v_q_test = 800;      /* q-axis voltage (Q10 ~0.5V) */
+int16_t v_q_test = 512;      /* q-axis voltage (Q10 ~0.5V) */
 
 /* CAN protocol calibration request flag (set by CAN 0x2F01 cmd) */
 volatile uint8_t g_can_cali_request = 0;
@@ -295,22 +300,51 @@ int main(void)
 	/* Start USART1 DMA debug receive */
 	USART1_DebugRx_Start();
 
+	/* CAN protocol stack init */
+	can_wly_init();
+	can_debug_init();
+
   /* add user code end 2 */
 
   while(1)
   {
     /* add user code begin 3 */
-    static uint32_t last_tick = 0;
-
     /* Drain isr_print ring buffer to USART */
     isr_print_poll();
 
     /* Serial debug command parser */
     dbg_cmd_set();
 
+    /* Bandwidth test done flag poll + result print */
+    Test_log_print();
+
+    /* CAN RX debug frame async print (canrxdbg cmd) */
+    can_wly_dbg_poll();
+    can_debug_poll();
+
+    /* CAN 0x2F01 zero-point calibration request (set by CAN ISR, executed here) */
+    if (g_can_cali_request) {
+        g_can_cali_request = 0;
+        uint8_t old_run = controller_eyou.foc_run;
+        controller_eyou.foc_run = 0;
+        controller_eyou.ServoErrFlag.All_Flag = 0;
+        set_phase_voltage(&controller_eyou, 0, 0, 0);  /* 清零输出电压 */
+        wk_delay_ms(10);
+        TMR1->cctrl |= 0x0555u;
+        TMR1->brk   |= (1u << 15);  /* MOE enable */
+        printf("CAN Cali start\r\n");
+        ElecAngleEstimate(&controller_eyou);
+        if (Flash_EraseSector() != HAL_OK) {
+            printf("CAN Cali: Flash erase FAIL\r\n");
+        } else {
+            WriteDataToFlash();
+            printf("CAN Cali done\r\n");
+        }
+        controller_eyou.foc_run = old_run;
+    }
+
     /* Periodic debug log print (period set by 'logfreq' cmd) */
     {
-        extern volatile uint16_t logPriodMs;
         static uint32_t log_tick = 0;
         if (systick_ms - log_tick >= logPriodMs) {
             log_tick = systick_ms;
@@ -318,46 +352,34 @@ int main(void)
         }
     }
 
-    if(systick_ms - last_tick >= 1000) {
-      last_tick = systick_ms;
-//       printf("---- 1s status ----\r\n");
-//       printf("INT: PCCE=%u OCCE=%u DMA=%u TCF=%u\r\n",
-//              adc_pcce_count, adc_occe_count,
-//              dma_fdt3_count, adc_tcf_count);
-
-//       /* Read raw ADC values for debug */
-//       int32_t raw_a = (int32_t)adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
-//       int32_t raw_b = (int32_t)adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);
-
-//       printf("ADC: i_a=%d i_b=%d (raw_a=%d raw_b=%d offs_a=%d offs_b=%d)\r\n",
-//              g_foc_current.i_a_raw, g_foc_current.i_b_raw,
-//              raw_a, raw_b, g_adc_offset_a, g_adc_offset_b);
-//       extern volatile uint16_t g_udc_volt;
-//       printf("     temp_m=%dC temp_mos=%dC vdc=%uV (raw=%u) so_c=%u\r\n",
-//              MotorTemperatureInquiry((uint16_t)g_temp_motor_raw),
-//              TemperatureInquiry((uint16_t)g_temp_mos_raw),
-//              (unsigned)g_udc_volt, (unsigned int)g_vdc_raw,
-//              g_so_c_raw);
-
-//       /* DPT encoder read test */
-//       DPT_Angles angles;
-//       DPT_GetLatestAngles(&angles);
-//       uint32_t ok, ce, le, bs;
-//       DPT_GetAsyncStats(&ok, &ce, &le, &bs);
-//       printf("DPT: inner=%.2f outer=%.2f (async ok=%u crc=%u len=%u busy=%u)\r\n",
-//              angles.inner_deg, angles.outer_deg,
-//              (unsigned)ok, (unsigned)ce, (unsigned)le, (unsigned)bs);
-
-//       /* FOC state */
-//       printf("FOC: run=%d mode=%d openloop=%d\r\n",
-//              controller_eyou.foc_run, controller_eyou.controller_mode,
-//              g_foc_openloop_enable);
-//       printf("     I_d=%ld I_q=%ld I_q_ref=%ld theta_e=%ld pos_out=%ld dtheta=%ld\r\n",
-//              (long)controller_eyou.I_d, (long)controller_eyou.I_q,
-//              (long)controller_eyou.I_q_ref, (long)controller_eyou.theta_elec_raw,
-//              (long)controller_eyou.real_position_out,
-//              (long)controller_eyou.dtheta_mech);
+    /* 1ms fault protection tick */
+    {
+        static uint32_t fault_tick = 0;
+        if (systick_ms - fault_tick >= 1) {
+            fault_tick = systick_ms;
+            adc_convert();
+            dcVoltageProFunc();
+            boradTempProFunc();
+            motorTempProFunc();
+            overloadProFunc();
+            if (!g_foc_openloop_enable) {
+                CheckAndHandleAllFaultBits();
+            }
+            fault_brake_tick_1ms();
+            drv_reset_tick_1ms();
+            target_reach_check();
+        }
     }
+
+    /* CAN 1ms tick (active report mode) */
+    {
+        static uint32_t can_tick = 0;
+        if (systick_ms - can_tick >= 1) {
+            can_tick = systick_ms;
+            can_wly_tick_1ms();
+        }
+    }
+
     /* add user code end 3 */
   }
 }

@@ -28,7 +28,7 @@ extern uint8_t NPP;
  *   LOAD_RPM_INTERNAL : 载端 rpm → velocity_ref / dtheta_mech 内部值(已含减速比 25)
  *   MOTOR_RPM_Q10     : 电机端 rpm × 1024 = dtheta_mech 物理意义(用于电气 ω_e 换算)
  */
-#define LOAD_RPM_INTERNAL        (1024.0f * 25.0f)
+#define LOAD_RPM_INTERNAL        (1024.0f * FOC_GEAR_RATIO)
 #define MOTOR_RPM_Q10            (1024.0f)
 #define MIN_WE_RAD_S             (5.0f)          /* 低于该 ω_e 不做辨识(避免分母过小) */
 #define MIN_DELTA_ID_Q10         (256)           /* 0.25 A,低于则放大噪声 */

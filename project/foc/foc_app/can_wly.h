@@ -132,8 +132,9 @@ void    can_wly_test_isr_post(int32_t iq_ref_filterd, int32_t iq_fb);     /* 打
 void    can_wly_iq_fb_filter_update(int32_t iq_q10);                      /* FOC ISR 每拍调用 */
 int32_t can_wly_iq_fb_get(void);                                          /* CAN 上报路径取滤波值 (Q10) */
 
-/* 减速比 (用于 rpm/rad-s 换算. 对齐 motor_h7: GR=25 对应 CLAUDE.md) */
-#define CAN_WLY_GR          25.0f
+/* 减速比 (引用 FOC_GEAR_RATIO, 定义于 foc_controller.h) */
+#include "foc_controller.h"
+#define CAN_WLY_GR          FOC_GEAR_RATIO
 
 #ifdef __cplusplus
 }

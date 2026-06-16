@@ -25,7 +25,7 @@
 
 ## 移植参考工程
 
-**参考工程路径**: `C:\Users\syx19\Desktop\X\cubemx_yxsui\`
+**参考工程路径**: `D:\X\cubemx_yxsui\`
 
 这是一个基于STM32H7的CubeMX工程（STM32H7xx HAL），是当前AT32F456工程的**移植源头**。后续将逐步把参考工程的全部FOC控制逻辑、协议、保护代码移植到本工程。
 
@@ -451,7 +451,7 @@ Flash Load finished at HH:MM:SS
 - AT32F456 数据手册
 - AT32F45x固件库用户手册
 - 官方ADC+DMA示例：`combine_ordinary_smlt_tmr1trgout2_dma1`
-- iflytek参考项目: `C:\Users\syx19\Desktop\X\iflytek_joint_module_angle\`
+- iflytek参考项目: `D:\X\iflytek_joint_module_angle\`
 - [ADC_DMA_INIT_ORDER.md](./ADC_DMA_INIT_ORDER.md) - 详细初始化顺序说明
 
 ## 开发日志
@@ -997,4 +997,141 @@ T0=ADC_in | ADC_out=+6us CC4_in=+51us CC4_out=+52us Enc_done=+95us
 - 编码器数据在下一次ADC前5us完成
 
 **编译规模：** Code=63422 RO-data=5890 RW-data=252 ZI-data=14068
+
+### 阶段9：全面对齐cubemx参考工程（已完成 ✅）
+
+**目标**：逐文件对比参考工程，补齐所有缺失功能和逻辑差异
+
+**改动文件（9个，+621/-82行）：**
+
+#### 9A. main.c — CAN协议栈+故障保护+CAN校准
+
+**初始化段新增：**
+```c
+can_wly_init();       // 万里扬CAN协议从站初始化
+can_debug_init();     // CAN调试通道初始化
+```
+
+**主循环新增（对齐参考工程while(1)）：**
+```c
+Test_log_print();            // 带宽测试结果轮询
+can_wly_dbg_poll();          // CAN RX调试帧异步打印
+can_debug_poll();            // CAN调试命令处理
+g_can_cali_request处理;      // CAN 0x2F01零位标定（ISR设标志，主循环执行）
+1ms故障tick {               // 1ms周期故障保护
+    adc_convert();
+    dcVoltageProFunc();      // 母线过/欠压
+    boradTempProFunc();      // 板温过温
+    motorTempProFunc();      // 电机绕组过温
+    overloadProFunc();       // 过载保护
+    CheckAndHandleAllFaultBits();
+    fault_brake_tick_1ms();  // 主动刹车状态机
+    drv_reset_tick_1ms();    // DRV复位状态机
+    target_reach_check();    // 到达判据
+}
+can_wly_tick_1ms();          // CAN主动上报+超时保护
+```
+
+**其他修正：**
+- `v_q_test` 默认值 800→512（对齐参考）
+- 删除旧的1s注释调试打印块
+
+#### 9B. foc_bsp.c — 命令/日志/逻辑全面对齐
+
+**关键逻辑修复（BUG级）：**
+
+| 修复项 | 改动 |
+|--------|------|
+| PID命令不同步FlashData | ✅ CurrentPID/SpeedPID/PositionPID 同时写 FlashData.xxx_Kp/Ki/Kd |
+| Run/enable/reset不用fault_safe_shutdown | ✅ 全部改为调用 fault_safe_shutdown() |
+| Run命令无故障保护 | ✅ 补 fault_brake_is_active() + ServoErrFlag.All_Flag 检查 |
+| Run扭矩模式无LUT/限幅 | ✅ 补 can_wly_Nm_to_iA() + MaxCurrent clamp |
+| Run位置模式无软限位 | ✅ 补 PositionLimitFlag==50 检查 + MaxPositionLimit/MinPositionLimit |
+| enable无完整状态初始化 | ✅ 补 I_q_ref=0/vel=0/pos=actual/mode=Torque/foc_run=2 |
+| logPriodMs默认100ms | ✅ →1ms（对齐参考） |
+| mit步骤7 t_ff未除1024 | ✅ 补/1024.0f |
+
+**新增串口命令（18个）：**
+
+| 命令 | 功能 |
+|------|------|
+| `logtest<N>` | 测试日志模式标志 |
+| `bwtest<1-11>` | 带宽测试：电流环/速度环/位置环/参数辨识/磁链辨识/惯量辨识/自整定/死区标定/相位补偿 |
+| `injectV<mV>` | d轴电压注入测试（5秒，每100ms打印Ia/Id/Rs） |
+| `canrxdbg<0/1>` | CAN收帧调试打印开关 |
+| `OverloadA<x>W<y>S<z>` | 过载保护参数设置（电流阈值A/报警秒/停机秒） |
+| `offsetpos<N>` | 正转固定角度偏置（×0.1°） |
+| `offsetneg<N>` | 反转固定角度偏置 |
+| `comppos<N>` | 正转速度相关补偿系数 |
+| `compneg<N>` | 反转速度相关补偿系数 |
+| `savephasecomp` | 保存相位补偿参数到Flash |
+| `testfreq<Hz>` | 单频注入频率 |
+| `testampl<Q10>` | 单频注入幅值 |
+| `teststart` | 启动单频注入+0x7FD数据流 |
+| `teststop` | 停止单频注入 |
+| `canstat` | AT32 CAN状态+错误计数 |
+| `cantest<1-19>` | CAN协议单元自测（19个用例） |
+| `mit<0-7>` | MIT阻抗模式实测序列 |
+| `otabegin/end/abort/swap` | OTA命令（swap已实现，其余stub） |
+
+**dbg_log_print()改进：**
+
+| 改动 | 说明 |
+|------|------|
+| case 10/11/30/40/50/60/70/90/100 | 补 `can_debug_send_log()` CAN双通道输出 |
+| case 40 | 首列改用 `can_wly_iq_fb_get()`（LPF滤波Iq，对齐参考） |
+| case 100 | 补 `mech_offest_out` 第4字段 |
+| case 162 | 扩展FlashData dump：+PhaseOrder/mech_off/PosLimit/PhaseComp/sizeof |
+| case 165 | 补 `print_fault_types_pub()` 故障类型解码 |
+| case 200（新增） | 综合扭矩诊断快照（6行+4b），含饱和度/BEMF/WMAG/PWM占空比/斜坡/限幅 |
+
+**getparams改进：**
+- 补 `PARAMS_BEGIN`/`PARAMS_END` 定界（上位机解析友好）
+- 补 `OffPos/OffNeg/CompPos/CompNeg` 相位补偿参数
+- PID字段名改为 `CurKp=`/`SpdKp=`/`PosKp=` 格式（对齐参考）
+
+#### 9C. can_wly.c — overload Flash恢复
+
+`can_wly_init()` 新增从 `FlashData.temp4` 高3字节恢复过载保护参数：
+```c
+uint8_t ol_a = (temp4 >> 8)  & 0xFF;
+uint8_t ol_w = (temp4 >> 16) & 0xFF;
+uint8_t ol_s = (temp4 >> 24) & 0xFF;
+if (ol_a > 0 && ol_w > 0 && ol_s > ol_w) { g_overload_current_A = ol_a; ... }
+```
+
+#### 9D. can_debug.c/h — 0x62 OVERLOAD_SET命令
+
+新增 `CAN_DBG_CMD_OVERLOAD_SET (0x62)`：
+- payload: `[0x62, current_A, warn_s, stop_s]`
+- 无参数时查询当前值
+- response: `[0x62, OK, current_A, warn_s, stop_s]`
+
+#### 9E. ifly_fault.c/h — overloadProFunc实现
+
+- 新增 `overloadProFunc()` 完整实现（95A/5s报警/10s停机，可配置）
+- 新增 `g_overload_current_A/warn_s/stop_s` 全局变量 + 头文件声明
+- `clear_all_fault_counters()` 补清 `overload_cnt`/`overload_warned`
+
+#### 9F. ifly_test.c — HAL_Delay修复
+
+- `TestDeadtimeCalibration()` 中 `HAL_Delay()` 全部替换为 `wk_delay_ms()`（通过foc_bsp.h宏映射）
+- 新增 `TestAutoPhaseComp()` 空stub（TODO: 移植参考工程212行实现）
+
+**编译规模：** Code=101502 RO-data=13510 RW-data=264 ZI-data=14144
+（+39KB vs 阶段8，主要是printf格式字符串+cantest/mit测试代码）
+
+### 与参考工程的剩余差异（有意保留）
+
+| 项目 | 状态 | 原因 |
+|------|------|------|
+| OTA固件升级 | stub | 需要bootloader+ota_app.c移植 |
+| TestAutoPhaseComp | stub | 需要完整运动测试环境 |
+| identifyMotorParamsCached启动辨识 | 未调用 | 参数已在Flash中，按需辨识 |
+| PWM在Init_foc之后使能 | 有意 | 避免ISR访问未初始化数据 |
+| DPT_GetAsyncStats vs DPT_GetAndResetStats | API不同 | AT32用异步DMA架构 |
+| logfreq最小值10ms限制 | AT32额外保护 | 防止1ms打印撑爆192MHz CPU |
+| printf格式标签 | 微调 | AT32用命名字段(Angle:)，参考用CSV(Angle_elec_360:) |
+| VTOR/MPU/I-Cache | 无 | AT32F456无MPU，不需要VTOR重定位 |
+| EN_GATE/TIM1_BIF | 无 | AT32硬件无DRV8353 sleep唤醒问题 |
 

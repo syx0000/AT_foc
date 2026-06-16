@@ -443,8 +443,10 @@ void measurePhaseInductanceAC(ControllerStruct* controller, float Rs) {
     ident_inductance_init(&controller->ident_test, 0, INJ_FREQ_HZ,
                           INJ_VOLTAGE_AMPL * 1024, Rs);
     controller->foc_run = 1;
+    uint32_t ident_wait = 0;
     while (!controller->ident_test.done) {
         HAL_Delay(1);
+        if (++ident_wait >= 2000) { controller->ident_test.enable = 0; break; }
     }
     ident_inductance_compute(&controller->ident_test);
     float Ld = controller->ident_test.Ld;
@@ -460,8 +462,10 @@ void measurePhaseInductanceAC(ControllerStruct* controller, float Rs) {
     // q轴电感
     ident_inductance_init(&controller->ident_test, 1, INJ_FREQ_HZ,
                           INJ_VOLTAGE_AMPL * 1024, Rs);
+    ident_wait = 0;
     while (!controller->ident_test.done) {
         HAL_Delay(1);
+        if (++ident_wait >= 2000) { controller->ident_test.enable = 0; break; }
     }
     ident_inductance_compute(&controller->ident_test);
     float Lq = controller->ident_test.Lq;
