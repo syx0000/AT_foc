@@ -30,6 +30,9 @@ extern "C" {
 #define BOOT_USART_IRQn         USART1_IRQn
 
 void boot_usart_init(void);
+void boot_puts(const char *s);
+void boot_put_u32(uint32_t v);
+void boot_put_hex(uint32_t v);
 
 #ifdef __cplusplus
 }

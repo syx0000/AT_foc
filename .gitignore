@@ -3,6 +3,12 @@ project/MDK_V5/objects/
 project/MDK_V5/listings/
 project/MDK_V5/build_log.txt
 project/MDK_V5/flash_log.txt
+project/MDK_V5/bin_file/
+
+# Bootloader build artifacts
+bootloader/mdk_v5/objects/
+bootloader/mdk_v5/listings/
+bootloader/mdk_v5/build_log.txt
 
 # Editor/IDE
 *.bak

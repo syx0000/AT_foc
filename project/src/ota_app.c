@@ -257,7 +257,10 @@ uint32_t ota_process(void)
     uint16_t actual_crc = frame_buf[6 + len] | (frame_buf[6 + len + 1] << 8);
 
     if (actual_crc != expected_crc) {
-        printf("OTA_NAK %u crc16_err\r\n", seq);
+        printf("OTA_NAK %u crc16 exp=%04X got=%04X len=%u hdr=%02X%02X%02X%02X%02X%02X\r\n",
+               seq, expected_crc, actual_crc, len,
+               frame_buf[0], frame_buf[1], frame_buf[2],
+               frame_buf[3], frame_buf[4], frame_buf[5]);
         ring_consume(frame_len);
         return 0;
     }

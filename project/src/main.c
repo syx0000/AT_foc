@@ -119,7 +119,7 @@ int main(void)
 {
   /* add user code begin 1 */
   /* VTOR重定位: App从0x08004000开始，Bootloader在0x08000000~0x08003FFF */
-  SCB->VTOR = 0x08004000;
+  nvic_vector_table_set(NVIC_VECTTAB_FLASH, 0x4000);
 
   /* DWT cycle counter (CPU freq lazy-loaded on first use, no clock dependency) */
   DWT_Init();
@@ -155,11 +155,11 @@ int main(void)
   /* init dma1 channel3 */
   wk_dma1_channel3_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL3,
-                        (uint32_t)&ADCCOM->codt,
-                        DMA1_CHANNEL3_MEMORY_BASE_ADDR,
+  wk_dma_channel_config(DMA1_CHANNEL3, 
+                        (uint32_t)&ADCCOM->codt, 
+                        DMA1_CHANNEL3_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL3_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL3, TRUE);
 
@@ -187,49 +187,49 @@ int main(void)
   /* init dma1 channel1 */
   wk_dma1_channel1_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL1,
-                        (uint32_t)&USART3->dt,
-                        DMA1_CHANNEL1_MEMORY_BASE_ADDR,
+  wk_dma_channel_config(DMA1_CHANNEL1, 
+                        (uint32_t)&USART3->dt, 
+                        DMA1_CHANNEL1_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL1_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL1, TRUE);
 
   /* init dma1 channel2 */
   wk_dma1_channel2_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL2,
-                        (uint32_t)&USART3->dt,
-                        DMA1_CHANNEL2_MEMORY_BASE_ADDR,
+  wk_dma_channel_config(DMA1_CHANNEL2, 
+                        (uint32_t)&USART3->dt, 
+                        DMA1_CHANNEL2_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL2_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL2, TRUE);
 
   /* init dma1 channel4 */
   wk_dma1_channel4_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL4,
-                        (uint32_t)&USART1->dt,
-                        DMA1_CHANNEL4_MEMORY_BASE_ADDR,
+  wk_dma_channel_config(DMA1_CHANNEL4, 
+                        (uint32_t)&USART1->dt, 
+                        DMA1_CHANNEL4_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL4_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL4, TRUE);
 
   /* init dma1 channel5 */
   wk_dma1_channel5_init();
   /* config dma channel transfer parameter */
-  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR
+  /* user need to modify define values DMAx_CHANNELy_XXX_BASE_ADDR 
      and DMAx_CHANNELy_BUFFER_SIZE in at32xxx_wk_config.h */
-  wk_dma_channel_config(DMA1_CHANNEL5,
-                        (uint32_t)&USART1->dt,
-                        DMA1_CHANNEL5_MEMORY_BASE_ADDR,
+  wk_dma_channel_config(DMA1_CHANNEL5, 
+                        (uint32_t)&USART1->dt, 
+                        DMA1_CHANNEL5_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL5_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL5, TRUE);
 
   /* add user code begin 2 */
-	printf("\r\n\r\n FOC start\r\n");
+	printf("\r\n\r\nFOC start\r\n");
 
 	/* DWT verification: 1000 NOPs (each NOP = 1 cycle) + 100us busy wait */
 	{

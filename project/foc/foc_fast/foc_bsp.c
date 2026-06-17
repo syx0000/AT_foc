@@ -689,17 +689,18 @@ void dbg_cmd_set(void)
     if (NULL != strstr((char *)dbgRecvBuf, "otaswap")) {
         printf("OTA: rebooting to apply...\r\n"); wk_delay_ms(50); NVIC_SystemReset();
     } else if (NULL != strstr((char *)dbgRecvBuf, "otabegin")) {
-        /* otabegin <size> <crc32_hex> <version>
-         * Example: otabegin 65536 0xA1B2C3D4 100 */
-        uint32_t sz = 0, crc = 0, ver = 0;
-        char *p = strstr((char *)dbgRecvBuf, "otabegin") + 8;
-        sz  = strtoul(p, &p, 0);
-        crc = strtoul(p, &p, 0);
-        ver = strtoul(p, &p, 0);
-        if (sz == 0) {
-            printf("Usage: otabegin <size> <crc32> <version>\r\n");
-        } else {
+        /* otabegin SIZE=<n> CRC=0x<hex> VER=<v>
+         * Example: otabegin SIZE=65536 CRC=0xA1B2C3D4 VER=100 */
+        char *p_size = strstr((char *)dbgRecvBuf, "SIZE=");
+        char *p_crc  = strstr((char *)dbgRecvBuf, "CRC=0x");
+        char *p_ver  = strstr((char *)dbgRecvBuf, "VER=");
+        if (p_size && p_crc) {
+            uint32_t sz  = (uint32_t)atoi(p_size + 5);
+            uint32_t crc = (uint32_t)strtoul(p_crc + 6, NULL, 16);
+            uint32_t ver = p_ver ? (uint32_t)atoi(p_ver + 4) : 0;
             ota_begin(sz, crc, ver);
+        } else {
+            printf("OTA_ERR bad_args (expect: otabegin SIZE=n CRC=0xHEX VER=n)\r\n");
         }
     } else if (NULL != strstr((char *)dbgRecvBuf, "otaend")) {
         ota_end();

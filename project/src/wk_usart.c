@@ -77,7 +77,7 @@ void isr_print_poll(void)
  * Migrated from cubemx_yxsui/Core/Src/usart.c
  * ============================================================ */
 
-#define DBG_RX_BUF_SIZE  256
+#define DBG_RX_BUF_SIZE  512
 
 static uint8_t usart1_rx_dma_buf[DBG_RX_BUF_SIZE];
 

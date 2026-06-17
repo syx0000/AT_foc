@@ -126,7 +126,7 @@
             <ParametersSub name="OC2ImmediatelyMode_PWM" value="TRUE"/>
             <ParametersSub name="OCMode_3" value="TMR_OUTPUT_CONTROL_PWM_MODE_B"/>
             <ParametersSub name="OC3ImmediatelyMode_PWM" value="TRUE"/>
-            <ParametersSub name="ChannelData_4" value="9599"/>
+            <ParametersSub name="ChannelData_4" value="9099"/>
             <ParametersSub name="OCPolarity_4" value="TMR_OUTPUT_ACTIVE_LOW"/>
         </Parameters>
         <Interrupts>
@@ -335,7 +335,7 @@
     </PINInfo>
     <ProjectInfomation>
         <ProjectName>AT32F456CEU7_foc</ProjectName>
-        <ProjectLocation>C:/Users/syx19/Desktop/X</ProjectLocation>
+        <ProjectLocation>D:/X</ProjectLocation>
         <ToolchainIDE>MDK_V5</ToolchainIDE>
         <ARMCompiler>0</ARMCompiler>
         <BackupCode>true</BackupCode>

@@ -1,13 +1,13 @@
 ; *************************************************************
 ; *** Scatter-Loading Description File for AT32F456 Bootloader ***
 ; *************************************************************
-; Bootloader: 0x08000000 - 0x08004000 (16KB)
-; Upgrade Flag: 0x08003800 - 0x08004000 (2KB)
+; Bootloader: 0x08000000 - 0x08003800 (14KB)
+; App Header: 0x08003800 - 0x08004000 (2KB, managed by bootloader at runtime)
 ; App Start: 0x08004000
 ; *************************************************************
 
-LR_IROM1 0x08000000 0x00004000  {    ; Bootloader load region 16KB
-  ER_IROM1 0x08000000 0x00004000  {  ; Bootloader execution region
+LR_IROM1 0x08000000 0x00003800  {    ; Bootloader load region 14KB
+  ER_IROM1 0x08000000 0x00003800  {  ; Bootloader execution region
    *.o (RESET, +First)
    *(InRoot$$Sections)
    .ANY (+RO)

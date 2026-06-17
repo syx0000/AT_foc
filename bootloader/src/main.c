@@ -1,11 +1,12 @@
 /**
  * @file    main.c
- * @brief   AT32F456 Bootloader — OTA Stage 2 + IAP兜底
+ * @brief   AT32F456 Bootloader — OTA Stage 2 only
  *
  * 启动流程:
  *   1. 检查 Staging Header: PENDING? → 验证CRC → 复制到App区 → 写App Header
  *   2. 检查 App Header: magic+VALID+CRC OK? → boot_count<3? → 跳转
- *   3. 以上都失败 → 初始化USART1 → 进入IAP串口升级模式
+ *   3. 兼容dev mode: 无header但向量表合法 → 跳转
+ *   4. 以上都失败 → 死循环等待烧录器重新烧写
  *
  * 兼容 cubemx_yxsui Stage 2 OTA 协议 (app_header_t)
  */
@@ -13,9 +14,7 @@
 #include "at32f45x.h"
 #include "ota_config.h"
 #include "flash.h"
-#include "iap.h"
 #include "boot_usart.h"
-#include <stdio.h>
 #include <string.h>
 
 /* ============================================================
@@ -161,40 +160,32 @@ static int try_apply_pending(void)
     if (!(snap.flags & APP_FLAG_PENDING)) return 0;
     if (snap.app_size == 0 || snap.app_size > STAGING_MAX_SIZE) return 0;
 
-    printf("BOOT: staging detected, size=%u, verifying CRC...\r\n",
-           (unsigned)snap.app_size);
+    boot_puts("BOOT: staging sz="); boot_put_u32(snap.app_size); boot_puts("\r\n");
 
     /* 验证 Staging 区 CRC32 */
     uint32_t crc = boot_crc32((const void *)STAGING_START_ADDR, snap.app_size);
     if (crc != snap.app_crc32) {
-        printf("BOOT: staging CRC mismatch (got 0x%08lX, expect 0x%08lX), discard\r\n",
-               (unsigned long)crc, (unsigned long)snap.app_crc32);
         /* 清除 Staging Header 防止重复尝试 */
         erase_region(STAGING_HEADER_ADDR, FLASH_SECTOR_SIZE);
         return 0;
     }
-
-    printf("BOOT: CRC OK, applying update...\r\n");
 
     /* 擦除 App 区 (App Header + App 代码) */
     uint32_t app_erase_size = FLASH_SECTOR_SIZE + snap.app_size;
     /* 向上对齐到扇区边界 */
     app_erase_size = (app_erase_size + FLASH_SECTOR_SIZE - 1) & ~(FLASH_SECTOR_SIZE - 1);
     if (erase_region(APP_HEADER_ADDR, app_erase_size) != 0) {
-        printf("BOOT: app erase FAILED\r\n");
         return -1;
     }
 
     /* 复制 Staging → App */
     if (program_block(APP_START_ADDR, (const void *)STAGING_START_ADDR, snap.app_size) != 0) {
-        printf("BOOT: app program FAILED\r\n");
         return -1;
     }
 
     /* 验证复制后的 CRC */
     uint32_t verify_crc = boot_crc32((const void *)APP_START_ADDR, snap.app_size);
     if (verify_crc != snap.app_crc32) {
-        printf("BOOT: post-copy CRC FAILED\r\n");
         return -1;
     }
 
@@ -210,52 +201,54 @@ static int try_apply_pending(void)
     fresh.build_time = snap.build_time;
 
     if (program_block(APP_HEADER_ADDR, &fresh, sizeof(fresh)) != 0) {
-        printf("BOOT: header write FAILED\r\n");
         return -1;
     }
 
     /* 清除 Staging Header (防止重复应用) */
     erase_region(STAGING_HEADER_ADDR, FLASH_SECTOR_SIZE);
 
-    printf("BOOT: update applied OK, ver=%u\r\n", (unsigned)fresh.version);
+    boot_puts("BOOT: updated v"); boot_put_u32(fresh.version); boot_puts("\r\n");
     return 1;
 }
 
+/* 函数指针类型定义 */
+typedef void (*app_func_t)(void);
+
 /* ============================================================
- * 跳转到 App
+ * 跳转到 App (内联汇编，最可靠)
  * ============================================================ */
 __attribute__((noreturn))
 static void jump_to_app(uint32_t app_base)
 {
-    /* 禁用USART (如果初始化过) */
+    uint32_t sp = *(volatile uint32_t *)app_base;
+    uint32_t pc = *(volatile uint32_t *)(app_base + 4);
+
+    /* 栈指针有效性检查 */
+    if ((sp - 0x20000000) > (144 * 1024)) {
+        boot_puts("BOOT: bad SP\r\n");
+        while (1);
+    }
+
+    /* 等待UART发送完成 */
+    while (usart_flag_get(BOOT_USART, USART_TDC_FLAG) == RESET);
+
+    /* 关闭用到的外设 */
     crm_periph_clock_enable(CRM_USART1_PERIPH_CLOCK, FALSE);
     crm_periph_clock_enable(CRM_GPIOA_PERIPH_CLOCK, FALSE);
     crm_periph_clock_enable(CRM_GPIOB_PERIPH_CLOCK, FALSE);
 
-    /* 关闭 SysTick */
-    SysTick->CTRL = 0;
-    SysTick->LOAD = 0;
-    SysTick->VAL  = 0;
+    /* 禁用USART1中断 */
+    nvic_irq_disable(USART1_IRQn);
+    NVIC_ClearPendingIRQ(USART1_IRQn);
 
-    /* 禁用所有中断 */
-    for (int i = 0; i < 8; i++) {
-        NVIC->ICER[i] = 0xFFFFFFFF;
-        NVIC->ICPR[i] = 0xFFFFFFFF;
-    }
+    /* 内联汇编跳转 (ARM Thumb-2) */
+    __asm volatile (
+        "MSR MSP, %0    \n"  /* 设置主栈指针 */
+        "BX  %1         \n"  /* 跳转到Reset_Handler */
+        : : "r" (sp), "r" (pc)
+    );
 
-    /* 设置 VTOR */
-    SCB->VTOR = app_base;
-    __DSB();
-    __ISB();
-
-    /* 跳转 */
-    uint32_t sp = *(volatile uint32_t *)app_base;
-    uint32_t pc = *(volatile uint32_t *)(app_base + 4);
-
-    __set_MSP(sp);
-    ((void (*)(void))pc)();
-
-    while (1); /* never reached */
+    while (1);
 }
 
 /* ============================================================
@@ -268,14 +261,14 @@ int main(void)
 
     /* 初始化USART用于调试输出 (OTA流程可能需要打印) */
     boot_usart_init();
-    printf("\r\nBOOT: AT32F456 OTA Bootloader v2.0\r\n");
+    boot_puts("\r\nBOOT v2.0\r\n");
 
     /* ============================================================
      * 阶段1: 检查 Staging 区是否有待应用的 OTA 固件
      * ============================================================ */
     int apply_result = try_apply_pending();
     if (apply_result < 0) {
-        printf("BOOT: apply failed, trying existing app...\r\n");
+        /* apply failed, fall through to existing app check */
     }
 
     /* ============================================================
@@ -286,14 +279,11 @@ int main(void)
     if (header_valid(ah, APP_START_ADDR)) {
         /* App有效，检查 boot_count */
         if (ah->boot_count >= MAX_BOOT_COUNT) {
-            printf("BOOT: boot_count=%u >= %u, app unstable! Entering IAP...\r\n",
-                   (unsigned)ah->boot_count, MAX_BOOT_COUNT);
-            /* 不跳转，进入IAP */
+            boot_puts("BOOT: unstable!\r\n");
+            /* 不跳转 */
         } else {
             /* boot_count++, 写回 header */
-            printf("BOOT: app valid, ver=%u, count=%u->%u, jumping...\r\n",
-                   (unsigned)ah->version, (unsigned)ah->boot_count,
-                   (unsigned)(ah->boot_count + 1));
+            boot_puts("BOOT: jump v"); boot_put_u32(ah->version); boot_puts("\r\n");
 
             app_header_t updated;
             memcpy(&updated, ah, sizeof(updated));
@@ -315,19 +305,16 @@ int main(void)
 
         if ((reset_vector & 0xFF000000) == 0x08000000 &&
             stack_ptr >= 0x20000000 && stack_ptr <= 0x20020000) {
-            printf("BOOT: no valid header, but vector table OK (dev mode), jumping...\r\n");
+            boot_puts("BOOT: dev mode\r\n");
             jump_to_app(APP_START_ADDR);
         }
-
-        printf("BOOT: no valid app found\r\n");
     }
 
     /* ============================================================
-     * 阶段3: IAP 串口升级模式
+     * 阶段3: 无有效App，死循环等待烧录器重新烧写
      * ============================================================ */
-    printf("BOOT: entering IAP mode (USART1 @ 921600)...\r\n");
-    iap_init();
+    boot_puts("BOOT: no app!\r\n");
     while (1) {
-        iap_upgrade_app_handle();
+        /* 等待调试器烧写或硬件复位 */
     }
 }
