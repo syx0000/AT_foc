@@ -94,7 +94,7 @@ extern volatile uint32_t g_vdc_raw;
  * Migrated from cubemx_yxsui/Core/Src/main.c:64-66 */
 uint8_t open_loop_mode = 0;  /* 0=auto rotate, 1=encoder follow */
 int16_t v_d_test = 0;        /* d-axis voltage (Q10 format) */
-int16_t v_q_test = 512;      /* q-axis voltage (Q10 ~0.5V) */
+int16_t v_q_test = 1024;      /* q-axis voltage (Q10 ~1V) */
 
 /* CAN protocol calibration request flag (set by CAN 0x2F01 cmd) */
 volatile uint8_t g_can_cali_request = 0;
@@ -149,9 +149,6 @@ int main(void)
   /* init gpio function. */
   wk_gpio_config();
 
-  /* init tmr6 function. */
-  wk_tmr6_init();
-
   /* init dma1 channel3 */
   wk_dma1_channel3_init();
   /* config dma channel transfer parameter */
@@ -163,6 +160,9 @@ int main(void)
                         DMA1_CHANNEL3_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL3, TRUE);
 
+  /* init tmr1 function. */
+  wk_tmr1_init();
+
   /* init adc-common function. */
   wk_adc_common_init();
 
@@ -172,6 +172,9 @@ int main(void)
   /* init adc2 function. */
   wk_adc2_init();
 
+  /* init tmr6 function. */
+  wk_tmr6_init();
+
   /* init usart1 function. */
   wk_usart1_init();
 
@@ -180,9 +183,6 @@ int main(void)
 
   /* init can1 function. */
   wk_can1_init();
-
-  /* init tmr1 function. */
-  wk_tmr1_init();
 
   /* init dma1 channel1 */
   wk_dma1_channel1_init();
@@ -248,6 +248,16 @@ int main(void)
 	}
 
 	/* ADC zero offset calibration (motor must be stopped, IGBT off) */
+	/* EN_GATE wakeup sequence (aligned with cubemx reference main.c:148-158)
+	 * GPIO init sets EN_GATE=LOW (DRV8353 sleep). After power stabilization,
+	 * pull HIGH and wait tWAKE before enabling PWM. */
+	wk_delay_ms(100);  /* power rail stabilization */
+	gpio_bits_set(EN_GATE_GPIO_PORT, EN_GATE_PIN);
+	wk_delay_ms(2);    /* tWAKE: DRV8353 wake from sleep (~1ms typ) */
+	/* Clear any spurious BIF latch caused by nFAULT during DRV sleep */
+	TMR1->ists = ~(1u << 7);  /* BIF = bit7, write 0 to clear */
+	printf("EN_GATE HIGH, DRV awake, BIF cleared\r\n");
+
 	printf("ADC: calibrating offsets (1024 samples)...\r\n");
 	adc_calibrate_offsets(1024);
 	printf("ADC: offset_a=%d offset_b=%d\r\n", g_adc_offset_a, g_adc_offset_b);

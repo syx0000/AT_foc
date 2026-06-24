@@ -50,7 +50,8 @@ void wk_gpio_config(void)
   /* add user code end gpio_config 1 */
 
   /* gpio output config */
-  gpio_bits_set(GPIOC, LED_RUN_PIN | LED_ERR_PIN | EN_GATE_PIN);
+  gpio_bits_set(GPIOC, LED_RUN_PIN | LED_ERR_PIN);
+  gpio_bits_reset(EN_GATE_GPIO_PORT, EN_GATE_PIN);
   gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
   gpio_bits_reset(GPIOH, CAN_RES_PIN | CAN_STB_PIN);
 

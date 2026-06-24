@@ -100,8 +100,9 @@ typedef uint8_t  BOOL;
 // AT32 12bit ADC: 满量程4095 vs STM32 65535, 比值16x
 // 推导: I_Q10 = (raw-offset) * 3.3 * 1024 / 4095 / 10 / Rshunt
 //   板 V2 (0.00125Ω): I_Q10 = (raw-offset) * 528 / 8 = (raw-offset) * 66
-#define CURRENT_TRANS_NUMERATOR 528
-#define CURRENT_TRANS_DENOMINATOR 4    /* AT32 12bit + V2 板 0.00125Ω */
+#define CURRENT_TRANS_NUMERATOR 66
+#define CURRENT_TRANS_DENOMINATOR 2    /* AT32 12bit + V2 板 0.00125Ω/运放5倍-0欧姆 ：1
+                                        AT32 12bit + V1 板 0.0025Ω ：2*/
 
 //
 // 编码器分辨率常量 - DPT 双磁编码器 24位
