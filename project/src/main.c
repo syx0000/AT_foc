@@ -44,6 +44,18 @@
 #include "motor_pwm_port.h"
 #include "motor_board_config.h"
 #include "motor_timebase.h"
+#include "motor_adc_port.h"
+#include "motor_current_calibration.h"
+#include "motor_current_sample.h"
+#include "motor_slow_sensor.h"
+#include "motor_open_loop.h"
+#include "motor_hall_port.h"
+#include "motor_hall_angle_observer.h"
+#include "motor_hall_angle_estimator.h"
+#include "motor_current_transform.h"
+#include "motor_resistance_identification.h"
+#include "motor_inductance_identification.h"
+#include "motor_current_loop_test.h"
 
 /* add user code end private includes */
 
@@ -64,17 +76,43 @@
 
 /* private variables ---------------------------------------------------------*/
 /* add user code begin private variables */
-volatile uint16_t motor_adc_ordinary_dma_buffer[4];
-
 /* add user code end private variables */
 
 /* private function prototypes --------------------------------------------*/
 /* add user code begin function prototypes */
+static bool motor_driver_prepare_for_calibration(void);
 
 /* add user code end function prototypes */
 
 /* private user code ---------------------------------------------------------*/
 /* add user code begin 0 */
+
+/**
+ * @brief 唤醒门极驱动器并准备电流零偏校准条件。
+ * @param 无。
+ * @return true表示nFAULT已恢复、BIF已清除且PWM仍关闭；false表示驱动器
+ *         未就绪，函数已执行紧急关断。
+ * @details 先强制关闭PWM输出，再拉高EN_GATE并等待DRV8353及电流放大器稳定，
+ *          随后检查nFAULT并清除TMR1刹车标志。该函数不会开启MOE或输出PWM。
+ */
+static bool motor_driver_prepare_for_calibration(void)
+{
+  bool fault_ready;
+
+  motor_pwm_port_output_disable();
+  motor_pwm_port_gate_driver_set(true);
+  wk_delay_ms(MOTOR_GATE_DRIVER_WAKE_DELAY_MS);
+  fault_ready = motor_pwm_port_fault_clear();
+
+  if ((!fault_ready) ||
+      (MOTOR_PWM_TIMER->brk_bit.oen != 0U))
+  {
+    motor_pwm_port_emergency_stop();
+    return false;
+  }
+
+  return true;
+}
 
 /* add user code end 0 */
 
@@ -109,6 +147,13 @@ int main(void)
      void wk_delay_ms(uint32_t delay); */
   wk_timebase_init();
   motor_timebase_init();
+  motor_adc_port_init();
+  motor_current_sample_init();
+  motor_slow_sensor_init();
+  motor_open_loop_init();
+  motor_hall_angle_observer_init();
+  motor_hall_angle_estimator_init();
+  motor_current_transform_init();
 
   /* init gpio function. */
   wk_gpio_config();
@@ -196,46 +241,117 @@ int main(void)
 
   /* init exint function. */
   wk_exint_config();
+  motor_hall_port_init();
 
   /* add user code begin 2 */
   LOGI("AT_foc_hall\r\n");
   LOGI("FW: %s\r\n", FIRMWARE_VERSION_STRING);
   LOGI("HW: %s\r\n", HARDWARE_VERSION_STRING);
   LOGI("APP: OK\r\n");
-
-  /* 临时上板验证：DRV8353唤醒及三相50% PWM；正式状态机接入后删除。 */
-  if (0)
+  if (motor_driver_prepare_for_calibration())
   {
-    bool fault_ready;
-    bool pwm_enabled = false;
-    motor_pwm_compare_t test_compare = {
-      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U),
-      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U),
-      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U)
-    };
+    motor_current_calibration_result_t calibration_result;
 
-    motor_pwm_port_gate_driver_set(true);
-    wk_delay_ms(2U);
-    fault_ready = motor_pwm_port_fault_clear();
+    LOGI("DRV calibration ready: nFAULT=1 BIF=0 MOE=0\r\n");
+    LOGI("ADC calibration: started samples=%lu\r\n",
+         (unsigned long)MOTOR_CURRENT_CALIBRATION_DEFAULT_SAMPLES);
+    if (motor_current_calibration_run(
+          MOTOR_CURRENT_CALIBRATION_DEFAULT_SAMPLES,
+          500U,
+          &calibration_result))
+    {
+      if (motor_current_sample_offsets_set(
+            calibration_result.phase_a_offset_raw,
+            calibration_result.phase_b_offset_raw))
+      {
+        LOGI("ADC calibration: offset_a=%u offset_b=%u samples=%lu valid=1\r\n",
+             (unsigned int)calibration_result.phase_a_offset_raw,
+             (unsigned int)calibration_result.phase_b_offset_raw,
+             (unsigned long)calibration_result.sample_count);
 
-    LOGI("DRV: nFAULT=%u BIF=%u ready=%u MOE=%u\r\n",
+        /* 等待10 kHz正式电流处理产生有效样本，再允许开启开环PWM。 */
+        wk_delay_ms(2U);
+        {
+          motor_resistance_identification_result_t resistance_result;
+
+          LOGI("Rs identification: started target=3000 mA max_voltage=1000 mV\r\n");
+          if (motor_resistance_identification_run(&resistance_result))
+          {
+            LOGI("Rs identification: PASS ud=%u mV ia=%ld mA rs=%lu mOhm samples=%lu\r\n",
+                 (unsigned int)resistance_result.applied_voltage_mv,
+                 (long)resistance_result.phase_a_average_ma,
+                 (unsigned long)resistance_result.resistance_average_mohm,
+                 (unsigned long)resistance_result.sample_count);
+            {
+              motor_inductance_identification_result_t inductance_result;
+              LOGI("L identification: started frequency=600 Hz voltage=500 mV\r\n");
+              if (motor_inductance_identification_run(
+                    resistance_result.resistance_average_mohm,
+                    &inductance_result))
+              {
+                LOGI("L identification: PASS Ld=%lu uH Lq=%lu uH Id_amp=%lu mA Iq_amp=%lu mA\r\n",
+                     (unsigned long)inductance_result.direct_inductance_uh,
+                     (unsigned long)inductance_result.quadrature_inductance_uh,
+                     (unsigned long)inductance_result.direct_current_amplitude_ma,
+                     (unsigned long)inductance_result.quadrature_current_amplitude_ma);
+                {
+                  motor_current_loop_test_result_t current_loop_result;
+                  LOGI("Current loop test: started Id_ref=2000 mA Iq_ref=0 mA\r\n");
+                  if (motor_current_loop_test_run(&current_loop_result))
+                  {
+                    LOGI("Current loop test: PASS Id_avg=%ld Iq_avg=%ld mA peak=%ld/%ld mA Vd/Vq=%ld/%ld mV samples=%lu\r\n",
+                         (long)current_loop_result.direct_average_ma,
+                         (long)current_loop_result.quadrature_average_ma,
+                         (long)current_loop_result.direct_peak_ma,
+                         (long)current_loop_result.quadrature_peak_ma,
+                         (long)current_loop_result.direct_voltage_mv,
+                         (long)current_loop_result.quadrature_voltage_mv,
+                         (unsigned long)current_loop_result.sample_count);
+                  }
+                  else
+                  {
+                    LOGE("Current loop test: FAIL\r\n");
+                    motor_pwm_port_emergency_stop();
+                  }
+                }
+              }
+              else
+              {
+                LOGE("L identification: FAIL\r\n");
+                motor_pwm_port_emergency_stop();
+              }
+            }
+          }
+          else
+          {
+            LOGE("Rs identification: FAIL status=%u ud=%u mV ia=%ld mA\r\n",
+                 (unsigned int)resistance_result.status,
+                 (unsigned int)resistance_result.applied_voltage_mv,
+                 (long)resistance_result.phase_a_average_ma);
+          }
+        }
+        /* 电阻辨识完成后保持PWM关闭，不自动进入开环旋转。 */
+      }
+      else
+      {
+        LOGE("ADC calibration: offset_a=%u offset_b=%u valid=0\r\n",
+             (unsigned int)calibration_result.phase_a_offset_raw,
+             (unsigned int)calibration_result.phase_b_offset_raw);
+        motor_pwm_port_emergency_stop();
+      }
+    }
+    else
+    {
+      LOGE("ADC calibration: timeout or invalid request\r\n");
+      motor_pwm_port_emergency_stop();
+    }
+  }
+  else
+  {
+    LOGE("DRV calibration blocked: nFAULT=%u BIF=%u MOE=%u\r\n",
          (unsigned int)gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
                                                  MOTOR_PWM_BREAK_PIN),
          (unsigned int)tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG),
-         (unsigned int)fault_ready,
-         (unsigned int)MOTOR_PWM_TIMER->brk_bit.oen);
-
-    if (fault_ready)
-    {
-      motor_pwm_port_compare_set(&test_compare);
-      pwm_enabled = motor_pwm_port_output_enable();
-    }
-
-    LOGI("PWM TEST: compare=%u/%u/%u enabled=%u MOE=%u\r\n",
-         (unsigned int)test_compare.phase_a,
-         (unsigned int)test_compare.phase_b,
-         (unsigned int)test_compare.phase_c,
-         (unsigned int)pwm_enabled,
          (unsigned int)MOTOR_PWM_TIMER->brk_bit.oen);
   }
 
@@ -244,6 +360,7 @@ int main(void)
   while(1)
   {
     /* add user code begin 3 */
+    (void)motor_slow_sensor_process();
     interrupt_monitor_poll();
 
     /* add user code end 3 */

@@ -1,5 +1,12 @@
 # 修改记录
 
+2026.09.03.4  FOC采样与控制内核：新增双ADC快慢采样端口、电流零偏校准、三相电流换算、慢速母线及温度换算；
+              新增Q15正余弦、Clarke/Park、反Park、SVPWM和200 Hz定点电流PI，电流标幺固定为128 A对应1.0；
+              新增Hall端口、六步方向及频率统计、边沿角度标定和边沿间插值，实测10 Hz下三路边沿20/20/20、非法跳变为0；
+              完成低压开环试转，48 V空载母线电流约0.246 A，Hall估算角度与开环角度误差约0.5°；
+              新增阻塞式Rs/Ld/Lq辨识，实测Rs=273 mΩ、Ld=225 µH、Lq=206 µH；
+              新增固定角度Id=2 A电流PI测试，实测Id平均1991 mA、Iq平均-12 mA，测试结束自动关闭PWM。
+
 2026.09.03.3  PWM安全端口与性能监控：新增motor_pwm_port和motor_board_config，统一三相比较值写入、门极控制、
               nFAULT/BIF检查、PWM使能关闭及紧急关断，初始化默认保持EN_GATE和PWM输出关闭；
               新增基于DWT的motor_timebase和通用motor_performance_monitor，支持多统计点独立记录最近值、峰值和次数；

@@ -30,6 +30,17 @@
 /* add user code begin private includes */
 #include "interrupt_monitor.h"
 #include "motor_performance_monitor.h"
+#include "motor_adc_port.h"
+#include "motor_current_calibration.h"
+#include "motor_current_sample.h"
+#include "motor_pwm_port.h"
+#include "motor_open_loop.h"
+#include "motor_hall_port.h"
+#include "motor_hall_angle_observer.h"
+#include "motor_hall_angle_estimator.h"
+#include "motor_current_transform.h"
+#include "motor_inductance_identification.h"
+#include "motor_current_loop_test.h"
 
 /* add user code end private includes */
 
@@ -241,6 +252,7 @@ void DMA1_Channel3_IRQHandler(void)
     /* handle full data transfer and clear flag */
     dma_flag_clear(DMA1_FDT3_FLAG);
     interrupt_monitor_counters.adc_slow_dma_complete++;
+    motor_adc_port_slow_sample_capture();
     /* add user code end DMA1_FDT3_FLAG */ 
   }
 
@@ -259,6 +271,7 @@ void ADC1_2_IRQHandler(void)
   /* add user code begin ADC1_2_IRQ 0 */
   uint32_t start_cycles = motor_performance_monitor_begin();
   uint32_t adc_fast_handled = 0U;
+  motor_adc_fast_sample_t adc_fast_sample;
 
   /* add user code end ADC1_2_IRQ 0 */
 
@@ -268,6 +281,17 @@ void ADC1_2_IRQHandler(void)
     /* clear flag */
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
     interrupt_monitor_counters.adc_fast_complete++;
+    motor_adc_port_fast_sample_capture(&adc_fast_sample);
+    motor_current_calibration_sample_process(&adc_fast_sample);
+    if (motor_current_sample_process(&adc_fast_sample))
+    {
+      motor_pwm_port_emergency_stop();
+    }
+    motor_open_loop_fast_process();
+    motor_hall_angle_estimator_fast_process();
+    motor_current_transform_fast_process();
+    motor_inductance_identification_fast_process();
+    motor_current_loop_test_fast_process();
     adc_fast_handled = 1U;
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
@@ -344,6 +368,7 @@ void CAN1_ERR_IRQHandler(void)
 void EXINT9_5_IRQHandler(void)
 {
   /* add user code begin EXINT9_5_IRQ 0 */
+  uint32_t hall_edge_handled = 0U;
 
   /* add user code end EXINT9_5_IRQ 0 */
 
@@ -353,6 +378,7 @@ void EXINT9_5_IRQHandler(void)
     /* clear flag */
     exint_flag_clear(EXINT_LINE_5);
     interrupt_monitor_counters.hall_a_edge++;
+    hall_edge_handled = 1U;
     /* add user code end EXINT_LINE_5 */ 
   }
 
@@ -362,6 +388,7 @@ void EXINT9_5_IRQHandler(void)
     /* clear flag */
     exint_flag_clear(EXINT_LINE_6);
     interrupt_monitor_counters.hall_b_edge++;
+    hall_edge_handled = 1U;
     /* add user code end EXINT_LINE_6 */ 
   }
 
@@ -371,10 +398,17 @@ void EXINT9_5_IRQHandler(void)
     /* clear flag */
     exint_flag_clear(EXINT_LINE_7);
     interrupt_monitor_counters.hall_c_edge++;
+    hall_edge_handled = 1U;
     /* add user code end EXINT_LINE_7 */ 
   }
 
   /* add user code begin EXINT9_5_IRQ 1 */
+  if (hall_edge_handled != 0U)
+  {
+    motor_hall_port_edge_capture();
+    motor_hall_angle_observer_edge_process();
+    motor_hall_angle_estimator_edge_process();
+  }
 
   /* add user code end EXINT9_5_IRQ 1 */
 }

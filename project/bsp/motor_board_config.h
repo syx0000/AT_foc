@@ -29,6 +29,7 @@
 #define MOTOR_GATE_ENABLE_PORT              EN_GATE_GPIO_PORT
 #define MOTOR_GATE_ENABLE_PIN               EN_GATE_PIN
 #define MOTOR_GATE_ENABLE_ACTIVE_HIGH       1U
+#define MOTOR_GATE_DRIVER_WAKE_DELAY_MS      2U
 /* TMR1硬件刹车输入：PB12，低电平有效；在PWM输出使能前由端口层开启。 */
 #define MOTOR_PWM_BREAK_PORT                GPIOB
 #define MOTOR_PWM_BREAK_PIN                 GPIO_PINS_12
