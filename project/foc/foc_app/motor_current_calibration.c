@@ -9,13 +9,13 @@ typedef enum
   MOTOR_CURRENT_CALIBRATION_COMPLETE
 } motor_current_calibration_state_t;
 
-static volatile motor_current_calibration_state_t calibration_state =
+static volatile motor_current_calibration_state_t motor_current_calibration_state =
   MOTOR_CURRENT_CALIBRATION_IDLE;
-static volatile uint32_t calibration_target_count;
-static volatile uint32_t calibration_sample_count;
-static volatile uint32_t calibration_phase_a_sum;
-static volatile uint32_t calibration_phase_b_sum;
-static volatile motor_current_calibration_result_t calibration_result;
+static volatile uint32_t motor_current_calibration_target_count;
+static volatile uint32_t motor_current_calibration_sample_count;
+static volatile uint32_t motor_current_calibration_phase_a_sum;
+static volatile uint32_t motor_current_calibration_phase_b_sum;
+static volatile motor_current_calibration_result_t motor_current_calibration_result;
 
 bool motor_current_calibration_run(
   uint32_t sample_count,
@@ -39,28 +39,28 @@ bool motor_current_calibration_run(
 
   primask = __get_PRIMASK();
   __disable_irq();
-  if (calibration_state == MOTOR_CURRENT_CALIBRATION_RUNNING)
+  if (motor_current_calibration_state == MOTOR_CURRENT_CALIBRATION_RUNNING)
   {
     __set_PRIMASK(primask);
     return false;
   }
 
-  calibration_target_count = sample_count;
-  calibration_sample_count = 0U;
-  calibration_phase_a_sum = 0U;
-  calibration_phase_b_sum = 0U;
-  calibration_result.sample_count = 0U;
-  calibration_state = MOTOR_CURRENT_CALIBRATION_RUNNING;
+  motor_current_calibration_target_count = sample_count;
+  motor_current_calibration_sample_count = 0U;
+  motor_current_calibration_phase_a_sum = 0U;
+  motor_current_calibration_phase_b_sum = 0U;
+  motor_current_calibration_result.sample_count = 0U;
+  motor_current_calibration_state = MOTOR_CURRENT_CALIBRATION_RUNNING;
   __set_PRIMASK(primask);
 
   start_cycles = motor_timebase_cycles_get();
-  while (calibration_state == MOTOR_CURRENT_CALIBRATION_RUNNING)
+  while (motor_current_calibration_state == MOTOR_CURRENT_CALIBRATION_RUNNING)
   {
     if (motor_timebase_cycles_elapsed(start_cycles) >= timeout_cycles)
     {
       primask = __get_PRIMASK();
       __disable_irq();
-      calibration_state = MOTOR_CURRENT_CALIBRATION_IDLE;
+      motor_current_calibration_state = MOTOR_CURRENT_CALIBRATION_IDLE;
       __set_PRIMASK(primask);
       return false;
     }
@@ -68,10 +68,10 @@ bool motor_current_calibration_run(
 
   primask = __get_PRIMASK();
   __disable_irq();
-  result->phase_a_offset_raw = calibration_result.phase_a_offset_raw;
-  result->phase_b_offset_raw = calibration_result.phase_b_offset_raw;
-  result->sample_count = calibration_result.sample_count;
-  calibration_state = MOTOR_CURRENT_CALIBRATION_IDLE;
+  result->phase_a_offset_raw = motor_current_calibration_result.phase_a_offset_raw;
+  result->phase_b_offset_raw = motor_current_calibration_result.phase_b_offset_raw;
+  result->sample_count = motor_current_calibration_result.sample_count;
+  motor_current_calibration_state = MOTOR_CURRENT_CALIBRATION_IDLE;
   __set_PRIMASK(primask);
 
   return true;
@@ -81,22 +81,22 @@ void motor_current_calibration_sample_process(
   const motor_adc_fast_sample_t *sample)
 {
   if ((sample == 0) ||
-      (calibration_state != MOTOR_CURRENT_CALIBRATION_RUNNING))
+      (motor_current_calibration_state != MOTOR_CURRENT_CALIBRATION_RUNNING))
   {
     return;
   }
 
-  calibration_phase_a_sum += sample->phase_a_raw;
-  calibration_phase_b_sum += sample->phase_b_raw;
-  calibration_sample_count++;
+  motor_current_calibration_phase_a_sum += sample->phase_a_raw;
+  motor_current_calibration_phase_b_sum += sample->phase_b_raw;
+  motor_current_calibration_sample_count++;
 
-  if (calibration_sample_count >= calibration_target_count)
+  if (motor_current_calibration_sample_count >= motor_current_calibration_target_count)
   {
-    calibration_result.phase_a_offset_raw = (uint16_t)
-      (calibration_phase_a_sum / calibration_target_count);
-    calibration_result.phase_b_offset_raw = (uint16_t)
-      (calibration_phase_b_sum / calibration_target_count);
-    calibration_result.sample_count = calibration_sample_count;
-    calibration_state = MOTOR_CURRENT_CALIBRATION_COMPLETE;
+    motor_current_calibration_result.phase_a_offset_raw = (uint16_t)
+      (motor_current_calibration_phase_a_sum / motor_current_calibration_target_count);
+    motor_current_calibration_result.phase_b_offset_raw = (uint16_t)
+      (motor_current_calibration_phase_b_sum / motor_current_calibration_target_count);
+    motor_current_calibration_result.sample_count = motor_current_calibration_sample_count;
+    motor_current_calibration_state = MOTOR_CURRENT_CALIBRATION_COMPLETE;
   }
 }

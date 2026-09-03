@@ -48,13 +48,15 @@ void motor_hall_angle_estimator_edge_process(void)
   }
 
   motor_hall_phase_accumulator =
-    (uint32_t)motor_hall_edge_angle_u16[hall_sample.state] << 16;
+    (uint32_t)(uint16_t)(motor_hall_edge_angle_u16[hall_sample.state] +
+                         MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16) << 16;
   motor_hall_phase_step =
     (uint32_t)(((uint64_t)hall_sample.electrical_frequency_millihz << 32) /
                ((uint64_t)MOTOR_PWM_FREQUENCY_HZ * 1000U));
   motor_hall_last_edge_cycles = hall_sample.timestamp_cycles;
   motor_hall_angle_estimator.electrical_angle_u16 =
-    motor_hall_edge_angle_u16[hall_sample.state];
+    (uint16_t)(motor_hall_edge_angle_u16[hall_sample.state] +
+               MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16);
   motor_hall_angle_estimator.electrical_frequency_millihz =
     hall_sample.electrical_frequency_millihz;
   motor_hall_angle_estimator.hall_state = hall_sample.state;

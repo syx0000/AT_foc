@@ -39,6 +39,7 @@
 /* add user code begin private includes */
 #include <stdio.h>
 #include "product_version.h"
+#include "motor_control_config.h"
 #include "motor_log.h"
 #include "interrupt_monitor.h"
 #include "motor_pwm_port.h"
@@ -56,6 +57,8 @@
 #include "motor_resistance_identification.h"
 #include "motor_inductance_identification.h"
 #include "motor_current_loop_test.h"
+#include "motor_current_control.h"
+#include "motor_torque_loop_test.h"
 
 /* add user code end private includes */
 
@@ -154,6 +157,7 @@ int main(void)
   motor_hall_angle_observer_init();
   motor_hall_angle_estimator_init();
   motor_current_transform_init();
+  motor_current_control_init();
 
   /* init gpio function. */
   wk_gpio_config();
@@ -307,6 +311,41 @@ int main(void)
                          (long)current_loop_result.direct_voltage_mv,
                          (long)current_loop_result.quadrature_voltage_mv,
                          (unsigned long)current_loop_result.sample_count);
+                    {
+                      motor_torque_loop_test_result_t torque_result;
+                      LOGI("Torque loop test: started Id_ref=0 mA Iq_ref=%ld mA duration=%lu ms\r\n",
+                           (long)MOTOR_TORQUE_TEST_QUADRATURE_REFERENCE_MA,
+                           (unsigned long)(MOTOR_TORQUE_TEST_DURATION_SAMPLES /
+                                           (MOTOR_PWM_FREQUENCY_HZ / 1000U)));
+                      if (motor_torque_loop_test_run(&torque_result))
+                      {
+                        LOGI("Torque loop test: PASS Id/Iq_avg=%ld/%ld mA peak=%ld/%ld mA Vd/Vq_avg=%ld/%ld mV final=%ld/%ld mV freq=%lu.%03lu Hz samples=%lu\r\n",
+                             (long)torque_result.direct_average_ma,
+                             (long)torque_result.quadrature_average_ma,
+                             (long)torque_result.direct_peak_ma,
+                             (long)torque_result.quadrature_peak_ma,
+                             (long)torque_result.direct_voltage_average_mv,
+                             (long)torque_result.quadrature_voltage_average_mv,
+                             (long)torque_result.final_direct_voltage_mv,
+                             (long)torque_result.final_quadrature_voltage_mv,
+                             (unsigned long)(torque_result.final_frequency_millihz / 1000U),
+                             (unsigned long)(torque_result.final_frequency_millihz % 1000U),
+                             (unsigned long)torque_result.sample_count);
+                      }
+                      else
+                      {
+                        LOGE("Torque loop test: FAIL status=%u samples=%lu hall=%u freq=%lu.%03lu Hz current=%ld/%ld/%ld mA\r\n",
+                             (unsigned int)torque_result.status,
+                             (unsigned long)torque_result.sample_count,
+                             (unsigned int)torque_result.final_hall_state,
+                             (unsigned long)(torque_result.final_frequency_millihz / 1000U),
+                             (unsigned long)(torque_result.final_frequency_millihz % 1000U),
+                             (long)torque_result.final_phase_a_ma,
+                             (long)torque_result.final_phase_b_ma,
+                             (long)torque_result.final_phase_c_ma);
+                        motor_pwm_port_emergency_stop();
+                      }
+                    }
                   }
                   else
                   {

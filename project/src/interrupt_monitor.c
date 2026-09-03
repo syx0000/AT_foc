@@ -138,11 +138,13 @@ void interrupt_monitor_poll(void)
   }
   if (open_loop_status_valid)
   {
-    LOGI("Open loop: state=%u angle=%u frequency=%lu.%03lu Hz duty=%u/%u/%u MOE=%u\r\n",
+    LOGI("Open loop: state=%u angle=%u frequency=%ld/%ld mHz voltage=%ld/%ld mV duty=%u/%u/%u MOE=%u\r\n",
          (unsigned int)open_loop_status.state,
          (unsigned int)open_loop_status.electrical_angle_u16,
-         (unsigned long)(open_loop_status.electrical_frequency_millihz / 1000U),
-         (unsigned long)(open_loop_status.electrical_frequency_millihz % 1000U),
+         (long)open_loop_status.actual_frequency_millihz,
+         (long)open_loop_status.target_frequency_millihz,
+         (long)open_loop_status.applied_direct_voltage_mv,
+         (long)open_loop_status.applied_quadrature_voltage_mv,
          (unsigned int)open_loop_status.duty_a_q15,
          (unsigned int)open_loop_status.duty_b_q15,
          (unsigned int)open_loop_status.duty_c_q15,

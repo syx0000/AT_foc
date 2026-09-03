@@ -34,6 +34,34 @@ void motor_current_pi_axis_reset(motor_current_pi_axis_t *controller)
   controller->output_mv = 0;
 }
 
+bool motor_current_pi_axis_output_seed(motor_current_pi_axis_t *controller,
+                                       int32_t output_mv)
+{
+  if ((controller == NULL) || (controller->output_limit_mv <= 0))
+  {
+    return false;
+  }
+  controller->integral_mv = motor_current_pi_limit(
+    output_mv, controller->output_limit_mv);
+  controller->output_mv = controller->integral_mv;
+  return true;
+}
+
+void motor_current_pi_axis_output_track(motor_current_pi_axis_t *controller,
+                                        int32_t applied_output_mv)
+{
+  if ((controller == NULL) || (controller->output_limit_mv <= 0))
+  {
+    return;
+  }
+  applied_output_mv = motor_current_pi_limit(
+    applied_output_mv, controller->output_limit_mv);
+  controller->integral_mv = motor_current_pi_limit(
+    controller->integral_mv + applied_output_mv - controller->output_mv,
+    controller->output_limit_mv);
+  controller->output_mv = applied_output_mv;
+}
+
 int32_t motor_current_pi_axis_process(motor_current_pi_axis_t *controller,
                                       int32_t reference_ma,
                                       int32_t feedback_ma)

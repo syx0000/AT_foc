@@ -60,8 +60,9 @@ typedef struct {
     uint32_t reserved[25];      /* 填充至128字节 */
 } app_header_t;
 
-/* 编译断言: header必须128字节 */
-_Static_assert(sizeof(app_header_t) == 128, "app_header_t must be 128 bytes");
+/* C99/ARMCC5兼容的编译期断言：header必须为128字节。 */
+typedef char app_header_size_must_be_128_bytes[
+    (sizeof(app_header_t) == 128U) ? 1 : -1];
 
 /* ============================================================
  * IAP Legacy 兼容

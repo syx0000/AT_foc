@@ -14,52 +14,86 @@ typedef enum
 
 typedef struct
 {
+  int32_t maximum_voltage_mv;             /**< dq合成电压上限，单位mV。 */
+  int32_t maximum_frequency_millihz;      /**< 正反向电频率绝对值上限，单位mHz。 */
+  int32_t start_frequency_millihz;        /**< 对齐结束后的起始频率绝对值，单位mHz。 */
+  int32_t alignment_voltage_mv;           /**< 转子预定位d轴电压，单位mV。 */
+  uint16_t alignment_angle_u16;           /**< 转子预定位电角度，U16一周制。 */
+  uint32_t alignment_time_ms;             /**< 转子预定位时间，单位ms。 */
+} motor_open_loop_config_t;
+
+typedef struct
+{
+  int32_t direct_voltage_mv;              /**< 运行d轴电压指令，单位mV。 */
+  int32_t quadrature_voltage_mv;          /**< 运行q轴电压指令，单位mV。 */
+  int32_t target_frequency_millihz;       /**< 目标电频率，负值表示反转，单位mHz。 */
+  uint32_t acceleration_millihz_per_s;    /**< 电频率变化率，单位mHz/s。 */
+} motor_open_loop_command_t;
+
+typedef struct
+{
   motor_open_loop_state_t state;
   uint16_t electrical_angle_u16;
-  uint32_t electrical_frequency_millihz;
+  int32_t target_frequency_millihz;
+  int32_t actual_frequency_millihz;
+  int32_t applied_direct_voltage_mv;
+  int32_t applied_quadrature_voltage_mv;
   uint16_t duty_a_q15;
   uint16_t duty_b_q15;
   uint16_t duty_c_q15;
+  bool voltage_limited;
 } motor_open_loop_status_t;
 
 /**
- * @brief 初始化开环电压控制器。
+ * @brief 使用板级默认安全参数初始化开环控制器。
  * @param 无。
  * @return 无。
- * @details 清除角度、频率和占空比状态；不会操作门极驱动器或PWM输出。
+ * @details 清除控制状态和运行指令，不操作PWM输出。
  */
 void motor_open_loop_init(void);
 
 /**
- * @brief 启动低电压开环试转流程。
- * @param 无。
- * @return 电流校准有效、无过流且PWM安全条件满足时返回true，否则返回false。
- * @details 先施加固定d轴电压进行转子预定位，然后自动切换到q轴旋转电压。
- *          本函数会实际开启PWM，调用前必须确保电机架空且电源已限流。
+ * @brief 更新开环安全配置。
+ * @param config 最大电压/频率、起始频率和预定位参数，不允许为空。
+ * @return 参数有效且控制器处于停止状态时返回true，否则返回false。
  */
-bool motor_open_loop_start(void);
+bool motor_open_loop_config_set(const motor_open_loop_config_t *config);
 
 /**
- * @brief 停止开环试转。
- * @param 无。
- * @return 无。
- * @details 关闭TMR1主输出并清除运行状态，门极驱动器保持唤醒。
+ * @brief 按运行指令启动开环控制。
+ * @param command dq电压、目标电频率和加速度指令，不允许为空。
+ * @return 指令及硬件状态满足安全条件并成功开启PWM时返回true。
  */
+bool motor_open_loop_start(const motor_open_loop_command_t *command);
+
+/**
+ * @brief 运行中更新开环指令。
+ * @param command 新的dq电压、目标电频率和加速度指令，不允许为空。
+ * @return 指令有效且控制器正在对齐或运行时返回true，否则返回false。
+ */
+bool motor_open_loop_command_set(const motor_open_loop_command_t *command);
+
+/** @brief 关闭PWM并停止开环控制。 @param 无。 @return 无。 */
 void motor_open_loop_stop(void);
 
 /**
- * @brief 执行一次10 kHz开环控制更新。
+ * @brief 释放开环控制权但保持当前PWM连续输出。
+ * @param 无。
+ * @return 开环正在运行且PWM已开启时返回true，否则返回false。
+ */
+bool motor_open_loop_control_release(void);
+
+/**
+ * @brief 执行一次10 kHz开环角度、频率斜坡和PWM更新。
  * @param 无。
  * @return 无。
- * @details 在快速ADC中断中调用；完成预定位计时、电频率线性爬升、反Park、
- *          SVPWM及三相比较值写入。未启动或故障状态下不写PWM。
  */
 void motor_open_loop_fast_process(void);
 
 /**
- * @brief 原子读取开环控制器状态快照。
- * @param status 输出状态、角度、频率和最近占空比，不允许为空。
- * @return 参数有效时返回true，传入NULL时返回false。
+ * @brief 原子读取开环状态。
+ * @param status 输出状态、目标/实际频率、电压、角度和占空比，不允许为空。
+ * @return 参数有效时返回true，否则返回false。
  */
 bool motor_open_loop_status_read(motor_open_loop_status_t *status);
 

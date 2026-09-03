@@ -526,6 +526,8 @@
             </File>
             <File><FileName>motor_inductance_identification.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_inductance_identification.c</FilePath></File>
             <File><FileName>motor_current_loop_test.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_loop_test.c</FilePath></File>
+            <File><FileName>motor_torque_loop_test.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_torque_loop_test.c</FilePath></File>
+            <File><FileName>motor_current_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_control.c</FilePath></File>
           </Files>
         </Group>
         <Group>
@@ -537,6 +539,8 @@
               <FilePath>..\foc\foc_kernel\motor_foc_math.c</FilePath>
             </File>
             <File><FileName>motor_current_pi.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_current_pi.c</FilePath></File>
+            <File><FileName>motor_voltage_limit.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_voltage_limit.c</FilePath></File>
+            <File><FileName>motor_ramp.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_ramp.c</FilePath></File>
           </Files>
         </Group>
         <Group>

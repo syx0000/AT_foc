@@ -1,6 +1,7 @@
 #ifndef MOTOR_CURRENT_PI_H
 #define MOTOR_CURRENT_PI_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct
@@ -31,6 +32,25 @@ void motor_current_pi_axis_init(motor_current_pi_axis_t *controller,
  * @return 无。
  */
 void motor_current_pi_axis_reset(motor_current_pi_axis_t *controller);
+
+/**
+ * @brief 预置PI积分器和输出，用于控制模式无扰切换。
+ * @param controller 已初始化的控制器状态，不允许为空。
+ * @param output_mv 期望的初始输出电压，单位mV，自动限制到输出范围。
+ * @return 参数有效时返回true，否则返回false。
+ */
+bool motor_current_pi_axis_output_seed(motor_current_pi_axis_t *controller,
+                                       int32_t output_mv);
+
+/**
+ * @brief 将PI内部状态回算到外部实际施加的限幅输出。
+ * @param controller 已完成本周期计算的控制器，不允许为空。
+ * @param applied_output_mv 矢量限幅后实际施加的轴电压，单位mV。
+ * @return 无。
+ * @details 用实际输出与PI请求输出之差修正积分器，防止dq联合限幅造成积分饱和。
+ */
+void motor_current_pi_axis_output_track(motor_current_pi_axis_t *controller,
+                                        int32_t applied_output_mv);
 
 /**
  * @brief 执行一次位置式电流PI计算。

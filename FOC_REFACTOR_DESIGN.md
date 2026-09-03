@@ -643,5 +643,41 @@ ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据
 - `motor_foc_math`提供Q15正余弦、Clarke/Park、反Park和SVPWM，开环10 Hz试转稳定。
 - Hall正向顺序为`1→5→4→6→2→3`，六状态边沿角度已标定并使用完整周期频率进行边沿间插值。
 - 阻塞辨识实测`Rs=273 mΩ、Ld=225 µH、Lq=206 µH`；辨识结果当前只打印，尚未写入Flash。
+
+## 17. FOC模块分层与依赖规范
+
+### 17.1 `foc_kernel`纯算法层
+
+- `motor_foc_math`：Q15三角函数、Clarke/Park、反Park和SVPWM。
+- `motor_current_pi`：单轴电流PI、输出预置和外部限幅抗饱和回算。
+- `motor_voltage_limit`：dq合成电压联合限幅，不读取母线电压或硬件状态。
+- `motor_ramp`：通用有符号线性斜坡，支持跨零和运行中更新目标。
+- 本层禁止包含ADC、Hall、PWM、AT32寄存器及WorkBench生成接口。
+
+### 17.2 `foc_app`控制与流程层
+
+- `motor_open_loop`：管理对齐、运行指令、频率斜坡、PWM所有权和故障状态。
+- `motor_current_control`：正式Hall角度电流闭环，是闭环运行时唯一PWM写入者。
+- `motor_*_identification`和`motor_*_test`：只管理辨识/验证时序和结果统计。
+- 测试模块允许计算交接坐标和采集统计，但不得复制正式PI、限幅或PWM控制链。
+
+### 17.3 `bsp`硬件端口层
+
+- `motor_adc_port`只负责原始ADC采样快照。
+- `motor_pwm_port`只负责比较值、MOE、门极使能和硬件故障安全操作。
+- `motor_hall_port`只负责Hall边沿、状态、方向及周期测量。
+- `motor_timebase`只提供统一周期计数和时间换算。
+
+依赖方向固定为：`foc_app -> foc_kernel + bsp`。`foc_kernel`不得反向依赖
+`foc_app`或`bsp`，BSP也不得包含FOC业务策略。
+
+### 17.4 控制权规范
+
+- 任一时刻只能有一个运行模块写入三相PWM比较值。
+- 开环切换闭环时，先停止开环更新但保持MOE，再由
+  `motor_current_control_handover()`预置PI并接管。
+- 普通停止关闭MOE；采样、Hall、过流或刹车异常必须调用紧急停机。
+- 正式控制参数与一次性测试参数分别分组，均集中在
+  `motor_control_config.h`，禁止在控制源文件内散落可调常量。
 - 200 Hz电流PI采用毫安输入、毫伏输出和条件积分抗饱和；固定角度`Id=2 A`测试平均值为1991 mA，Iq平均值为-12 mA。
 - 当前启动代码用于开发验证，会依次执行Rs、Ld/Lq和电流PI测试，完成后关闭PWM；正式状态机接入时必须移除自动辨识流程。

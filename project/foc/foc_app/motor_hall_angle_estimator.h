@@ -6,7 +6,7 @@
 
 typedef struct
 {
-  uint16_t electrical_angle_u16;       /**< Hall边沿校正并在边沿间插值的电角度。 */
+  uint16_t electrical_angle_u16;       /**< Hall边沿插值并补偿为转子坐标系的电角度。 */
   uint32_t electrical_frequency_millihz; /**< Hall完整周期电频率，单位mHz。 */
   uint8_t hall_state;                  /**< 当前Hall组合状态1..6。 */
   bool valid;                          /**< 正向、频率有效且Hall未超时时为true。 */
@@ -24,7 +24,8 @@ void motor_hall_angle_estimator_init(void);
  * @brief 在Hall边沿采样完成后校正估算角度和插值步长。
  * @param 无。
  * @return 无。
- * @details 使用实测状态边沿角度校正相位，只接受已完成标定的positive方向。
+ * @details 使用实测状态边沿角度校正相位，再叠加开环标定到转子坐标系的固定
+ *          角度补偿；只接受已完成标定的positive方向。
  */
 void motor_hall_angle_estimator_edge_process(void);
 
