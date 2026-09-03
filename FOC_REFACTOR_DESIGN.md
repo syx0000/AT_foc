@@ -627,3 +627,11 @@ MAJOR.MINOR
 监控名称使用业务含义而非DMA通道号：`adc_fast`表示10 kHz预注入电流采样，`adc_slow_dma`表示1 kHz普通组慢速采样搬运。当前实测结果为SysTick 1 kHz、TMR1通道4 20 kHz、ADC快速采样10 kHz、ADC慢速DMA 1 kHz，ADC触发失败为0。
 
 ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据，不同时保留；当前方案关闭 `ADC_OCCE_INT`，保留DMA1 Channel3完整传输中断。DMA1 Channel3使用4个半字循环缓冲区，保存ADC1/ADC2普通组同步采样结果。
+
+### 15.2 DWT时间基准与性能统计
+
+`project/bsp/motor_timebase.c/.h`在系统时钟配置完成后初始化Cortex-M4 DWT自由运行周期计数器。DWT只初始化一次，各调用点通过独立起始时间戳并行测量，不得在测量点重新清零全局计数器。
+
+`project/inc/motor_performance_monitor.h`和`project/src/motor_performance_monitor.c`提供通用性能统计器，记录最近执行周期、统计区间峰值和调用次数。每个被测任务或中断必须使用独立统计器；高频实时路径只执行开始和结束打点，统计快照及日志打印放在主循环低频执行。
+
+低优先级代码被高优先级中断抢占时，测量值包含抢占时间，这一结果用于评估真实最坏响应时间。192 MHz下DWT 32位计数器约22.37秒回绕，短时间间隔通过无符号减法兼容单次回绕。

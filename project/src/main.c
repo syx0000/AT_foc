@@ -41,6 +41,9 @@
 #include "product_version.h"
 #include "motor_log.h"
 #include "interrupt_monitor.h"
+#include "motor_pwm_port.h"
+#include "motor_board_config.h"
+#include "motor_timebase.h"
 
 /* add user code end private includes */
 
@@ -105,6 +108,7 @@ int main(void)
      void wk_delay_us(uint32_t delay);
      void wk_delay_ms(uint32_t delay); */
   wk_timebase_init();
+  motor_timebase_init();
 
   /* init gpio function. */
   wk_gpio_config();
@@ -122,6 +126,7 @@ int main(void)
 
   /* init tmr1 function. */
   wk_tmr1_init();
+  motor_pwm_port_init();
 
   /* init adc-common function. */
   wk_adc_common_init();
@@ -197,6 +202,42 @@ int main(void)
   LOGI("FW: %s\r\n", FIRMWARE_VERSION_STRING);
   LOGI("HW: %s\r\n", HARDWARE_VERSION_STRING);
   LOGI("APP: OK\r\n");
+
+  /* 临时上板验证：DRV8353唤醒及三相50% PWM；正式状态机接入后删除。 */
+  if (0)
+  {
+    bool fault_ready;
+    bool pwm_enabled = false;
+    motor_pwm_compare_t test_compare = {
+      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U),
+      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U),
+      (uint16_t)(MOTOR_PWM_PERIOD_COUNTS / 2U)
+    };
+
+    motor_pwm_port_gate_driver_set(true);
+    wk_delay_ms(2U);
+    fault_ready = motor_pwm_port_fault_clear();
+
+    LOGI("DRV: nFAULT=%u BIF=%u ready=%u MOE=%u\r\n",
+         (unsigned int)gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
+                                                 MOTOR_PWM_BREAK_PIN),
+         (unsigned int)tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG),
+         (unsigned int)fault_ready,
+         (unsigned int)MOTOR_PWM_TIMER->brk_bit.oen);
+
+    if (fault_ready)
+    {
+      motor_pwm_port_compare_set(&test_compare);
+      pwm_enabled = motor_pwm_port_output_enable();
+    }
+
+    LOGI("PWM TEST: compare=%u/%u/%u enabled=%u MOE=%u\r\n",
+         (unsigned int)test_compare.phase_a,
+         (unsigned int)test_compare.phase_b,
+         (unsigned int)test_compare.phase_c,
+         (unsigned int)pwm_enabled,
+         (unsigned int)MOTOR_PWM_TIMER->brk_bit.oen);
+  }
 
   /* add user code end 2 */
 

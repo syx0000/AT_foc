@@ -29,6 +29,7 @@
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
 #include "interrupt_monitor.h"
+#include "motor_performance_monitor.h"
 
 /* add user code end private includes */
 
@@ -256,6 +257,8 @@ void DMA1_Channel3_IRQHandler(void)
 void ADC1_2_IRQHandler(void)
 {
   /* add user code begin ADC1_2_IRQ 0 */
+  uint32_t start_cycles = motor_performance_monitor_begin();
+  uint32_t adc_fast_handled = 0U;
 
   /* add user code end ADC1_2_IRQ 0 */
 
@@ -265,6 +268,7 @@ void ADC1_2_IRQHandler(void)
     /* clear flag */
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
     interrupt_monitor_counters.adc_fast_complete++;
+    adc_fast_handled = 1U;
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
 
@@ -278,6 +282,11 @@ void ADC1_2_IRQHandler(void)
   }
 
   /* add user code begin ADC1_2_IRQ 1 */
+  if (adc_fast_handled != 0U)
+  {
+    (void)motor_performance_monitor_end(&adc_fast_performance_counter,
+                                        start_cycles);
+  }
 
   /* add user code end ADC1_2_IRQ 1 */
 }

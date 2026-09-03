@@ -1,5 +1,12 @@
 # 修改记录
 
+2026.09.03.3  PWM安全端口与性能监控：新增motor_pwm_port和motor_board_config，统一三相比较值写入、门极控制、
+              nFAULT/BIF检查、PWM使能关闭及紧急关断，初始化默认保持EN_GATE和PWM输出关闭；
+              新增基于DWT的motor_timebase和通用motor_performance_monitor，支持多统计点独立记录最近值、峰值和次数；
+              ADC快速中断接入执行耗时监控，实测常态104 cycles、区间峰值134 cycles，10 kHz周期峰值占用约0.69%；
+              启动阶段DRV检查实测nFAULT=1、BIF=0、ready=1、MOE=0，DWT 10 ms时间基准自检通过；
+              三相50% PWM上板测试暂由if (0)关闭，待低压限流和示波器条件具备后继续验证。
+
 2026.09.03.2  中断频率验证：新增interrupt_monitor诊断模块，在中断内计数并由主循环每秒输出频率；
               实测SysTick 1 kHz、TMR1通道4 20 kHz、ADC快速采样10 kHz，均符合理论配置；
               DMA1通道3配置4个半字循环缓冲区，ADC慢速采样及DMA完成频率实测均为1 kHz；

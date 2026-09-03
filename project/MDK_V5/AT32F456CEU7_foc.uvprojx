@@ -332,7 +332,7 @@
                             <MiscControls/>
                             <Define>AT32F456CEU7, USE_STDPERIPH_DRIVER</Define>
                             <Undefine/>
-                            <IncludePath>..\..\libraries\drivers\inc;..\..\libraries\cmsis\cm4\core_support;..\..\libraries\cmsis\cm4\device_support;..\inc;..\Core\Inc;..\config;..\foc\foc_kernel;..\foc\foc_app;</IncludePath>
+                            <IncludePath>..\..\libraries\drivers\inc;..\..\libraries\cmsis\cm4\core_support;..\..\libraries\cmsis\cm4\device_support;..\inc;..\Core\Inc;..\config;..\bsp;..\foc\foc_kernel;..\foc\foc_app;</IncludePath>
                         </VariousControls>
                     </Cads>
                     <Aads>
@@ -442,9 +442,29 @@
                             <FilePath>..\src\flash_port.c</FilePath>
                         </File>
                         <File>
+                            <FileName>motor_performance_monitor.c</FileName>
+                            <FileType>1</FileType>
+                            <FilePath>..\src\motor_performance_monitor.c</FilePath>
+                        </File>
+                        <File>
                             <FileName>wk_exint.c</FileName>
                             <FileType>1</FileType>
                             <FilePath>..\src\wk_exint.c</FilePath>
+                        </File>
+                    </Files>
+                </Group>
+                <Group>
+                    <GroupName>bsp</GroupName>
+                    <Files>
+                        <File>
+                            <FileName>motor_pwm_port.c</FileName>
+                            <FileType>1</FileType>
+                            <FilePath>..\bsp\motor_pwm_port.c</FilePath>
+                        </File>
+                        <File>
+                            <FileName>motor_timebase.c</FileName>
+                            <FileType>1</FileType>
+                            <FilePath>..\bsp\motor_timebase.c</FilePath>
                         </File>
                     </Files>
                 </Group>

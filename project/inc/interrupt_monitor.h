@@ -2,6 +2,7 @@
 #define INTERRUPT_MONITOR_H
 
 #include <stdint.h>
+#include "motor_performance_monitor.h"
 
 typedef struct
 {
@@ -22,6 +23,7 @@ typedef struct
 } interrupt_monitor_counters_t;
 
 extern interrupt_monitor_counters_t interrupt_monitor_counters;
+extern motor_performance_counter_t adc_fast_performance_counter;
 
 void interrupt_monitor_poll(void);
 

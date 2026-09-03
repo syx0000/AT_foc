@@ -213,7 +213,15 @@ project/bsp/motor_board_config.h
 - 紧急关闭可重复执行且结果一致。
 - DWT时间误差满足调度和Hall测速需求，记录实测误差。
 
-### 6.5 提交节点
+### 6.5 当前验证记录（2026.09.03.3）
+
+- DWT测量10 ms已知延时结果正常，确认192 MHz周期到微秒换算有效。
+- ADC快速中断接入通用性能统计，频率实测为10 kHz。
+- ADC快速中断常态耗时104 cycles（约0.54 us），区间峰值134 cycles（约0.70 us），峰值周期占用约0.69%。
+- 启动阶段DRV检查实测 `nFAULT=1`、`BIF=0`、`ready=1`、`MOE=0`，安全关闭状态符合预期。
+- 固定50%三相PWM测试代码保持 `if (0)` 关闭，实际PWM波形、互补输出、死区和紧急关断延迟尚未验证。
+
+### 6.6 提交节点
 
 ```text
 feat: add motor timebase and safe pwm port
