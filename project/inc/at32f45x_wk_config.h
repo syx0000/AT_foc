@@ -57,6 +57,8 @@ extern "C" {
 
 /* add user code begin dma define */
 /* user can only modify the dma define value */
+extern volatile uint16_t motor_adc_ordinary_dma_buffer[4];
+
 #define DMA1_CHANNEL1_BUFFER_SIZE   0
 #define DMA1_CHANNEL1_MEMORY_BASE_ADDR   0
 //#define DMA1_CHANNEL1_PERIPHERAL_BASE_ADDR  0
@@ -65,8 +67,8 @@ extern "C" {
 #define DMA1_CHANNEL2_MEMORY_BASE_ADDR   0
 //#define DMA1_CHANNEL2_PERIPHERAL_BASE_ADDR   0
 
-#define DMA1_CHANNEL3_BUFFER_SIZE   0
-#define DMA1_CHANNEL3_MEMORY_BASE_ADDR   0
+#define DMA1_CHANNEL3_BUFFER_SIZE   4
+#define DMA1_CHANNEL3_MEMORY_BASE_ADDR   ((uint32_t)motor_adc_ordinary_dma_buffer)
 //#define DMA1_CHANNEL3_PERIPHERAL_BASE_ADDR   0
 
 #define DMA1_CHANNEL4_BUFFER_SIZE   0

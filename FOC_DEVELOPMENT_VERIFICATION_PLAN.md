@@ -147,7 +147,20 @@ M11 系统回归与整理
 - 工程复位、下载和重复上电正常。
 - 日志等级越界设置不改变当前等级；启动日志完整且不因串口发送时机被截断。
 
-### 5.5 提交节点
+### 5.5 中断频率实测记录（2026.09.03.2）
+
+```text
+SysTick                 1000 Hz   通过
+TMR1 Channel4          20002 Hz   目标20000 Hz，通过
+ADC快速预注入完成       10001 Hz   目标10000 Hz，通过
+ADC慢速普通组完成        1000 Hz   与DMA中断重复，已关闭
+ADC慢速DMA完成           1000 Hz   目标1000 Hz，通过
+ADC触发失败                  0     通过
+```
+
+DMA1 Channel3已配置4个半字循环缓冲区。关闭ADC普通组完成中断后复测结果为 `adc_fast≈10000`、`adc_slow_dma=1000`、`adc_fail=0`，确认慢速ADC链路由DMA完成事件单独承载。
+
+### 5.6 提交节点
 
 ```text
 refactor: establish motor control architecture skeleton

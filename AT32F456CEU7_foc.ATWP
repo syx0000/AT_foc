@@ -39,7 +39,6 @@
             <ParametersSub name="SamplingRate_PreemptedSequence_1" value="4.267"/>
         </Parameters>
         <Interrupts>
-            <InterruptsSub name="Interrupt_OCCE" value="TRUE"/>
             <InterruptsSub name="Interrupt_PCCE" value="TRUE"/>
             <InterruptsSub name="Interrupt_TCF" value="TRUE"/>
         </Interrupts>

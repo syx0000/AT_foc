@@ -130,9 +130,6 @@ void wk_adc1_init(void)
   The software trigger function is adc_preempt_software_trigger_enable(ADCx, TRUE); */
   adc_preempt_conversion_trigger_set(ADC1, ADC_PREEMPT_TRIG_TMR1TRGOUT, ADC_PREEMPT_TRIG_EDGE_RISING);
 
-  /* enable ordinary channels conversion end interrupt */
-  adc_interrupt_enable(ADC1, ADC_OCCE_INT, TRUE);
-
   /* enable preempted channels conversion end interrupt */
   adc_interrupt_enable(ADC1, ADC_PCCE_INT, TRUE);
 

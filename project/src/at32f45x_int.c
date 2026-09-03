@@ -28,6 +28,7 @@
 #include "at32f45x_int.h"
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
+#include "interrupt_monitor.h"
 
 /* add user code end private includes */
 
@@ -213,6 +214,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
+  interrupt_monitor_counters.systick++;
 
   /* add user code end SysTick_IRQ 0 */
 
@@ -237,6 +239,7 @@ void DMA1_Channel3_IRQHandler(void)
     /* add user code begin DMA1_FDT3_FLAG */
     /* handle full data transfer and clear flag */
     dma_flag_clear(DMA1_FDT3_FLAG);
+    interrupt_monitor_counters.adc_slow_dma_complete++;
     /* add user code end DMA1_FDT3_FLAG */ 
   }
 
@@ -256,19 +259,12 @@ void ADC1_2_IRQHandler(void)
 
   /* add user code end ADC1_2_IRQ 0 */
 
-  if(adc_interrupt_flag_get(ADC1, ADC_OCCE_FLAG) != RESET)
-  {
-    /* add user code begin ADC1_ADC_OCCE_FLAG */
-    /* clear flag */
-    adc_flag_clear(ADC1, ADC_OCCE_FLAG);
-    /* add user code end ADC1_ADC_OCCE_FLAG */ 
-  }
-
   if(adc_interrupt_flag_get(ADC1, ADC_PCCE_FLAG) != RESET)
   {
     /* add user code begin ADC1_ADC_PCCE_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
+    interrupt_monitor_counters.adc_fast_complete++;
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
 
@@ -277,6 +273,7 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_TCF_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_TCF_FLAG);
+    interrupt_monitor_counters.adc_trigger_fail++;
     /* add user code end ADC1_ADC_TCF_FLAG */ 
   }
 
@@ -304,6 +301,7 @@ void CAN1_RX_IRQHandler(void)
     /* clear flag and receive buffer release */
     can_flag_clear(CAN1, CAN_RIF_FLAG);
     can_rxbuf_read(CAN1, &can_rxbuf_struct);
+    interrupt_monitor_counters.can1_rx++;
     /* add user code end CAN1_CAN_RIF_FLAG */
   }
 
@@ -320,6 +318,7 @@ void CAN1_RX_IRQHandler(void)
 void CAN1_ERR_IRQHandler(void)
 {
   /* add user code begin CAN1_ERR_IRQ 0 */
+  interrupt_monitor_counters.can1_error++;
 
   /* add user code end CAN1_ERR_IRQ 0 */
 
@@ -344,6 +343,7 @@ void EXINT9_5_IRQHandler(void)
     /* add user code begin EXINT_LINE_5 */
     /* clear flag */
     exint_flag_clear(EXINT_LINE_5);
+    interrupt_monitor_counters.hall_a_edge++;
     /* add user code end EXINT_LINE_5 */ 
   }
 
@@ -352,6 +352,7 @@ void EXINT9_5_IRQHandler(void)
     /* add user code begin EXINT_LINE_6 */
     /* clear flag */
     exint_flag_clear(EXINT_LINE_6);
+    interrupt_monitor_counters.hall_b_edge++;
     /* add user code end EXINT_LINE_6 */ 
   }
 
@@ -360,6 +361,7 @@ void EXINT9_5_IRQHandler(void)
     /* add user code begin EXINT_LINE_7 */
     /* clear flag */
     exint_flag_clear(EXINT_LINE_7);
+    interrupt_monitor_counters.hall_c_edge++;
     /* add user code end EXINT_LINE_7 */ 
   }
 
@@ -385,6 +387,7 @@ void TMR1_CH_IRQHandler(void)
     /* add user code begin TMR1_TMR_C4_FLAG */
     /* clear flag */
     tmr_flag_clear(TMR1, TMR_C4_FLAG);
+    interrupt_monitor_counters.tmr1_channel4++;
     /* add user code end TMR1_TMR_C4_FLAG */
   }
 
@@ -419,6 +422,7 @@ void USART1_IRQHandler(void)
     /* add user code begin USART1_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART1, USART_IDLEF_FLAG);
+    interrupt_monitor_counters.usart1_idle++;
     /* add user code end USART1_USART_IDLEF_FLAG */ 
   }
 
@@ -453,6 +457,7 @@ void USART3_IRQHandler(void)
     /* add user code begin USART3_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART3, USART_IDLEF_FLAG);
+    interrupt_monitor_counters.usart3_idle++;
     /* add user code end USART3_USART_IDLEF_FLAG */ 
   }
 

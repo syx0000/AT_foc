@@ -118,4 +118,9 @@ SysTick(15)
 - App 产物：`objects/AT32F456CEU7_foc.axf` + `.bin`（最近编译 2026-09-01，bin ≈104KB）
 - 阶段9 编译规模参考：Code=101502 RO-data=13510 RW-data=264 ZI-data=14144
 
+## 提交
+根据修改更新相关md
+按照规则，更新版本号
+更新readme
+提交，commit中文简洁写清楚修改点
 

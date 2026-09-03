@@ -619,3 +619,11 @@ MAJOR.MINOR
 启动日志至少包含产品名、固件版本、目标硬件版本和App启动成功标记。版本字符串只能来自 `project/config/product_version.h`。
 
 日志禁止用于10 kHz FOC ISR、Hall边沿ISR和紧急关断路径。实时路径只更新状态、计数器或事件码，由主循环或低频后台任务限频输出，避免阻塞式 `printf` 改变控制周期。Bootloader日志保持独立，不依赖App的 `motor_log` 模块。
+
+### 15.1 中断频率诊断
+
+开发验证阶段使用 `project/inc/interrupt_monitor.h` 和 `project/src/interrupt_monitor.c` 统计中断频率。ISR只递增32位计数器，主循环以1 kHz SysTick为时间基准，每1000个tick生成快照并输出，禁止在ISR内直接打印。
+
+监控名称使用业务含义而非DMA通道号：`adc_fast`表示10 kHz预注入电流采样，`adc_slow_dma`表示1 kHz普通组慢速采样搬运。当前实测结果为SysTick 1 kHz、TMR1通道4 20 kHz、ADC快速采样10 kHz、ADC慢速DMA 1 kHz，ADC触发失败为0。
+
+ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据，不同时保留；当前方案关闭 `ADC_OCCE_INT`，保留DMA1 Channel3完整传输中断。DMA1 Channel3使用4个半字循环缓冲区，保存ADC1/ADC2普通组同步采样结果。

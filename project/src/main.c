@@ -40,6 +40,7 @@
 #include <stdio.h>
 #include "product_version.h"
 #include "motor_log.h"
+#include "interrupt_monitor.h"
 
 /* add user code end private includes */
 
@@ -60,6 +61,7 @@
 
 /* private variables ---------------------------------------------------------*/
 /* add user code begin private variables */
+volatile uint16_t motor_adc_ordinary_dma_buffer[4];
 
 /* add user code end private variables */
 
@@ -201,6 +203,7 @@ int main(void)
   while(1)
   {
     /* add user code begin 3 */
+    interrupt_monitor_poll();
 
     /* add user code end 3 */
   }
