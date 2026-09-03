@@ -10,8 +10,8 @@
       <TargetName>AT32F456CEU7_foc</TargetName>
       <ToolsetNumber>0x4</ToolsetNumber>
       <ToolsetName>ARM-ADS</ToolsetName>
-      <pArmCC>6050000::V6.5::.\ARMCLANG</pArmCC>
-      <pCCUsed>6050000::V6.5::.\ARMCLANG</pCCUsed>
+      <pArmCC>5060300::V5.06 update 3 (build 300)::ARMCC</pArmCC>
+      <pCCUsed>5060300::V5.06 update 3 (build 300)::ARMCC</pCCUsed>
       <TargetOption>
         <TargetCommonOption>
           <Device>AT32F456CEU7</Device>
@@ -247,7 +247,7 @@
               </IRAM>
               <IROM>
                 <Type>1</Type>
-                <StartAddress>0x8000000</StartAddress>
+                <StartAddress>0x8004000</StartAddress>
                 <Size>0x80000</Size>
               </IROM>
               <XRAM>
@@ -272,7 +272,7 @@
               </OCR_RVCT3>
               <OCR_RVCT4>
                 <Type>1</Type>
-                <StartAddress>0x8004000</StartAddress>
+                <StartAddress>0x8000000</StartAddress>
                 <Size>0x3b800</Size>
               </OCR_RVCT4>
               <OCR_RVCT5>
@@ -310,7 +310,7 @@
           </ArmAdsMisc>
           <Cads>
             <interw>1</interw>
-            <Optim>3</Optim>
+            <Optim>1</Optim>
             <oTime>0</oTime>
             <SplitLS>0</SplitLS>
             <OneElfS>1</OneElfS>
@@ -319,10 +319,10 @@
             <PlainCh>0</PlainCh>
             <Ropi>0</Ropi>
             <Rwpi>0</Rwpi>
-            <wLevel>1</wLevel>
+            <wLevel>2</wLevel>
             <uThumb>0</uThumb>
             <uSurpInc>0</uSurpInc>
-            <uC99>0</uC99>
+            <uC99>1</uC99>
             <useXO>0</useXO>
             <v6Lang>5</v6Lang>
             <v6LangP>3</v6LangP>
@@ -335,7 +335,7 @@
               <MiscControls></MiscControls>
               <Define>AT32F456CEU7, USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
-              <IncludePath>..\..\libraries\drivers\inc;..\..\libraries\cmsis\cm4\core_support;..\..\libraries\cmsis\cm4\device_support;..\inc;..\Core\Inc;..\foc\foc_kernel;..\foc\foc_app</IncludePath>
+              <IncludePath>..\..\libraries\drivers\inc;..\..\libraries\cmsis\cm4\core_support;..\..\libraries\cmsis\cm4\device_support;..\inc;..\Core\Inc;..\config;..\foc\foc_kernel;..\foc\foc_app</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -393,6 +393,11 @@
               <FileName>main.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\main.c</FilePath>
+            </File>
+            <File>
+              <FileName>motor_log.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\motor_log.c</FilePath>
             </File>
             <File>
               <FileName>wk_system.c</FileName>

@@ -37,6 +37,9 @@
 
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
+#include <stdio.h>
+#include "product_version.h"
+#include "motor_log.h"
 
 /* add user code end private includes */
 
@@ -188,6 +191,10 @@ int main(void)
   wk_exint_config();
 
   /* add user code begin 2 */
+  LOGI("AT_foc_hall\r\n");
+  LOGI("FW: %s\r\n", FIRMWARE_VERSION_STRING);
+  LOGI("HW: %s\r\n", HARDWARE_VERSION_STRING);
+  LOGI("APP: OK\r\n");
 
   /* add user code end 2 */
 
