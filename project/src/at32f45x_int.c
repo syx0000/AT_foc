@@ -28,14 +28,7 @@
 #include "at32f45x_int.h"
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
-#include "at32f45x_wk_config.h"
-#include "wk_adc.h"
-#include "wk_usart.h"
-#include "wk_can.h"
-#include "foc_api.h"
-#include "foc_controller.h"
-#include "foc_current_loop.h"
-#include "encoder_calc.h"
+
 /* add user code end private includes */
 
 /* private typedef -----------------------------------------------------------*/
@@ -55,13 +48,7 @@
 
 /* private variables ---------------------------------------------------------*/
 /* add user code begin private variables */
-uint32_t tmr1_ch4_int_count = 0;
-volatile uint32_t systick_ms = 0;
-uint32_t adc_occe_count = 0;
-uint32_t adc_pcce_count = 0;
-uint32_t dma_fdt3_count = 0;
-uint32_t adc_occo_count = 0;
-uint32_t adc_tcf_count = 0;
+
 /* add user code end private variables */
 
 /* private function prototypes --------------------------------------------*/
@@ -76,11 +63,7 @@ uint32_t adc_tcf_count = 0;
 
 /* external variables ---------------------------------------------------------*/
 /* add user code begin external variables */
-extern uint16_t adc_ordinary_buffer[4];
-extern ControllerStruct controller_eyou;
-extern volatile uint8_t g_foc_openloop_enable;
-extern uint8_t open_loop_mode;
-extern int16_t v_d_test, v_q_test;
+
 /* add user code end external variables */
 
 /**
@@ -230,7 +213,7 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
-  systick_ms++;
+
   /* add user code end SysTick_IRQ 0 */
 
   /* add user code begin SysTick_IRQ 1 */
@@ -254,11 +237,6 @@ void DMA1_Channel3_IRQHandler(void)
     /* add user code begin DMA1_FDT3_FLAG */
     /* handle full data transfer and clear flag */
     dma_flag_clear(DMA1_FDT3_FLAG);
-		dma_fdt3_count++;
-
-		gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-		gpio_bits_set(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-
     /* add user code end DMA1_FDT3_FLAG */ 
   }
 
@@ -275,10 +253,7 @@ void DMA1_Channel3_IRQHandler(void)
 void ADC1_2_IRQHandler(void)
 {
   /* add user code begin ADC1_2_IRQ 0 */
-  extern volatile uint32_t g_adc_isr_in_cycles, g_adc_isr_out_cycles;
-  extern volatile uint32_t g_adc_isr_cycles, g_adc_isr_cycles_max;
-  uint32_t _isr_entry = DWT->CYCCNT;
-  g_adc_isr_in_cycles = _isr_entry;
+
   /* add user code end ADC1_2_IRQ 0 */
 
   if(adc_interrupt_flag_get(ADC1, ADC_OCCE_FLAG) != RESET)
@@ -286,24 +261,6 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_OCCE_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_OCCE_FLAG);
-		adc_occe_count++;
-
-    /* Read ordinary group (temperature/VDC, 1kHz) */
-    adc_foc_on_regular_done();
-
-//		/* recovery ADC and DMA for next conversion in dual mode */
-//		adc_ordinary_convert_recovery();
-
-//		/* toggle TP_TEST pin */
-//		if(TP_TEST_GPIO_PORT->odt & TP_TEST_PIN) {
-//			gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-//		} else {
-//			gpio_bits_set(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-//		}
-
-//		gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-//		gpio_bits_set(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-
     /* add user code end ADC1_ADC_OCCE_FLAG */ 
   }
 
@@ -312,41 +269,6 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_PCCE_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
-		adc_pcce_count++;
-
-    /* Read injected group (FOC current sampling, 10kHz) */
-    adc_foc_on_injected_done();
-
-    /* DPT async now triggered by CC4 ISR (ahead of ADC, see TMR1_CH_IRQHandler).
-     * Encoder data is ready by the time ADC ISR runs (Enc_done < T0). */
-
-    /* ============================================================
-     * FOC scheduling (10kHz, migrated from cubemx_yxsui adc.c:551-596)
-     * Guard: skip FOC code until Init_foc() is complete (g_foc_init_done=1)
-     * ============================================================ */
-    if (g_foc_init_done) {
-			/* Encoder calculation (10kHz, unconditional - runs regardless of foc_run)
-			 * Reference: cubemx_yxsui/Core/Src/adc.c:574-575 */
-			Encoder_data_Calculate(&controller_eyou, 10000);
-			Encoder_out_data_Calculate(&controller_eyou, 10000);
-      /* Get raw ADC values for FOC (before offset subtraction) */
-      uint16_t raw_a = adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
-      uint16_t raw_b = adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);
-
-      /* Pass raw values to FOC controller */
-      controller_eyou.Ia_raw = raw_a;
-      controller_eyou.Ib_raw = raw_b;
-
-      if (controller_eyou.foc_run >= 1) {
-        /* Closed-loop: full FOC scheduling (current/speed/position loops) */
-        MC_Loop_Schedule(&controller_eyou);
-      } else if (g_foc_openloop_enable) {
-        /* Open-loop test: current sampling + open-loop SVPWM */
-        phase_current_sample(&controller_eyou);
-        FocOpenTest(&controller_eyou, open_loop_mode, v_d_test, v_q_test, raw_a, raw_b);
-      }
-    }
-
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
 
@@ -355,21 +277,11 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_TCF_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_TCF_FLAG);
-    adc_tcf_count++;
-
-    /* recovery ADC when trigger convert fail */
-    adc_ordinary_convert_recovery();
     /* add user code end ADC1_ADC_TCF_FLAG */ 
   }
 
   /* add user code begin ADC1_2_IRQ 1 */
-  {
-    uint32_t _isr_exit = DWT->CYCCNT;
-    uint32_t dt = _isr_exit - _isr_entry;
-    g_adc_isr_cycles = dt;
-    if (dt > g_adc_isr_cycles_max) g_adc_isr_cycles_max = dt;
-    g_adc_isr_out_cycles = _isr_exit;
-  }
+
   /* add user code end ADC1_2_IRQ 1 */
 }
 
@@ -389,9 +301,9 @@ void CAN1_RX_IRQHandler(void)
   if(can_interrupt_flag_get(CAN1, CAN_RIF_FLAG) != RESET)
   {
     /* add user code begin CAN1_CAN_RIF_FLAG */
-    /* clear flag and dispatch all pending frames to fdcan_rx_user */
+    /* clear flag and receive buffer release */
     can_flag_clear(CAN1, CAN_RIF_FLAG);
-    wk_can1_rx_dispatch();
+    can_rxbuf_read(CAN1, &can_rxbuf_struct);
     /* add user code end CAN1_CAN_RIF_FLAG */
   }
 
@@ -417,6 +329,46 @@ void CAN1_ERR_IRQHandler(void)
 }
 
 /**
+  * @brief  this function handles EXINT Line [9:5] handler.
+  * @param  none
+  * @retval none
+  */
+void EXINT9_5_IRQHandler(void)
+{
+  /* add user code begin EXINT9_5_IRQ 0 */
+
+  /* add user code end EXINT9_5_IRQ 0 */
+
+  if(exint_interrupt_flag_get(EXINT_LINE_5) != RESET)
+  {
+    /* add user code begin EXINT_LINE_5 */
+    /* clear flag */
+    exint_flag_clear(EXINT_LINE_5);
+    /* add user code end EXINT_LINE_5 */ 
+  }
+
+  if(exint_interrupt_flag_get(EXINT_LINE_6) != RESET)
+  {
+    /* add user code begin EXINT_LINE_6 */
+    /* clear flag */
+    exint_flag_clear(EXINT_LINE_6);
+    /* add user code end EXINT_LINE_6 */ 
+  }
+
+  if(exint_interrupt_flag_get(EXINT_LINE_7) != RESET)
+  {
+    /* add user code begin EXINT_LINE_7 */
+    /* clear flag */
+    exint_flag_clear(EXINT_LINE_7);
+    /* add user code end EXINT_LINE_7 */ 
+  }
+
+  /* add user code begin EXINT9_5_IRQ 1 */
+
+  /* add user code end EXINT9_5_IRQ 1 */
+}
+
+/**
   * @brief  this function handles TMR1 Channel handler.
   * @param  none
   * @retval none
@@ -424,10 +376,7 @@ void CAN1_ERR_IRQHandler(void)
 void TMR1_CH_IRQHandler(void)
 {
   /* add user code begin TMR1_CH_IRQ 0 */
-  extern volatile uint32_t g_tim1_cc4_cycles, g_tim1_cc4_exit_cycles;
-  uint32_t _cc4_entry = DWT->CYCCNT;
-  uint8_t _cc4_is_upcount = !(TMR1->ctrl1 & (1u << 4));
-  if (_cc4_is_upcount) g_tim1_cc4_cycles = _cc4_entry;
+
   /* add user code end TMR1_CH_IRQ 0 */
 
   /* channel4 interrupt management */
@@ -436,26 +385,11 @@ void TMR1_CH_IRQHandler(void)
     /* add user code begin TMR1_TMR_C4_FLAG */
     /* clear flag */
     tmr_flag_clear(TMR1, TMR_C4_FLAG);
-    tmr1_ch4_int_count++;
-
-    /* Only trigger DPT on downcount (first match in period).
-     * ctrl1 bit4 (DIR): 0=counting up, 1=counting down */
-    /* Trigger DPT encoder async read (ahead of next ADC ISR) */
-    if (_cc4_is_upcount) DPT_AsyncRequest();
-
-    // /* isr_print test: print every 10000 ticks (~1Hz @10kHz) */
-    // if ((tmr1_ch4_int_count % 10000) == 0) {
-    //   isr_print("[ISR] TMR1 CH4 tick\r\n");
-    // }
-
-//		gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-//		gpio_bits_set(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-
     /* add user code end TMR1_TMR_C4_FLAG */
   }
 
   /* add user code begin TMR1_CH_IRQ 1 */
-  if (_cc4_is_upcount) g_tim1_cc4_exit_cycles = DWT->CYCCNT;
+
   /* add user code end TMR1_CH_IRQ 1 */
 }
 
@@ -483,7 +417,8 @@ void USART1_IRQHandler(void)
   if(usart_interrupt_flag_get(USART1, USART_IDLEF_FLAG) != RESET)
   {
     /* add user code begin USART1_USART_IDLEF_FLAG */
-    USART1_IDLE_Handler();
+    /* clear flag */
+    usart_flag_clear(USART1, USART_IDLEF_FLAG);
     /* add user code end USART1_USART_IDLEF_FLAG */ 
   }
 
@@ -516,8 +451,8 @@ void USART3_IRQHandler(void)
   if(usart_interrupt_flag_get(USART3, USART_IDLEF_FLAG) != RESET)
   {
     /* add user code begin USART3_USART_IDLEF_FLAG */
-    /* DPT async driver handles flag clear + frame parse + state advance */
-    DPT_USART3_IDLE_Handler();
+    /* clear flag */
+    usart_flag_clear(USART3, USART_IDLEF_FLAG);
     /* add user code end USART3_USART_IDLEF_FLAG */ 
   }
 

@@ -65,11 +65,8 @@ extern "C" {
 #define DMA1_CHANNEL2_MEMORY_BASE_ADDR   0
 //#define DMA1_CHANNEL2_PERIPHERAL_BASE_ADDR   0
 
-/* external variables for DMA buffers */
-extern uint16_t adc_ordinary_buffer[4];
-
-#define DMA1_CHANNEL3_BUFFER_SIZE   4
-#define DMA1_CHANNEL3_MEMORY_BASE_ADDR   (uint32_t)adc_ordinary_buffer
+#define DMA1_CHANNEL3_BUFFER_SIZE   0
+#define DMA1_CHANNEL3_MEMORY_BASE_ADDR   0
 //#define DMA1_CHANNEL3_PERIPHERAL_BASE_ADDR   0
 
 #define DMA1_CHANNEL4_BUFFER_SIZE   0
@@ -136,14 +133,16 @@ extern uint16_t adc_ordinary_buffer[4];
 #define TEMP_MOTOR_GPIO_PORT    GPIOA
 #define TEMP_MOS_PIN    GPIO_PINS_5
 #define TEMP_MOS_GPIO_PORT    GPIOA
-#define TP_TEST_PIN    GPIO_PINS_11
-#define TP_TEST_GPIO_PORT    GPIOB
-#define CAN_RES_PIN    GPIO_PINS_3
-#define CAN_RES_GPIO_PORT    GPIOH
 #define EN_485_PIN    GPIO_PINS_14
 #define EN_485_GPIO_PORT    GPIOB
 #define CAN_STB_PIN    GPIO_PINS_2
 #define CAN_STB_GPIO_PORT    GPIOH
+#define HA_PIN    GPIO_PINS_5
+#define HA_GPIO_PORT    GPIOB
+#define HB_PIN    GPIO_PINS_6
+#define HB_GPIO_PORT    GPIOB
+#define HC_PIN    GPIO_PINS_7
+#define HC_GPIO_PORT    GPIOB
 
 /* exported functions ------------------------------------------------------- */
   /* system clock config. */

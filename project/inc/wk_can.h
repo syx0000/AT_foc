@@ -62,26 +62,6 @@ extern "C" {
 
 /* add user code begin exported functions */
 
-/* HAL compat status */
-#ifndef HAL_OK
-#define HAL_OK      0
-#define HAL_ERROR   1
-#endif
-#ifndef HAL_STATUS_TYPEDEF_DEFINED
-#define HAL_STATUS_TYPEDEF_DEFINED
-typedef uint32_t HAL_StatusTypeDef;
-#endif
-
-/* CAN1 business layer (port of cubemx_yxsui/Core/Src/fdcan.c) */
-HAL_StatusTypeDef fdcan_send(uint32_t std_id, const uint8_t *data, uint32_t len);
-void fdcan_rx_user(uint32_t id, const uint8_t *data, uint32_t len);  /* weak, override in can_wly */
-void wk_can1_rx_dispatch(void);  /* call from CAN1_RX_IRQHandler */
-uint32_t fdcan_get_tx_ok_count(void);
-uint32_t fdcan_get_tx_fail_count(void);
-
-extern volatile uint8_t g_cantest_stub;   /* 1 = printf instead of TX (for cantest cmd) */
-extern volatile uint8_t g_can_rx_debug;   /* 1 = printf RX frames */
-
 /* add user code end exported functions */
 
 #ifdef __cplusplus

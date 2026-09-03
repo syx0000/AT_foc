@@ -1,7 +1,7 @@
 /* add user code begin Header */
 /**
   **************************************************************************
-  * @file     wk_tmr.h
+  * @file     wk_exint.h
   * @brief    header file of work bench config
   **************************************************************************
   * Copyright (c) 2025, Artery Technology, All rights reserved.
@@ -25,8 +25,8 @@
 /* add user code end Header */
 
 /* define to prevent recursive inclusion -----------------------------------*/
-#ifndef __WK_TMR_H
-#define __WK_TMR_H
+#ifndef __WK_EXINT_H
+#define __WK_EXINT_H
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,11 +57,8 @@ extern "C" {
 
 /* exported functions ------------------------------------------------------- */
 
-  /* init tmr1 function. */
-  void wk_tmr1_init(void);
-
-  /* init tmr6 function. */
-  void wk_tmr6_init(void);
+  /* init exint function. */
+  void wk_exint_config(void);
 
 /* add user code begin exported functions */
 

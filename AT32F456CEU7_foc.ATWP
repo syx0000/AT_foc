@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Root>
     <WorkBenchVersion>
-        <Version>V1.2.04</Version>
+        <Version>V1.2.05</Version>
     </WorkBenchVersion>
     <MCUInfo>
         <MCUSerials>AT32F456</MCUSerials>
@@ -29,9 +29,11 @@
             <ParametersSub name="OrdinaryExternalTriggerEdge" value="ADC_ORDINARY_TRIG_EDGE_RISING"/>
             <ParametersSub name="NbrOfOrdinarySequence" value="2"/>
             <ParametersSub name="Channel_OrdinarySequence_1" value="ADC_CHANNEL_4"/>
-            <ParametersSub name="SamplingRate_OrdinarySequence_1" value="4.267"/>
+            <ParametersSub name="SamplingTime_OrdinarySequence_1" value="ADC_SAMPLETIME_6_5"/>
+            <ParametersSub name="SamplingRate_OrdinarySequence_1" value="3.368"/>
             <ParametersSub name="Channel_OrdinarySequence_2" value="ADC_CHANNEL_5"/>
-            <ParametersSub name="SamplingRate_OrdinarySequence_2" value="4.267"/>
+            <ParametersSub name="SamplingTime_OrdinarySequence_2" value="ADC_SAMPLETIME_6_5"/>
+            <ParametersSub name="SamplingRate_OrdinarySequence_2" value="3.368"/>
             <ParametersSub name="PreemptedTriggerSource" value="ADC_PREEMPT_TRIG_TMR1TRGOUT"/>
             <ParametersSub name="Channel_PreemptedSequence_1" value="ADC_CHANNEL_0"/>
             <ParametersSub name="SamplingRate_PreemptedSequence_1" value="4.267"/>
@@ -52,9 +54,9 @@
             <ParametersSub name="OrdinaryTriggerSource" value="ADC_ORDINARY_TRIG_TMR6TRGOUT"/>
             <ParametersSub name="NbrOfOrdinarySequence" value="2"/>
             <ParametersSub name="Channel_OrdinarySequence_1" value="ADC_CHANNEL_2"/>
-            <ParametersSub name="SamplingRate_OrdinarySequence_1" value="4.267"/>
+            <ParametersSub name="SamplingRate_OrdinarySequence_1" value="3.368"/>
             <ParametersSub name="Channel_OrdinarySequence_2" value="ADC_CHANNEL_3"/>
-            <ParametersSub name="SamplingRate_OrdinarySequence_2" value="4.267"/>
+            <ParametersSub name="SamplingRate_OrdinarySequence_2" value="3.368"/>
             <ParametersSub name="PreemptedTriggerSource" value="ADC_PREEMPT_TRIG_TMR1TRGOUT"/>
             <ParametersSub name="Channel_PreemptedSequence_1" value="ADC_CHANNEL_1"/>
             <ParametersSub name="SamplingRate_PreemptedSequence_1" value="4.267"/>
@@ -97,6 +99,18 @@
             <ModeSub name="SWO" value="FALSE"/>
         </Mode>
     </DEBUG>
+    <EXINT>
+        <Mode>
+            <ModeSub name="EXINT5" value="TRUE"/>
+            <ModeSub name="EXINT6" value="TRUE"/>
+            <ModeSub name="EXINT7" value="TRUE"/>
+        </Mode>
+        <Parameters>
+            <ParametersSub name="TriggerPolarity_5" value="EXINT_TRIGGER_BOTH_EDGE"/>
+            <ParametersSub name="TriggerPolarity_6" value="EXINT_TRIGGER_BOTH_EDGE"/>
+            <ParametersSub name="TriggerPolarity_7" value="EXINT_TRIGGER_BOTH_EDGE"/>
+        </Parameters>
+    </EXINT>
     <SYSTEM>
         <Mode>
             <ModeSub name="Time_Base" value="TMR7"/>
@@ -218,6 +232,7 @@
         <CAN1_RX_IRQHandler>1;6;0;0;0;1</CAN1_RX_IRQHandler>
         <CAN1_STAT_IRQHandler>0;0;0;0;0;0</CAN1_STAT_IRQHandler>
         <CAN1_ERR_IRQHandler>1;6;0;0;0;1</CAN1_ERR_IRQHandler>
+        <EXINT9_5_IRQHandler>1;2;0;0;0;1</EXINT9_5_IRQHandler>
         <TMR1_BRK_TMR9_IRQHandler>0;0;0;0;0;0</TMR1_BRK_TMR9_IRQHandler>
         <TMR1_OVF_TMR10_IRQHandler>0;0;0;0;0;0</TMR1_OVF_TMR10_IRQHandler>
         <TMR1_TRG_HALL_TMR11_IRQHandler>0;0;0;0;0;0</TMR1_TRG_HALL_TMR11_IRQHandler>
@@ -260,17 +275,20 @@
         <Signal SignalName="ADC1_IN5" PinName="PA5">
             <Parameters name="Label" value="TEMP_MOS"/>
         </Signal>
-        <Signal SignalName="GPIO_Output" PinName="PB11">
-            <Parameters name="Label" value="TP_TEST"/>
-        </Signal>
-        <Signal SignalName="GPIO_Output" PinName="PH3">
-            <Parameters name="Label" value="CAN_RES"/>
-        </Signal>
         <Signal SignalName="USART3_DE" PinName="PB14">
             <Parameters name="Label" value="EN_485"/>
         </Signal>
         <Signal SignalName="GPIO_Output" PinName="PH2">
             <Parameters name="Label" value="CAN_STB"/>
+        </Signal>
+        <Signal SignalName="EXINT5" PinName="PB5">
+            <Parameters name="Label" value="HA"/>
+        </Signal>
+        <Signal SignalName="EXINT6" PinName="PB6">
+            <Parameters name="Label" value="HB"/>
+        </Signal>
+        <Signal SignalName="EXINT7" PinName="PB7">
+            <Parameters name="Label" value="HC"/>
         </Signal>
     </GPIO>
     <ClockConfiguration>
@@ -317,8 +335,6 @@
         <PinSub pinname="PB0" signalname="TMR1_CH2C" signaltype="2"/>
         <PinSub pinname="PB1" signalname="TMR1_CH3C" signaltype="2"/>
         <PinSub pinname="PB10" signalname="USART3_TX" signaltype="2"/>
-        <PinSub pinname="PB11" signalname="GPIO_Output" signaltype="3"/>
-        <PinSub pinname="PH3" signalname="GPIO_Output" signaltype="3"/>
         <PinSub pinname="PB12" signalname="TMR1_BRK" signaltype="3"/>
         <PinSub pinname="PB14" signalname="USART3_DE" signaltype="2"/>
         <PinSub pinname="PA8" signalname="TMR1_CH1" signaltype="2"/>
@@ -331,10 +347,13 @@
         <PinSub pinname="PA14" signalname="DEBUG_SWCLK" signaltype="2"/>
         <PinSub pinname="PA15" signalname="USART1_TX" signaltype="2"/>
         <PinSub pinname="PB3" signalname="USART1_RX" signaltype="2"/>
+        <PinSub pinname="PB5" signalname="EXINT5" signaltype="2"/>
+        <PinSub pinname="PB6" signalname="EXINT6" signaltype="2"/>
+        <PinSub pinname="PB7" signalname="EXINT7" signaltype="2"/>
     </PINInfo>
     <ProjectInfomation>
         <ProjectName>AT32F456CEU7_foc</ProjectName>
-        <ProjectLocation>D:/X</ProjectLocation>
+        <ProjectLocation>E:/src/AT_foc_hall</ProjectLocation>
         <ToolchainIDE>MDK_V5</ToolchainIDE>
         <ARMCompiler>0</ARMCompiler>
         <BackupCode>true</BackupCode>
@@ -368,5 +387,6 @@
         <RankSub RankNum="14" FixPosFlag="FALSE" FuncName="wk_dma1_channel2_init" InstanceName="DMA1_Channel2" CodeSection="dma1_channel2_init" MainDoNotCallFlag="FALSE"/>
         <RankSub RankNum="16" FixPosFlag="FALSE" FuncName="wk_dma1_channel4_init" InstanceName="DMA1_Channel4" CodeSection="dma1_channel4_init" MainDoNotCallFlag="FALSE"/>
         <RankSub RankNum="17" FixPosFlag="FALSE" FuncName="wk_dma1_channel5_init" InstanceName="DMA1_Channel5" CodeSection="dma1_channel5_init" MainDoNotCallFlag="FALSE"/>
+        <RankSub RankNum="65" FixPosFlag="FALSE" FuncName="wk_exint_config" InstanceName="EXINT" CodeSection="exint function" MainDoNotCallFlag="FALSE"/>
     </FunctionRankInfo>
 </Root>

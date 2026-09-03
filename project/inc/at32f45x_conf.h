@@ -62,7 +62,7 @@ extern "C" {
 #define DMA_MODULE_ENABLED
 /*#define EMAC_MODULE_ENABLED---------------------*/
 /*#define ERTC_MODULE_ENABLED---------------------*/
-/*#define EXINT_MODULE_ENABLED--------------------*/
+#define EXINT_MODULE_ENABLED
 #define FLASH_MODULE_ENABLED
 #define GPIO_MODULE_ENABLED
 /*#define I2C_MODULE_ENABLED----------------------*/

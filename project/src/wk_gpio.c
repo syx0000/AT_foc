@@ -52,8 +52,7 @@ void wk_gpio_config(void)
   /* gpio output config */
   gpio_bits_set(GPIOC, LED_RUN_PIN | LED_ERR_PIN);
   gpio_bits_reset(EN_GATE_GPIO_PORT, EN_GATE_PIN);
-  gpio_bits_reset(TP_TEST_GPIO_PORT, TP_TEST_PIN);
-  gpio_bits_reset(GPIOH, CAN_RES_PIN | CAN_STB_PIN);
+  gpio_bits_reset(CAN_STB_GPIO_PORT, CAN_STB_PIN);
 
   gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
   gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
@@ -72,16 +71,9 @@ void wk_gpio_config(void)
   gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
   gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
   gpio_init_struct.gpio_mode = GPIO_MODE_OUTPUT;
-  gpio_init_struct.gpio_pins = TP_TEST_PIN;
+  gpio_init_struct.gpio_pins = CAN_STB_PIN;
   gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-  gpio_init(TP_TEST_GPIO_PORT, &gpio_init_struct);
-
-  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
-  gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
-  gpio_init_struct.gpio_mode = GPIO_MODE_OUTPUT;
-  gpio_init_struct.gpio_pins = CAN_RES_PIN | CAN_STB_PIN;
-  gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-  gpio_init(GPIOH, &gpio_init_struct);
+  gpio_init(CAN_STB_GPIO_PORT, &gpio_init_struct);
 
   /* add user code begin gpio_config 2 */
 

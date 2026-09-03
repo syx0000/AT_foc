@@ -29,114 +29,6 @@
 
 /* add user code begin 0 */
 
-/* ============================================================
- * ADC Business Layer Implementation
- * Migrated from cubemx_yxsui/Core/Src/adc.c
- * ============================================================ */
-
-/* FOC电流采样数据（10kHz注入组） */
-volatile FOC_CurrentSample_t g_foc_current = {0, 0, 0};
-
-/* ADC偏置零点 */
-volatile int32_t g_adc_offset_a = 0;
-volatile int32_t g_adc_offset_b = 0;
-
-/* 规则通道数据（1kHz普通组 + DMA） */
-volatile uint16_t g_temp_motor_raw = 0;
-volatile uint16_t g_temp_mos_raw = 0;
-volatile uint16_t g_so_c_raw = 0;
-volatile uint16_t g_so_3_raw = 0;
-volatile uint32_t g_reg_callback_count = 0;
-
-/* Bus voltage raw value (used by foc/can_wly modules)
- * Migrated from cubemx_yxsui/Core/Src/adc.c */
-volatile uint32_t g_vdc_raw = 0;
-
-/* FOC open-loop test enable flag (set 1 to bypass closed-loop in PCCE ISR)
- * Migrated from cubemx_yxsui/Core/Src/adc.c:30 */
-volatile uint8_t g_foc_openloop_enable = 0;
-
-/* adc_ordinary_buffer在main.c定义，这里extern引用 */
-extern uint16_t adc_ordinary_buffer[4];
-
-/**
- * @brief  ADC注入组转换完成处理（PCCE ISR中调用）
- * @note   读取ADC1 CH0(PA0) + ADC2 CH1(PA1) 注入数据，减零点偏置
- *         使用库函数 adc_preempt_conversion_data_get() 读取pdt寄存器
- */
-void adc_foc_on_injected_done(void)
-{
-    /* AT32注入组数据读取：使用库函数读取preempt channel 1 */
-    int32_t raw_a = (int32_t)adc_preempt_conversion_data_get(ADC1, ADC_PREEMPT_CHANNEL_1);
-    int32_t raw_b = (int32_t)adc_preempt_conversion_data_get(ADC2, ADC_PREEMPT_CHANNEL_1);
-
-    g_foc_current.i_a_raw = raw_a - g_adc_offset_a;
-    g_foc_current.i_b_raw = raw_b - g_adc_offset_b;
-    g_foc_current.sample_count++;
-}
-
-/**
- * @brief  ADC普通组DMA传输完成处理（DMA FDT或OCCE ISR中调用）
- * @note   从adc_ordinary_buffer[4]读取：
- *         [0]=ADC1_CH4(PA4/TEMP_MOTOR), [1]=ADC1_CH5(PA5/TEMP_MOS)
- *         [2]=ADC2_CH2(PA2/SO_C),       [3]=ADC2_CH3(PA3/VDC)
- */
-void adc_foc_on_regular_done(void)
-{
-    g_temp_motor_raw = adc_ordinary_buffer[0];
-    g_temp_mos_raw   = adc_ordinary_buffer[1];
-    g_so_c_raw       = adc_ordinary_buffer[2];
-    g_vdc_raw        = adc_ordinary_buffer[3];
-
-    /* Update g_udc_volt (unit: V) for SVPWM
-     * Formula: V = raw * 3.3 * divider_ratio / 4095
-     * divider_ratio = 21 (hardware voltage divider)
-     * Simplified: raw * 33 * 21 / 4095 / 10 */
-    extern volatile uint16_t g_udc_volt;
-    uint16_t udc_v = (uint16_t)(g_vdc_raw * 33U * 21U / 4095U / 10U);
-    if (udc_v < 10) udc_v = 10;  /* prevent div-by-zero in SVPWM */
-    g_udc_volt = udc_v;
-
-    g_reg_callback_count++;
-}
-
-/**
- * @brief  校准电流零点偏置（电机静止，IGBT关闭）
- * @param  n_samples 采样次数，建议1024
- */
-void adc_calibrate_offsets(uint16_t n_samples)
-{
-    int64_t sum_a = 0, sum_b = 0;
-    uint32_t start = g_foc_current.sample_count;
-
-    /* 等待采样启动 */
-    while ((g_foc_current.sample_count - start) < 1);
-
-    /* 暂时清零偏置 */
-    int32_t saved_a = g_adc_offset_a;
-    int32_t saved_b = g_adc_offset_b;
-    g_adc_offset_a = 0;
-    g_adc_offset_b = 0;
-
-    /* 累加n_samples个原始值 */
-    start = g_foc_current.sample_count;
-    uint32_t count = 0;
-    while (count < n_samples) {
-        uint32_t now = g_foc_current.sample_count;
-        if (now != start) {
-            sum_a += g_foc_current.i_a_raw;
-            sum_b += g_foc_current.i_b_raw;
-            start = now;
-            count++;
-        }
-    }
-
-    /* 计算平均偏置 */
-    g_adc_offset_a = (int32_t)(sum_a / n_samples);
-    g_adc_offset_b = (int32_t)(sum_b / n_samples);
-    (void)saved_a; (void)saved_b;
-}
-
 /* add user code end 0 */
 
 /**
@@ -221,8 +113,8 @@ void wk_adc1_init(void)
   adc_resolution_set(ADC1, ADC_RESOLUTION_12B);
 
   /* adc_ordinary_conversionmode---------------------------------------------------- */
-  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_4, 1, ADC_SAMPLETIME_2_5);
-  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_5, 2, ADC_SAMPLETIME_2_5);
+  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_4, 1, ADC_SAMPLETIME_6_5);
+  adc_ordinary_channel_set(ADC1, ADC_CHANNEL_5, 2, ADC_SAMPLETIME_6_5);
 
   /* When "ADC_ORDINARY_TRIG_EDGE_NONE" is selected, the external trigger source is invalid, and user can only use software trigger. \
   The software trigger function is adc_ordinary_software_trigger_enable(ADCx, TRUE); */
@@ -248,7 +140,7 @@ void wk_adc1_init(void)
   adc_interrupt_enable(ADC1, ADC_TCF_INT, TRUE);
 
   /* add user code begin adc1_init 2 */
-  
+
   /* add user code end adc1_init 2 */
 
   adc_enable(ADC1, TRUE);
@@ -261,7 +153,7 @@ void wk_adc1_init(void)
   while(adc_calibration_status_get(ADC1));
 
   /* add user code begin adc1_init 3 */
-  
+
   /* add user code end adc1_init 3 */
 }
 
@@ -312,8 +204,8 @@ void wk_adc2_init(void)
   adc_resolution_set(ADC2, ADC_RESOLUTION_12B);
 
   /* adc_ordinary_conversionmode---------------------------------------------------- */
-  adc_ordinary_channel_set(ADC2, ADC_CHANNEL_2, 1, ADC_SAMPLETIME_2_5);
-  adc_ordinary_channel_set(ADC2, ADC_CHANNEL_3, 2, ADC_SAMPLETIME_2_5);
+  adc_ordinary_channel_set(ADC2, ADC_CHANNEL_2, 1, ADC_SAMPLETIME_6_5);
+  adc_ordinary_channel_set(ADC2, ADC_CHANNEL_3, 2, ADC_SAMPLETIME_6_5);
 
   /* When "ADC_ORDINARY_TRIG_EDGE_NONE" is selected, the external trigger source is invalid, and user can only use software trigger. \
   The software trigger function is adc_ordinary_software_trigger_enable(ADCx, TRUE); */
@@ -346,41 +238,6 @@ void wk_adc2_init(void)
 
   /* add user code end adc2_init 3 */
 }
-
-/* add user code begin 1 */
-/**
-  * @brief  adc ordinary conversion recovery for dual ADC mode.
-  * @param  none
-  * @retval none
-  */
-void adc_ordinary_convert_recovery(void)
-{
-    uint32_t recovery_index = 0;
-
-    /* disable adc */
-    adc_enable(ADC1, FALSE);
-    adc_enable(ADC2, FALSE);
-
-    /* record adc mode configuration */
-    recovery_index = adc_combine_mode_get();
-
-    /* clear adc mode configuration */
-    adc_combine_mode_set(ADC_INDEPENDENT_MODE);
-
-    /* reinitialize dma */
-    dma_channel_enable(DMA1_CHANNEL3, FALSE);
-    dma_flag_clear(DMA1_FDT3_FLAG);
-    dma_data_number_set(DMA1_CHANNEL3, 4);
-    dma_channel_enable(DMA1_CHANNEL3, TRUE);
-
-    /* recovery adc mode configuration */
-    adc_combine_mode_set((adc_combine_mode_type)recovery_index);
-
-    /* enable adc to detection trigger */
-    adc_enable(ADC1, TRUE);
-    adc_enable(ADC2, TRUE);
-}
-/* add user code end 1 */
 
 /* add user code begin 1 */
 

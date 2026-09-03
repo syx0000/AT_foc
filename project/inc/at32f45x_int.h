@@ -70,6 +70,7 @@ void DMA1_Channel3_IRQHandler(void);
 void ADC1_2_IRQHandler(void);
 void CAN1_RX_IRQHandler(void);
 void CAN1_ERR_IRQHandler(void);
+void EXINT9_5_IRQHandler(void);
 void TMR1_CH_IRQHandler(void);
 void USART1_IRQHandler(void);
 void USART3_IRQHandler(void);
