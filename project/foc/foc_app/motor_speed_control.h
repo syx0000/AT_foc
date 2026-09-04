@@ -38,7 +38,7 @@ typedef struct
   int32_t target_speed_millirpm;
   int32_t ramped_speed_millirpm;
   int32_t feedback_speed_millirpm;
-  int32_t quadrature_current_command_ma;
+  int32_t quadrature_current_command_ma; /**< 速度PI输出的逻辑Iq指令，单位mA。 */
   uint32_t stall_time_ms;
   uint32_t update_count;
 } motor_speed_control_status_t;
@@ -61,17 +61,17 @@ bool motor_speed_control_config_set(
 
 /**
  * @brief 从已经运行的Hall电流环启动速度外环。
- * @param target_speed_millirpm 正向目标机械转速，单位0.001 rpm；当前Hall角度标定暂不支持反转。
- * @param initial_quadrature_current_ma 接管前Iq指令，单位mA，用于PI无扰预置。
- * @return 电流环与速度反馈有效、目标在范围内时返回true，否则返回false。
+ * @param target_speed_millirpm 有符号逻辑目标机械转速，单位0.001 rpm。
+ * @param initial_quadrature_current_ma 接管前物理Iq指令，单位mA，用于PI无扰预置。
+ * @return 电流环与速度反馈有效、目标范围和当前反馈方向一致时返回true，否则返回false。
  */
 bool motor_speed_control_start(int32_t target_speed_millirpm,
                                int32_t initial_quadrature_current_ma);
 
 /**
  * @brief 更新运行中的目标机械转速。
- * @param target_speed_millirpm 新的正向目标机械转速，单位0.001 rpm；必须大于0。
- * @return 控制器正在运行且目标在范围内时返回true，否则返回false。
+ * @param target_speed_millirpm 新的有符号逻辑目标机械转速，单位0.001 rpm且不能为0。
+ * @return 控制器运行、目标有效且不要求在线跨零反转时返回true，否则返回false。
  */
 bool motor_speed_control_target_set(int32_t target_speed_millirpm);
 
@@ -86,7 +86,7 @@ void motor_speed_control_stop(void);
  * @brief 执行一次1 kHz速度外环。
  * @param 无。
  * @return 无。
- * @details 推进目标速度斜坡，读取Hall机械转速，经速度PI生成Iq指令并写入10 kHz电流环；
+ * @details 推进逻辑目标速度斜坡，经速度PI生成逻辑Iq，再按方向配置转换为物理Iq写入10 kHz电流环；
  *          速度反馈或电流环失效时进入FAULT并停止电流控制。
  * @note 仅供1 kHz周期中断调用。
  */

@@ -145,6 +145,16 @@ bool motor_parameter_active_read(motor_parameter_t *parameter)
   return true;
 }
 
+bool motor_parameter_direction_inverted_get(void)
+{
+  return (motor_parameter_active.direction_inverted != 0U);
+}
+
+uint8_t motor_parameter_pole_pairs_get(void)
+{
+  return motor_parameter_active.pole_pairs;
+}
+
 bool motor_parameter_candidate_read(motor_parameter_t *parameter)
 {
   if (parameter == NULL)

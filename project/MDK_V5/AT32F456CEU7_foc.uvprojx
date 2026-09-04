@@ -553,6 +553,8 @@
             <File><FileName>motor_voltage_limit.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_voltage_limit.c</FilePath></File>
             <File><FileName>motor_ramp.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_ramp.c</FilePath></File>
             <File><FileName>motor_hall_decoder.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_decoder.c</FilePath></File>
+            <File><FileName>motor_direction.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_direction.c</FilePath></File>
+            <File><FileName>motor_hall_angle_math.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_angle_math.c</FilePath></File>
           </Files>
         </Group>
         <Group>

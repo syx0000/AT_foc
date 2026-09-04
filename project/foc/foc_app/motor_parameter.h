@@ -66,6 +66,20 @@ void motor_parameter_init(void);
 bool motor_parameter_active_read(motor_parameter_t *parameter);
 
 /**
+ * @brief 原子读取当前活动逻辑方向配置。
+ * @param 无。
+ * @return false表示逻辑方向与物理正向一致，true表示逻辑方向反转。
+ */
+bool motor_parameter_direction_inverted_get(void);
+
+/**
+ * @brief 原子读取当前活动电机极对数。
+ * @param 无。
+ * @return 已校验的电机极对数，范围1..64。
+ */
+uint8_t motor_parameter_pole_pairs_get(void);
+
+/**
  * @brief 读取尚未生效的候选电机参数。
  * @param parameter 输出完整候选参数，不允许为空。
  * @return 参数有效时返回true；传入NULL时返回false。

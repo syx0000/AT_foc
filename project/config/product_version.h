@@ -12,8 +12,8 @@
 #define FIRMWARE_VERSION_YEAR       2026U
 #define FIRMWARE_VERSION_MONTH         9U
 #define FIRMWARE_VERSION_DAY           4U
-#define FIRMWARE_VERSION_REVISION      5U
-#define FIRMWARE_VERSION_STRING       "2026.09.04.5"
+#define FIRMWARE_VERSION_REVISION      6U
+#define FIRMWARE_VERSION_STRING       "2026.09.04.6"
 
 /* 待硬件正式版本确认后替换，禁止根据工程文件名猜测。 */
 #define HARDWARE_VERSION_STRING       "at_foc_hall_v1.0"

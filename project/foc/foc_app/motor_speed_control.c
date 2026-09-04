@@ -2,6 +2,8 @@
 #include "at32f45x.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
+#include "motor_direction.h"
+#include "motor_parameter.h"
 #include "motor_ramp.h"
 #include "motor_speed_control.h"
 #include "motor_speed_feedback.h"
@@ -45,8 +47,9 @@ static bool motor_speed_control_command_valid(int32_t speed_millirpm)
 {
   int64_t maximum_millirpm =
     (int64_t)motor_speed_control_config.maximum_speed_rpm * 1000L;
-  return ((int64_t)speed_millirpm > 0) &&
-         ((int64_t)speed_millirpm <= maximum_millirpm);
+  return ((int64_t)speed_millirpm != 0) &&
+         ((int64_t)speed_millirpm <= maximum_millirpm) &&
+         ((int64_t)speed_millirpm >= -maximum_millirpm);
 }
 
 void motor_speed_control_init(void)
@@ -108,6 +111,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
 {
   motor_current_control_status_t current_control;
   motor_speed_feedback_t speed_feedback;
+  int32_t logical_initial_current_ma;
 
   if ((motor_speed_control_status.state != MOTOR_SPEED_CONTROL_STOPPED) ||
       (!motor_speed_control_command_valid(target_speed_millirpm)) ||
@@ -115,6 +119,8 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
       (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
       (!motor_speed_feedback_read(&speed_feedback)) ||
       (!speed_feedback.valid) ||
+      (((int64_t)target_speed_millirpm *
+        speed_feedback.filtered_speed_millirpm) <= 0) ||
       (initial_quadrature_current_ma >
        motor_speed_control_config.current_limit_ma) ||
       (initial_quadrature_current_ma <
@@ -123,8 +129,15 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
     return false;
   }
 
+  if (!motor_direction_transform_s32(
+        initial_quadrature_current_ma,
+        motor_parameter_direction_inverted_get(),
+        &logical_initial_current_ma))
+  {
+    return false;
+  }
   (void)motor_speed_pi_output_seed(&motor_speed_controller,
-                                   initial_quadrature_current_ma);
+                                   logical_initial_current_ma);
   (void)motor_ramp_init(
     &motor_speed_ramp,
     speed_feedback.filtered_speed_millirpm,
@@ -138,7 +151,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
   motor_speed_control_status.feedback_speed_millirpm =
     speed_feedback.filtered_speed_millirpm;
   motor_speed_control_status.quadrature_current_command_ma =
-    initial_quadrature_current_ma;
+    logical_initial_current_ma;
   motor_speed_control_status.stall_time_ms = 0U;
   motor_speed_control_status.update_count = 0U;
   return true;
@@ -147,7 +160,9 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
 bool motor_speed_control_target_set(int32_t target_speed_millirpm)
 {
   if ((motor_speed_control_status.state != MOTOR_SPEED_CONTROL_RUNNING) ||
-      (!motor_speed_control_command_valid(target_speed_millirpm)))
+      (!motor_speed_control_command_valid(target_speed_millirpm)) ||
+      (((int64_t)target_speed_millirpm *
+        motor_speed_control_status.target_speed_millirpm) <= 0))
   {
     return false;
   }
@@ -184,6 +199,7 @@ void motor_speed_control_process_1khz(void)
   motor_current_control_command_t current_command;
   int32_t ramped_speed_millirpm;
   int32_t quadrature_current_ma;
+  int32_t physical_quadrature_current_ma;
   int32_t stall_current_threshold_ma;
 
   if (motor_speed_control_status.state != MOTOR_SPEED_CONTROL_RUNNING)
@@ -205,13 +221,16 @@ void motor_speed_control_process_1khz(void)
     return;
   }
 
-  if (speed_feedback.direction <= 0)
+  if (((motor_speed_control_status.target_speed_millirpm > 0) &&
+       (speed_feedback.direction < 0)) ||
+      ((motor_speed_control_status.target_speed_millirpm < 0) &&
+       (speed_feedback.direction > 0)))
   {
     motor_speed_control_fault_set(
       MOTOR_SPEED_CONTROL_FAULT_REVERSE_DIRECTION);
     return;
   }
-  if (speed_feedback.filtered_speed_millirpm >
+  if (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) >
       (int32_t)(MOTOR_SPEED_OVERSPEED_RPM * 1000U))
   {
     motor_speed_control_fault_set(MOTOR_SPEED_CONTROL_FAULT_OVERSPEED);
@@ -221,9 +240,9 @@ void motor_speed_control_process_1khz(void)
   stall_current_threshold_ma = (int32_t)(
     ((int64_t)motor_speed_control_config.current_limit_ma *
      MOTOR_SPEED_STALL_CURRENT_PERCENT) / 100U);
-  if ((motor_speed_ramp.current >=
+  if ((motor_speed_control_abs(motor_speed_ramp.current) >=
        (int32_t)(MOTOR_SPEED_STALL_MIN_TARGET_RPM * 1000U)) &&
-      (speed_feedback.filtered_speed_millirpm <=
+      (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) <=
        (int32_t)(MOTOR_SPEED_STALL_MAX_FEEDBACK_RPM * 1000U)) &&
       (motor_speed_control_abs(
          current_status.command.quadrature_reference_ma) >=
@@ -252,7 +271,15 @@ void motor_speed_control_process_1khz(void)
     &motor_speed_controller, ramped_speed_millirpm,
     speed_feedback.filtered_speed_millirpm);
   current_command.direct_reference_ma = 0;
-  current_command.quadrature_reference_ma = quadrature_current_ma;
+  if (!motor_direction_transform_s32(
+        quadrature_current_ma,
+        motor_parameter_direction_inverted_get(),
+        &physical_quadrature_current_ma))
+  {
+    motor_speed_control_fault_set(MOTOR_SPEED_CONTROL_FAULT_COMMAND);
+    return;
+  }
+  current_command.quadrature_reference_ma = physical_quadrature_current_ma;
   if (!motor_current_control_command_set(&current_command))
   {
     motor_speed_control_fault_set(

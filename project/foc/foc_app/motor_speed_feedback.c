@@ -1,7 +1,9 @@
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_control_config.h"
+#include "motor_direction.h"
 #include "motor_hall_decoder.h"
+#include "motor_parameter.h"
 #include "motor_speed_feedback.h"
 #include "motor_timebase.h"
 
@@ -26,6 +28,9 @@ void motor_speed_feedback_process_1khz(void)
   uint32_t speed_millirpm;
   int32_t raw_speed_millirpm;
   int64_t filter_error;
+  bool direction_inverted;
+  uint8_t pole_pairs;
+  int8_t logical_direction;
 
   timeout_cycles =
     (system_core_clock / 1000U) * MOTOR_SPEED_FEEDBACK_TIMEOUT_MS;
@@ -44,13 +49,21 @@ void motor_speed_feedback_process_1khz(void)
     return;
   }
 
+  direction_inverted = motor_parameter_direction_inverted_get();
+  pole_pairs = motor_parameter_pole_pairs_get();
   speed_millirpm =
     (uint32_t)(((uint64_t)hall_sample.electrical_frequency_millihz * 60U) /
-               MOTOR_POLE_PAIRS);
+               pole_pairs);
   raw_speed_millirpm = (hall_sample.direction > 0) ?
     (int32_t)speed_millirpm : -(int32_t)speed_millirpm;
+  (void)motor_direction_transform_s32(raw_speed_millirpm,
+                                      direction_inverted,
+                                      &raw_speed_millirpm);
+  logical_direction = (int8_t)(
+    hall_sample.direction * motor_direction_sign_get(direction_inverted));
 
-  if (!motor_speed_feedback.valid)
+  if ((!motor_speed_feedback.valid) ||
+      (motor_speed_feedback.direction != logical_direction))
   {
     motor_speed_feedback.filtered_speed_millirpm = raw_speed_millirpm;
   }
@@ -66,7 +79,7 @@ void motor_speed_feedback_process_1khz(void)
   motor_speed_feedback.raw_speed_millirpm = raw_speed_millirpm;
   motor_speed_feedback.electrical_frequency_millihz =
     hall_sample.electrical_frequency_millihz;
-  motor_speed_feedback.direction = hall_sample.direction;
+  motor_speed_feedback.direction = logical_direction;
   if (hall_sample.frequency_update_count !=
       motor_speed_feedback_last_update_count)
   {

@@ -9,7 +9,8 @@ typedef struct
   uint16_t electrical_angle_u16;       /**< Hall边沿插值并补偿为转子坐标系的电角度。 */
   uint32_t electrical_frequency_millihz; /**< Hall完整周期电频率，单位mHz。 */
   uint8_t hall_state;                  /**< 当前Hall组合状态1..6。 */
-  bool valid;                          /**< 正向、频率有效且Hall未超时时为true。 */
+  int8_t direction;                    /**< 物理方向：1正向、-1反向、0未知。 */
+  bool valid;                          /**< 方向、频率有效且Hall未超时时为true。 */
 } motor_hall_angle_estimator_t;
 
 /**
@@ -25,7 +26,7 @@ void motor_hall_angle_estimator_init(void);
  * @param 无。
  * @return 无。
  * @details 使用实测状态边沿角度校正相位，再叠加开环标定到转子坐标系的固定
- *          角度补偿；只接受已完成标定的positive方向。
+ *          角度补偿；正向使用当前状态进入角，反向使用当前状态正向后继的进入角。
  */
 void motor_hall_angle_estimator_edge_process(void);
 
@@ -33,7 +34,7 @@ void motor_hall_angle_estimator_edge_process(void);
  * @brief 执行一次10 kHz Hall边沿间电角度插值。
  * @param 无。
  * @return 无。
- * @details 按最近完整Hall周期频率推进32位相位累加器；超过100 ms没有边沿则失效。
+ * @details 按最近完整Hall周期频率和物理方向推进32位相位累加器；超过100 ms没有边沿则失效。
  */
 void motor_hall_angle_estimator_fast_process(void);
 

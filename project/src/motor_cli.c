@@ -147,6 +147,33 @@ static void motor_cli_parameter_diff_print(void)
     printf("hall_angle: changed\r\n");
 }
 
+/**
+ * @brief 在电机安全停止且没有其他候选修改时切换逻辑方向。
+ * @param inverted false设置normal，true设置reverse。
+ * @return 候选方向成功写入并应用为活动参数时返回true，否则返回false。
+ * @details 方向命令不会隐式接受其他待确认候选参数；失败时恢复候选参数。
+ */
+static bool motor_cli_direction_set(bool inverted)
+{
+  motor_parameter_diff_t diff;
+
+  if ((!motor_parameter_diff_read(&diff)) || diff.any_changed)
+  {
+    return false;
+  }
+  if (!motor_parameter_candidate_field_set(
+        MOTOR_PARAMETER_FIELD_DIRECTION_INVERTED, inverted ? 1 : 0))
+  {
+    return false;
+  }
+  if (!motor_parameter_candidate_accept())
+  {
+    motor_parameter_candidate_discard();
+    return false;
+  }
+  return true;
+}
+
 static void motor_cli_command_execute(char *line)
 {
   unsigned int level;
@@ -171,7 +198,7 @@ static void motor_cli_command_execute(char *line)
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning diff/accept/discard\r\n");
+    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning diff/accept/discard\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -185,8 +212,9 @@ static void motor_cli_command_execute(char *line)
     (void)motor_control_status_read(&motor);
     (void)motor_speed_feedback_read(&speed_feedback);
     (void)motor_speed_control_status_read(&speed_control);
-    printf("OK motor=%u motor_fault=%lu open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
+    printf("OK motor=%u motor_fault=%lu direction=%s open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
       (unsigned int)motor.state, (unsigned long)motor.fault_code,
+      motor_parameter_direction_inverted_get() ? "reverse" : "normal",
       (unsigned int)open_loop.state,
       (long)open_loop.actual_frequency_millihz,
       (long)open_loop.target_frequency_millihz,
@@ -208,6 +236,27 @@ static void motor_cli_command_execute(char *line)
   {
     motor_control_stop();
     printf("OK motor stopped\r\n");
+  }
+  else if (strcmp(line, "motor direction") == 0)
+  {
+    printf("OK direction=%s reverse_control_verified=%u\r\n",
+           motor_parameter_direction_inverted_get() ? "reverse" : "normal",
+           (unsigned int)MOTOR_REVERSE_CONTROL_VERIFIED);
+  }
+  else if (strcmp(line, "motor direction normal") == 0)
+  {
+    if (motor_cli_direction_set(false))
+      printf("OK direction=normal\r\n");
+    else
+      printf("ERR 13 direction_requires_ready_pwm_off_and_no_pending_diff\r\n");
+  }
+  else if (strcmp(line, "motor direction reverse") == 0)
+  {
+    if (motor_cli_direction_set(true))
+      printf("OK direction=reverse reverse_control_verified=%u\r\n",
+             (unsigned int)MOTOR_REVERSE_CONTROL_VERIFIED);
+    else
+      printf("ERR 13 direction_requires_ready_pwm_off_and_no_pending_diff\r\n");
   }
   else if (strcmp(line, "motor params active") == 0)
   {
@@ -305,8 +354,9 @@ static void motor_cli_command_execute(char *line)
   }
   else if (sscanf(line, "speed start %ld", &speed_rpm) == 1)
   {
-    if ((speed_rpm <= 0) ||
-        (speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    if ((speed_rpm == 0) ||
+        ((int64_t)speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+        ((int64_t)speed_rpm < -MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
     {
       printf("ERR 3 invalid_parameter\r\n");
       return;
@@ -318,8 +368,9 @@ static void motor_cli_command_execute(char *line)
   }
   else if (sscanf(line, "speed set %ld", &speed_rpm) == 1)
   {
-    if ((speed_rpm <= 0) ||
-        (speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    if ((speed_rpm == 0) ||
+        ((int64_t)speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+        ((int64_t)speed_rpm < -MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
     {
       printf("ERR 3 invalid_parameter\r\n");
       return;

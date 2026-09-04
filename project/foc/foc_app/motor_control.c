@@ -4,12 +4,41 @@
 #include "motor_control_config.h"
 #include "motor_current_control.h"
 #include "motor_current_sample.h"
+#include "motor_direction.h"
 #include "motor_foc_math.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_parameter.h"
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
 #include "motor_speed_control.h"
 static volatile motor_control_status_t motor_control_status;
+
+/**
+ * @brief 校验有符号逻辑转速并执行物理反向安全门判断。
+ * @param target_speed_rpm 待校验逻辑机械转速，单位rpm且不能为0。
+ * @return 范围合法且不会触发未验证物理反向控制时返回true。
+ */
+static bool motor_control_speed_command_valid(int32_t target_speed_rpm)
+{
+  int32_t physical_speed_rpm;
+  int64_t absolute_speed_rpm = (target_speed_rpm < 0) ?
+    -(int64_t)target_speed_rpm : (int64_t)target_speed_rpm;
+
+  if ((target_speed_rpm == 0) ||
+      (absolute_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+      (absolute_speed_rpm > (INT32_MAX / 1000)) ||
+      (!motor_direction_transform_s32(
+        target_speed_rpm, motor_parameter_direction_inverted_get(),
+        &physical_speed_rpm)))
+  {
+    return false;
+  }
+#if (MOTOR_REVERSE_CONTROL_VERIFIED == 0U)
+  if (physical_speed_rpm < 0) return false;
+#endif
+  return true;
+}
+
 void motor_control_init(void)
 {
   motor_control_status.state = MOTOR_CONTROL_STATE_STARTUP;
@@ -81,9 +110,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 {
   motor_current_control_command_t current_command;
 
-  if ((target_speed_rpm <= 0) ||
-      (target_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
-      (target_speed_rpm > (INT32_MAX / 1000)))
+  if (!motor_control_speed_command_valid(target_speed_rpm))
   {
     return false;
   }
@@ -104,9 +131,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
 {
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
-      (target_speed_rpm <= 0) ||
-      (target_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
-      (target_speed_rpm > (INT32_MAX / 1000)))
+      (!motor_control_speed_command_valid(target_speed_rpm)))
   {
     return false;
   }

@@ -196,9 +196,10 @@ void interrupt_monitor_poll(void)
     int16_t angle_error =
       (int16_t)(hall_angle_estimator.electrical_angle_u16 -
                 open_loop_status.electrical_angle_u16);
-    LOGI("Hall estimator: valid=%u state=%u angle=%u error=%d frequency=%lu.%03lu Hz\r\n",
+    LOGI("Hall estimator: valid=%u state=%u direction=%d angle=%u error=%d frequency=%lu.%03lu Hz\r\n",
          (unsigned int)hall_angle_estimator.valid,
          (unsigned int)hall_angle_estimator.hall_state,
+         (int)hall_angle_estimator.direction,
          (unsigned int)hall_angle_estimator.electrical_angle_u16,
          (int)angle_error,
          (unsigned long)(hall_angle_estimator.electrical_frequency_millihz / 1000U),
@@ -206,7 +207,7 @@ void interrupt_monitor_poll(void)
   }
   if (speed_feedback_valid)
   {
-    LOGI("Speed: valid=%u direction=%d electrical=%lu.%03lu Hz mechanical=%ld mRPM raw=%ld mRPM\r\n",
+    LOGI("Speed: valid=%u logical_direction=%d electrical=%lu.%03lu Hz mechanical=%ld mRPM raw=%ld mRPM\r\n",
          (unsigned int)speed_feedback.valid,
          (int)speed_feedback.direction,
          (unsigned long)(speed_feedback.electrical_frequency_millihz / 1000U),
@@ -216,7 +217,7 @@ void interrupt_monitor_poll(void)
   }
   if (speed_control_valid)
   {
-    LOGI("Speed control: state=%u fault=%u target=%ld ramp=%ld feedback=%ld mRPM iq=%ld mA stall=%lu ms updates=%lu\r\n",
+    LOGI("Speed control: state=%u fault=%u target=%ld ramp=%ld feedback=%ld mRPM logical_iq=%ld mA stall=%lu ms updates=%lu\r\n",
          (unsigned int)speed_control.state,
          (unsigned int)speed_control.fault,
          (long)speed_control.target_speed_millirpm,
