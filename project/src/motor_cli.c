@@ -2,6 +2,7 @@
 #include <string.h>
 #include "motor_cli.h"
 #include "motor_control_config.h"
+#include "motor_commissioning.h"
 #include "motor_current_control.h"
 #include "motor_control.h"
 #include "motor_log.h"
@@ -195,10 +196,11 @@ static void motor_cli_command_execute(char *line)
   motor_speed_control_status_t speed_control;
   motor_parameter_t parameter;
   motor_parameter_field_t parameter_field;
+  motor_commissioning_status_t commissioning;
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning diff/accept/discard\r\n");
+    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning start/status/abort/diff/accept/discard calibrate current_offset calibrate hall sequence/angle/offset identify resistance/inductance calculate current_pi test current_d/current_q/current_handover\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -272,16 +274,72 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_parameter_diff_print();
   }
+  else if (strcmp(line, "motor commissioning status") == 0)
+  {
+    (void)motor_commissioning_status_read(&commissioning);
+    printf("OK commissioning state=%u task=%u step=%lu error=%lu runs=%lu\r\n",
+      commissioning.state,commissioning.task,commissioning.step,
+      commissioning.error,commissioning.run_count);
+  }
+  else if (strcmp(line, "motor commissioning abort") == 0)
+  {
+    printf(motor_commissioning_abort()?"OK commissioning abort requested\r\n":"ERR commissioning_not_running\r\n");
+  }
+  else if (strcmp(line, "motor commissioning start") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_FULL);
+  }
+  else if (strcmp(line, "calibrate current_offset") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_OFFSET);
+  }
+  else if ((strcmp(line, "calibrate hall sequence") == 0) ||
+           (strcmp(line, "calibrate hall angle") == 0))
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_HALL);
+  }
+  else if (strcmp(line, "calibrate hall offset") == 0)
+  {
+    printf("ERR hall_offset_requires_manual_torque_validation\r\n");
+  }
+  else if (strcmp(line, "identify resistance") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_RESISTANCE);
+  }
+  else if (strcmp(line, "identify inductance") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_INDUCTANCE);
+  }
+  else if (strcmp(line, "calculate current_pi") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_PI);
+  }
+  else if (strcmp(line, "test current_d") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_D);
+  }
+  else if (strcmp(line, "test current_q") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_Q);
+  }
+  else if (strcmp(line, "test current_handover") == 0)
+  {
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_HANDOVER);
+  }
   else if (strcmp(line, "motor commissioning accept") == 0)
   {
     if (motor_parameter_candidate_accept())
+    {
+      (void)motor_commissioning_review_complete(true);
       printf("OK candidate applied to runtime parameter manager\r\n");
+    }
     else
       printf("ERR 12 accept_requires_ready_pwm_off_and_valid_candidate\r\n");
   }
   else if (strcmp(line, "motor commissioning discard") == 0)
   {
     motor_parameter_candidate_discard();
+    (void)motor_commissioning_review_complete(false);
     printf("OK candidate discarded\r\n");
   }
   else if (sscanf(line, "motor param set %31s %ld",

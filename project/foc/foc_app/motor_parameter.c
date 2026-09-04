@@ -13,6 +13,7 @@
 
 static volatile motor_parameter_t motor_parameter_active;
 static motor_parameter_t motor_parameter_candidate;
+static bool motor_parameter_trial_active;
 
 /**
  * @brief 生成与当前编译配置完全一致的默认电机参数。
@@ -125,6 +126,7 @@ void motor_parameter_init(void)
   motor_parameter_default_build(&defaults);
   motor_parameter_active = defaults;
   motor_parameter_candidate = defaults;
+  motor_parameter_trial_active = false;
 }
 
 bool motor_parameter_active_read(motor_parameter_t *parameter)
@@ -322,7 +324,8 @@ bool motor_parameter_candidate_accept(void)
   motor_control_status_t control;
   uint32_t primask;
 
-  if ((!motor_parameter_validate(&motor_parameter_candidate)) ||
+  if (motor_parameter_trial_active ||
+      (!motor_parameter_validate(&motor_parameter_candidate)) ||
       (!motor_control_status_read(&control)) ||
       (control.state != MOTOR_CONTROL_STATE_READY) ||
       motor_pwm_port_output_is_enabled())
@@ -337,6 +340,36 @@ bool motor_parameter_candidate_accept(void)
   {
     __enable_irq();
   }
+  return true;
+}
+
+bool motor_parameter_trial_begin(motor_parameter_t *active_backup)
+{
+  motor_control_status_t control;
+  uint32_t primask;
+  if ((active_backup == NULL) || motor_parameter_trial_active ||
+      (!motor_parameter_validate(&motor_parameter_candidate)) ||
+      (!motor_control_status_read(&control)) ||
+      (control.state != MOTOR_CONTROL_STATE_READY) ||
+      motor_pwm_port_output_is_enabled()) return false;
+  (void)motor_parameter_active_read(active_backup);
+  primask=__get_PRIMASK(); __disable_irq();
+  motor_parameter_active=motor_parameter_candidate;
+  motor_parameter_trial_active=true;
+  __set_PRIMASK(primask);
+  return true;
+}
+
+bool motor_parameter_trial_end(const motor_parameter_t *active_backup)
+{
+  uint32_t primask;
+  if ((!motor_parameter_trial_active) ||
+      (!motor_parameter_validate(active_backup)) ||
+      motor_pwm_port_output_is_enabled()) return false;
+  primask=__get_PRIMASK(); __disable_irq();
+  motor_parameter_active=*active_backup;
+  motor_parameter_trial_active=false;
+  __set_PRIMASK(primask);
   return true;
 }
 

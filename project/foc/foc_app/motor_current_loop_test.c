@@ -63,17 +63,22 @@ void motor_current_loop_test_fast_process(void)
   }
 }
 
-bool motor_current_loop_test_run(motor_current_loop_test_result_t *result)
+bool motor_current_loop_test_run_with_gains(
+  motor_current_loop_test_result_t *result,
+  int32_t direct_kp_q15,
+  int32_t quadrature_kp_q15,
+  int32_t integral_gain_q15)
 {
   motor_slow_sensor_state_t sensor;
-  if (result == NULL) return false;
+  if ((result == NULL) || (direct_kp_q15 <= 0) ||
+      (quadrature_kp_q15 <= 0) || (integral_gain_q15 <= 0)) return false;
   (void)motor_slow_sensor_process();
   if ((!motor_slow_sensor_state_read(&sensor)) || motor_pwm_port_output_is_enabled()) return false;
   motor_current_loop_test_bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
-  motor_current_pi_axis_init(&motor_current_loop_test_d_pi, MOTOR_CURRENT_PI_D_KP_Q15,
-    MOTOR_CURRENT_PI_KI_Q15, MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV);
-  motor_current_pi_axis_init(&motor_current_loop_test_q_pi, MOTOR_CURRENT_PI_Q_KP_Q15,
-    MOTOR_CURRENT_PI_KI_Q15, MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV);
+  motor_current_pi_axis_init(&motor_current_loop_test_d_pi, direct_kp_q15,
+    integral_gain_q15, MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV);
+  motor_current_pi_axis_init(&motor_current_loop_test_q_pi, quadrature_kp_q15,
+    integral_gain_q15, MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV);
   motor_current_loop_test_count = 0U; motor_current_loop_test_id_sum = 0; motor_current_loop_test_iq_sum = 0;
   motor_current_loop_test_id_peak = 0; motor_current_loop_test_iq_peak = 0; motor_current_loop_test_vd = 0; motor_current_loop_test_vq = 0;
   motor_current_loop_test_done = false; motor_current_loop_test_fault = false;
@@ -89,4 +94,11 @@ bool motor_current_loop_test_run(motor_current_loop_test_result_t *result)
   result->direct_voltage_mv = motor_current_loop_test_vd; result->quadrature_voltage_mv = motor_current_loop_test_vq;
   result->sample_count = motor_current_loop_test_count;
   return true;
+}
+
+bool motor_current_loop_test_run(motor_current_loop_test_result_t *result)
+{
+  return motor_current_loop_test_run_with_gains(
+    result, MOTOR_CURRENT_PI_D_KP_Q15, MOTOR_CURRENT_PI_Q_KP_Q15,
+    MOTOR_CURRENT_PI_KI_Q15);
 }

@@ -95,7 +95,11 @@ void motor_torque_loop_test_fast_process(void)
   }
 }
 
-bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
+bool motor_torque_loop_test_run_with_gains(
+  motor_torque_loop_test_result_t *result,
+  int32_t direct_kp_q15,
+  int32_t quadrature_kp_q15,
+  int32_t integral_gain_q15)
 {
   motor_open_loop_command_t open_command;
   motor_open_loop_status_t open_status;
@@ -111,7 +115,8 @@ bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
   uint32_t bus_mv;
   int32_t seed_direct_mv, seed_quadrature_mv;
 
-  if (result == NULL) return false;
+  if ((result == NULL) || (direct_kp_q15 <= 0) ||
+      (quadrature_kp_q15 <= 0) || (integral_gain_q15 <= 0)) return false;
   result->status = MOTOR_TORQUE_TEST_STATUS_OK;
   result->sample_count = 0U;
   if (motor_pwm_port_output_is_enabled())
@@ -120,9 +125,9 @@ bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
     return false;
   }
 
-  current_control_config.direct_kp_q15 = MOTOR_CURRENT_PI_D_KP_Q15;
-  current_control_config.quadrature_kp_q15 = MOTOR_CURRENT_PI_Q_KP_Q15;
-  current_control_config.integral_gain_q15 = MOTOR_CURRENT_PI_KI_Q15;
+  current_control_config.direct_kp_q15 = direct_kp_q15;
+  current_control_config.quadrature_kp_q15 = quadrature_kp_q15;
+  current_control_config.integral_gain_q15 = integral_gain_q15;
   current_control_config.voltage_limit_percent =
     MOTOR_TORQUE_TEST_BUS_VOLTAGE_LIMIT_PERCENT;
   current_control_config.hard_voltage_limit_mv =
@@ -246,4 +251,11 @@ bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
   result->final_direct_voltage_mv = control.direct_voltage_mv;
   result->final_quadrature_voltage_mv = control.quadrature_voltage_mv;
   return true;
+}
+
+bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
+{
+  return motor_torque_loop_test_run_with_gains(
+    result, MOTOR_CURRENT_PI_D_KP_Q15, MOTOR_CURRENT_PI_Q_KP_Q15,
+    MOTOR_CURRENT_PI_KI_Q15);
 }

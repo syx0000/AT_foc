@@ -48,6 +48,21 @@ typedef struct
 bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result);
 
 /**
+ * @brief 使用指定PI增益执行开环起转、Hall接管及低Iq闭环测试。
+ * @param result 输出闭环电流、电压、转速及故障快照，不允许为空。
+ * @param direct_kp_q15 d轴比例增益，Q15格式，必须大于0。
+ * @param quadrature_kp_q15 q轴比例增益，Q15格式，必须大于0。
+ * @param integral_gain_q15 d/q轴共用单步积分增益，Q15格式，必须大于0。
+ * @return 完成接管和闭环测试返回true，任一安全检查失败返回false。
+ * @details 供候选参数试运行使用；原测试入口继续使用编译期默认增益。
+ */
+bool motor_torque_loop_test_run_with_gains(
+  motor_torque_loop_test_result_t *result,
+  int32_t direct_kp_q15,
+  int32_t quadrature_kp_q15,
+  int32_t integral_gain_q15);
+
+/**
  * @brief 执行一次10 kHz Hall角度转矩电流环更新。
  * @param 无。
  * @return 无。

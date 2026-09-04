@@ -537,6 +537,7 @@
             <File><FileName>motor_current_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_control.c</FilePath></File>
             <File><FileName>motor_speed_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_speed_control.c</FilePath></File>
             <File><FileName>motor_parameter.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_parameter.c</FilePath></File>
+            <File><FileName>motor_commissioning.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_commissioning.c</FilePath></File>
             <File><FileName>motor_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_control.c</FilePath></File>
           </Files>
         </Group>
@@ -556,6 +557,7 @@
             <File><FileName>motor_direction.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_direction.c</FilePath></File>
             <File><FileName>motor_hall_angle_math.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_angle_math.c</FilePath></File>
             <File><FileName>motor_hall_calibration.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_calibration.c</FilePath></File>
+            <File><FileName>motor_current_pi_design.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_current_pi_design.c</FilePath></File>
           </Files>
         </Group>
         <Group>

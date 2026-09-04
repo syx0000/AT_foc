@@ -61,6 +61,7 @@
 #include "motor_cli.h"
 #include "motor_control.h"
 #include "motor_parameter.h"
+#include "motor_commissioning.h"
 
 /* add user code end private includes */
 
@@ -155,6 +156,7 @@ int main(void)
   wk_timebase_init();
   motor_timebase_init();
   motor_parameter_init();
+  motor_commissioning_init();
   motor_adc_port_init();
   motor_current_sample_init();
   motor_slow_sensor_init();

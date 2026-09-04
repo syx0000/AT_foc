@@ -122,6 +122,22 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
 bool motor_parameter_candidate_accept(void);
 
 /**
+ * @brief 在安全停止状态临时应用候选参数并备份原活动参数。
+ * @param active_backup 输出试运行前的完整活动参数，不允许为空。
+ * @return 候选合法、控制状态READY且PWM关闭时返回true。
+ * @details 不修改候选参数、不写Flash；仅供辨识后的低功率验证使用。
+ */
+bool motor_parameter_trial_begin(motor_parameter_t *active_backup);
+
+/**
+ * @brief 结束试运行并恢复原活动参数。
+ * @param active_backup trial_begin返回的原活动参数，不允许为空。
+ * @return PWM关闭且备份合法时返回true；允许在统一控制状态FAULT下恢复。
+ * @details 候选参数保持不变，便于用户继续diff、accept或discard。
+ */
+bool motor_parameter_trial_end(const motor_parameter_t *active_backup);
+
+/**
  * @brief 丢弃所有候选修改并恢复为当前活动参数。
  * @param 无。
  * @return 无。

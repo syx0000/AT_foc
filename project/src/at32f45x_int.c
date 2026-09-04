@@ -37,6 +37,7 @@
 #include "motor_open_loop.h"
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
+#include "motor_commissioning.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_speed_feedback.h"
@@ -422,6 +423,7 @@ void EXINT9_5_IRQHandler(void)
       (void)motor_hall_decoder_edge_process(
         hall_port_sample.state, hall_port_sample.edge_count,
         hall_port_sample.timestamp_cycles);
+      motor_commissioning_hall_edge_process();
       motor_hall_angle_observer_edge_process();
       motor_hall_angle_estimator_edge_process();
     }
