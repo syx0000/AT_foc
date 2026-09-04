@@ -1,5 +1,10 @@
 # 修改记录
 
+2026.09.04.4  运行时电机参数管理：新增默认、活动和候选三层参数，覆盖极对数、逻辑方向、Rs/Ld/Lq、电流/速度PI及Hall跳转和边界角度；
+              新增参数完整性与Hall六状态闭环校验，候选参数只有在电机READY且PWM关闭时才能accept，支持discard恢复活动值；
+              串口新增motor params active/candidate、motor param set以及motor commissioning diff/accept/discard命令；
+              Hall默认正向序列统一移入motor_control_config.h，消除参数模块与Hall端口的重复常量；
+              Keil工程加入motor_parameter.c并完成43个工程源文件ARMCC逐文件编译。本阶段仅建立参数管理层，现有控制器继续使用编译配置，运行行为不变。
 2026.09.04.3  电机自动辨识与标定方案：新增完整设计文档，规划任意U/V/W与HA/HB/HC接线适配、双向Hall角度估算和逻辑方向配置；
               明确ADC零偏、Rs、Ld/Lq、Hall顺序/边界、转子角度补偿、电流PI计算以及闭环测试的自动化边界和安全条件；
               串口同时支持完整流程和单项触发，单项完成后自动打印结果并统一复用候选参数diff/accept/discard/save；

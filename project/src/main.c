@@ -59,6 +59,7 @@
 #include "motor_uart_port.h"
 #include "motor_cli.h"
 #include "motor_control.h"
+#include "motor_parameter.h"
 
 /* add user code end private includes */
 
@@ -150,6 +151,7 @@ int main(void)
      void wk_delay_ms(uint32_t delay); */
   wk_timebase_init();
   motor_timebase_init();
+  motor_parameter_init();
   motor_adc_port_init();
   motor_current_sample_init();
   motor_slow_sensor_init();

@@ -6,6 +6,7 @@
 #include "motor_control.h"
 #include "motor_log.h"
 #include "motor_open_loop.h"
+#include "motor_parameter.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_uart_port.h"
@@ -14,6 +15,137 @@
 #define MOTOR_CLI_LINE_SIZE 96U
 static char motor_cli_line[MOTOR_CLI_LINE_SIZE];
 static uint16_t motor_cli_line_length;
+
+typedef struct
+{
+  const char *name;
+  motor_parameter_field_t field;
+} motor_cli_parameter_field_t;
+
+static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
+{
+  {"pole_pairs", MOTOR_PARAMETER_FIELD_POLE_PAIRS},
+  {"direction_inverted", MOTOR_PARAMETER_FIELD_DIRECTION_INVERTED},
+  {"phase_resistance_mohm", MOTOR_PARAMETER_FIELD_PHASE_RESISTANCE_MOHM},
+  {"direct_inductance_uh", MOTOR_PARAMETER_FIELD_DIRECT_INDUCTANCE_UH},
+  {"quadrature_inductance_uh", MOTOR_PARAMETER_FIELD_QUADRATURE_INDUCTANCE_UH},
+  {"current_loop_bandwidth_hz", MOTOR_PARAMETER_FIELD_CURRENT_LOOP_BANDWIDTH_HZ},
+  {"current_d_kp_q15", MOTOR_PARAMETER_FIELD_CURRENT_D_KP_Q15},
+  {"current_q_kp_q15", MOTOR_PARAMETER_FIELD_CURRENT_Q_KP_Q15},
+  {"current_ki_q15", MOTOR_PARAMETER_FIELD_CURRENT_KI_Q15},
+  {"speed_kp_q20", MOTOR_PARAMETER_FIELD_SPEED_KP_Q20},
+  {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
+  {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16}
+};
+
+#define MOTOR_CLI_PARAMETER_FIELD_COUNT \
+  (sizeof(motor_cli_parameter_fields) / sizeof(motor_cli_parameter_fields[0]))
+
+/**
+ * @brief 按串口参数名查找运行时参数字段。
+ * @param name 用户输入的零结尾参数名，不允许为空。
+ * @param field 输出字段枚举，不允许为空。
+ * @return 找到完全匹配的参数名时返回true，否则返回false。
+ */
+static bool motor_cli_parameter_field_find(
+  const char *name, motor_parameter_field_t *field)
+{
+  uint32_t index;
+
+  if ((name == NULL) || (field == NULL)) return false;
+  for (index = 0U; index < MOTOR_CLI_PARAMETER_FIELD_COUNT; index++)
+  {
+    if (strcmp(name, motor_cli_parameter_fields[index].name) == 0)
+    {
+      *field = motor_cli_parameter_fields[index].field;
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @brief 打印一份完整运行时电机参数。
+ * @param label 参数来源标签，例如active或candidate，不允许为空。
+ * @param parameter 待打印参数，不允许为空。
+ * @return 无。
+ */
+static void motor_cli_parameter_print(const char *label,
+                                      const motor_parameter_t *parameter)
+{
+  printf("OK params %s\r\n", label);
+  printf("pole_pairs=%u direction_inverted=%u rs_mohm=%lu ld_uh=%lu lq_uh=%lu bandwidth_hz=%lu\r\n",
+         (unsigned int)parameter->pole_pairs,
+         (unsigned int)parameter->direction_inverted,
+         (unsigned long)parameter->phase_resistance_mohm,
+         (unsigned long)parameter->direct_inductance_uh,
+         (unsigned long)parameter->quadrature_inductance_uh,
+         (unsigned long)parameter->current_loop_bandwidth_hz);
+  printf("current_pi_q15=%ld/%ld/%ld speed_pi_q20=%ld/%ld hall_offset_u16=%u\r\n",
+         (long)parameter->current_d_kp_q15,
+         (long)parameter->current_q_kp_q15,
+         (long)parameter->current_ki_q15,
+         (long)parameter->speed_kp_q20,
+         (long)parameter->speed_ki_q20,
+         (unsigned int)parameter->hall_rotor_offset_u16);
+  printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
+         (unsigned int)parameter->hall_positive_next[1],
+         (unsigned int)parameter->hall_positive_next[2],
+         (unsigned int)parameter->hall_positive_next[3],
+         (unsigned int)parameter->hall_positive_next[4],
+         (unsigned int)parameter->hall_positive_next[5],
+         (unsigned int)parameter->hall_positive_next[6],
+         (unsigned int)parameter->hall_entry_angle_u16[1],
+         (unsigned int)parameter->hall_entry_angle_u16[2],
+         (unsigned int)parameter->hall_entry_angle_u16[3],
+         (unsigned int)parameter->hall_entry_angle_u16[4],
+         (unsigned int)parameter->hall_entry_angle_u16[5],
+         (unsigned int)parameter->hall_entry_angle_u16[6]);
+}
+
+/**
+ * @brief 打印活动参数与候选参数的逐字段差异。
+ * @param 无。
+ * @return 无。
+ */
+static void motor_cli_parameter_diff_print(void)
+{
+  motor_parameter_t active;
+  motor_parameter_t candidate;
+  motor_parameter_diff_t diff;
+  int32_t active_value;
+  int32_t candidate_value;
+  uint32_t index;
+
+  (void)motor_parameter_active_read(&active);
+  (void)motor_parameter_candidate_read(&candidate);
+  (void)motor_parameter_diff_read(&diff);
+  if (!diff.any_changed)
+  {
+    printf("OK diff none\r\n");
+    return;
+  }
+  printf("OK diff\r\n");
+  for (index = 0U; index < MOTOR_CLI_PARAMETER_FIELD_COUNT; index++)
+  {
+    if ((diff.scalar_fields &
+         (1UL << motor_cli_parameter_fields[index].field)) != 0U)
+    {
+      (void)motor_parameter_field_value_read(
+        &active, motor_cli_parameter_fields[index].field, &active_value);
+      (void)motor_parameter_field_value_read(
+        &candidate, motor_cli_parameter_fields[index].field,
+        &candidate_value);
+      printf("%s: active=%ld candidate=%ld\r\n",
+             motor_cli_parameter_fields[index].name,
+             (long)active_value, (long)candidate_value);
+    }
+  }
+  if (diff.hall_sequence_changed)
+    printf("hall_sequence: changed\r\n");
+  if (diff.hall_angle_changed)
+    printf("hall_angle: changed\r\n");
+}
 
 static void motor_cli_command_execute(char *line)
 {
@@ -24,6 +156,8 @@ static void motor_cli_command_execute(char *line)
   long direct_current_ma;
   long quadrature_current_ma;
   long speed_rpm;
+  long parameter_value;
+  char parameter_name[32];
   unsigned long acceleration_millihz_per_s;
   motor_open_loop_command_t open_command;
   motor_open_loop_status_t open_loop;
@@ -32,10 +166,12 @@ static void motor_cli_command_execute(char *line)
   motor_control_status_t motor;
   motor_speed_feedback_t speed_feedback;
   motor_speed_control_status_t speed_control;
+  motor_parameter_t parameter;
+  motor_parameter_field_t parameter_field;
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <rpm> speed stop\r\n");
+    printf("OK commands: help version status fault fault clear log level <0..4> motor stop open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning diff/accept/discard\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -72,6 +208,44 @@ static void motor_cli_command_execute(char *line)
   {
     motor_control_stop();
     printf("OK motor stopped\r\n");
+  }
+  else if (strcmp(line, "motor params active") == 0)
+  {
+    (void)motor_parameter_active_read(&parameter);
+    motor_cli_parameter_print("active", &parameter);
+  }
+  else if (strcmp(line, "motor params candidate") == 0)
+  {
+    (void)motor_parameter_candidate_read(&parameter);
+    motor_cli_parameter_print("candidate", &parameter);
+  }
+  else if (strcmp(line, "motor commissioning diff") == 0)
+  {
+    motor_cli_parameter_diff_print();
+  }
+  else if (strcmp(line, "motor commissioning accept") == 0)
+  {
+    if (motor_parameter_candidate_accept())
+      printf("OK candidate applied to runtime parameter manager\r\n");
+    else
+      printf("ERR 12 accept_requires_ready_pwm_off_and_valid_candidate\r\n");
+  }
+  else if (strcmp(line, "motor commissioning discard") == 0)
+  {
+    motor_parameter_candidate_discard();
+    printf("OK candidate discarded\r\n");
+  }
+  else if (sscanf(line, "motor param set %31s %ld",
+                  parameter_name, &parameter_value) == 2)
+  {
+    if ((!motor_cli_parameter_field_find(parameter_name, &parameter_field)) ||
+        (!motor_parameter_candidate_field_set(
+          parameter_field, (int32_t)parameter_value)))
+    {
+      printf("ERR 3 invalid_parameter\r\n");
+      return;
+    }
+    printf("OK candidate %s=%ld\r\n", parameter_name, parameter_value);
   }
   else if (strcmp(line, "fault") == 0)
   {

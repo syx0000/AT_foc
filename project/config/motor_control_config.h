@@ -24,6 +24,8 @@
 
 /* 电机本体参数：4对极，机械转速=rpm=(电频率Hz×60)/极对数。 */
 #define MOTOR_POLE_PAIRS                           4U
+/* 设备逻辑方向默认与当前电气正方向一致；1表示逻辑方向反转。 */
+#define MOTOR_DIRECTION_INVERTED                   0U
 
 /* 母线电压参数，保护阈值单位为0.1 V。 */
 #define MOTOR_BUS_VOLTAGE_DIVIDER_RATIO           21U
@@ -41,6 +43,12 @@
 #define MOTOR_MOS_TEMPERATURE_SHUTDOWN_C           100
 
 /* 10 Hz空载正向开环实测Hall状态进入边沿角度，U16一周制。 */
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_1             5U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_2             3U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_3             1U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_4             6U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_5             4U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_6             2U
 #define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         51938U
 #define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         30960U
 #define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         40216U
@@ -126,6 +134,10 @@
 /* 编译期配置一致性检查：配置错误必须在生成固件前暴露。 */
 #if (MOTOR_POLE_PAIRS == 0U)
 #error "MOTOR_POLE_PAIRS must be greater than zero"
+#endif
+
+#if (MOTOR_DIRECTION_INVERTED > 1U)
+#error "MOTOR_DIRECTION_INVERTED must be 0 or 1"
 #endif
 
 #if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)

@@ -1,6 +1,7 @@
 #include <stddef.h>
 #include "at32f45x_conf.h"
 #include "motor_hall_port.h"
+#include "motor_control_config.h"
 #include "motor_timebase.h"
 #include "at32f45x_wk_config.h"
 
@@ -74,7 +75,14 @@ static void motor_hall_speed_interval_push(uint32_t interval_cycles)
 /* 正向六步定义：1→5→4→6→2→3→1；机械正方向后续由整机定义确认。 */
 static const uint8_t motor_hall_positive_next[8] =
 {
-  0U, 5U, 3U, 1U, 6U, 4U, 2U, 0U
+  0U,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_1,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_2,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_3,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_4,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_5,
+  MOTOR_HALL_POSITIVE_NEXT_STATE_6,
+  0U
 };
 
 /**
