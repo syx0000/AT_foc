@@ -16,6 +16,7 @@ typedef struct
   uint32_t duplicate_count;   /**< 中断发生但Hall组合状态未变化的累计次数。 */
   uint32_t electrical_frequency_millihz; /**< 最近完整六步周期估算的电频率，单位mHz。 */
   int8_t direction;           /**< 最近合法方向：1为positive，-1为negative，0为未知。 */
+  uint32_t frequency_update_count; /**< 每产生一次新的边沿测速结果递增，用于识别新测量。 */
 } motor_hall_sample_t;
 
 /**

@@ -1,6 +1,6 @@
 /**
  * @file    ota_config.h
- * @brief   OTA配置 — Bootloader和App共享
+ * @brief   OTA配置 — Bootloader和App共享，集中存放于project/config
  *          定义内存布局、app_header_t结构、标志位
  *
  * 兼容 cubemx_yxsui Stage 2 OTA 设计:

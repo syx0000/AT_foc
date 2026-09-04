@@ -1,6 +1,8 @@
 #ifndef MOTOR_BOARD_CONFIG_H
 #define MOTOR_BOARD_CONFIG_H
 
+/* 板级电机硬件映射集中配置；修改前必须与原理图及WorkBench外设配置同步核对。 */
+
 #include "at32f45x.h"
 #include "at32f45x_wk_config.h"
 

@@ -1,12 +1,14 @@
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_control.h"
+#include "motor_control_config.h"
 #include "motor_current_control.h"
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
+#include "motor_speed_control.h"
 static volatile motor_control_status_t motor_control_status;
 void motor_control_init(void)
 {
@@ -75,13 +77,50 @@ bool motor_control_current_control_command_set(
   return (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) &&
          motor_current_control_command_set(command);
 }
+bool motor_control_speed_control_start(int32_t target_speed_rpm)
+{
+  motor_current_control_command_t current_command;
+
+  if ((target_speed_rpm <= 0) ||
+      (target_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+      (target_speed_rpm > (INT32_MAX / 1000)))
+  {
+    return false;
+  }
+  current_command.direct_reference_ma = 0;
+  current_command.quadrature_reference_ma = 0;
+  if (!motor_control_current_control_start(&current_command))
+  {
+    return false;
+  }
+  if (!motor_speed_control_start(target_speed_rpm * 1000L, 0))
+  {
+    motor_control_fault_set(8U);
+    return false;
+  }
+  motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
+  return true;
+}
+bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
+{
+  if ((motor_control_status.state != MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
+      (target_speed_rpm <= 0) ||
+      (target_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+      (target_speed_rpm > (INT32_MAX / 1000)))
+  {
+    return false;
+  }
+  return motor_speed_control_target_set(target_speed_rpm * 1000L);
+}
 void motor_control_stop(void)
 {
   motor_control_state_t previous_state = motor_control_status.state;
+  motor_speed_control_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
   if ((previous_state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
-      (previous_state == MOTOR_CONTROL_STATE_CURRENT_CONTROL))
+      (previous_state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
+      (previous_state == MOTOR_CONTROL_STATE_SPEED_CONTROL))
     motor_control_status.state = MOTOR_CONTROL_STATE_READY;
 }
 void motor_control_fault_set(uint32_t fault_code)
@@ -94,6 +133,7 @@ bool motor_control_fault_clear(void)
 {
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_FAULT) ||
       motor_pwm_port_output_is_enabled()) return false;
+  motor_speed_control_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
   if ((!motor_current_sample_fault_clear()) ||
@@ -106,10 +146,13 @@ void motor_control_poll(void)
 {
   motor_open_loop_status_t open_loop;
   motor_current_control_status_t current_control;
+  motor_speed_control_status_t speed_control;
   (void)motor_open_loop_status_read(&open_loop);
   (void)motor_current_control_status_read(&current_control);
+  (void)motor_speed_control_status_read(&speed_control);
   if ((open_loop.state == MOTOR_OPEN_LOOP_FAULT) ||
-      (current_control.state == MOTOR_CURRENT_CONTROL_FAULT))
+      (current_control.state == MOTOR_CURRENT_CONTROL_FAULT) ||
+      (speed_control.state == MOTOR_SPEED_CONTROL_FAULT))
     motor_control_fault_set(2U);
 }
 bool motor_control_status_read(motor_control_status_t *status)

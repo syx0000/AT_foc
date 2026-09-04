@@ -10,6 +10,8 @@
 #include "motor_hall_port.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_speed_feedback.h"
+#include "motor_speed_control.h"
 #include "motor_current_transform.h"
 
 #define INTERRUPT_MONITOR_REPORT_TICKS 1000U
@@ -40,6 +42,10 @@ void interrupt_monitor_poll(void)
   bool hall_angle_observer_valid;
   motor_hall_angle_estimator_t hall_angle_estimator;
   bool hall_angle_estimator_valid;
+  motor_speed_feedback_t speed_feedback;
+  bool speed_feedback_valid;
+  motor_speed_control_status_t speed_control;
+  bool speed_control_valid;
   motor_current_transform_state_t current_transform;
   bool current_transform_valid;
   motor_current_transform_statistics_t current_transform_statistics;
@@ -80,6 +86,8 @@ void interrupt_monitor_poll(void)
     motor_hall_angle_observer_read(&hall_angle_observer);
   hall_angle_estimator_valid =
     motor_hall_angle_estimator_read(&hall_angle_estimator);
+  speed_feedback_valid = motor_speed_feedback_read(&speed_feedback);
+  speed_control_valid = motor_speed_control_status_read(&speed_control);
   current_transform_valid =
     motor_current_transform_state_read(&current_transform);
   current_transform_statistics_valid =
@@ -152,7 +160,7 @@ void interrupt_monitor_poll(void)
   }
   if (hall_sample_valid)
   {
-    LOGI("Hall: state=%u (HA/HB/HC=%u/%u/%u) valid=%u edges=%lu direction=%lu/%lu invalid=%lu duplicate=%lu frequency=%lu.%03lu Hz\r\n",
+    LOGI("Hall: state=%u (HA/HB/HC=%u/%u/%u) valid=%u edges=%lu direction=%lu/%lu invalid=%lu duplicate=%lu speed_updates=%lu frequency=%lu.%03lu Hz\r\n",
          (unsigned int)hall_sample.state,
          (unsigned int)(hall_sample.state & 0x01U),
          (unsigned int)((hall_sample.state >> 1) & 0x01U),
@@ -163,6 +171,7 @@ void interrupt_monitor_poll(void)
          (unsigned long)hall_sample.negative_count,
          (unsigned long)hall_sample.invalid_transition_count,
          (unsigned long)hall_sample.duplicate_count,
+         (unsigned long)hall_sample.frequency_update_count,
          (unsigned long)(hall_sample.electrical_frequency_millihz / 1000U),
          (unsigned long)(hall_sample.electrical_frequency_millihz % 1000U));
   }
@@ -194,6 +203,28 @@ void interrupt_monitor_poll(void)
          (int)angle_error,
          (unsigned long)(hall_angle_estimator.electrical_frequency_millihz / 1000U),
          (unsigned long)(hall_angle_estimator.electrical_frequency_millihz % 1000U));
+  }
+  if (speed_feedback_valid)
+  {
+    LOGI("Speed: valid=%u direction=%d electrical=%lu.%03lu Hz mechanical=%ld mRPM raw=%ld mRPM\r\n",
+         (unsigned int)speed_feedback.valid,
+         (int)speed_feedback.direction,
+         (unsigned long)(speed_feedback.electrical_frequency_millihz / 1000U),
+         (unsigned long)(speed_feedback.electrical_frequency_millihz % 1000U),
+         (long)speed_feedback.filtered_speed_millirpm,
+         (long)speed_feedback.raw_speed_millirpm);
+  }
+  if (speed_control_valid)
+  {
+    LOGI("Speed control: state=%u fault=%u target=%ld ramp=%ld feedback=%ld mRPM iq=%ld mA stall=%lu ms updates=%lu\r\n",
+         (unsigned int)speed_control.state,
+         (unsigned int)speed_control.fault,
+         (long)speed_control.target_speed_millirpm,
+         (long)speed_control.ramped_speed_millirpm,
+         (long)speed_control.feedback_speed_millirpm,
+         (long)speed_control.quadrature_current_command_ma,
+         (unsigned long)speed_control.stall_time_ms,
+         (unsigned long)speed_control.update_count);
   }
   if (current_transform_valid && current_transform.valid)
   {

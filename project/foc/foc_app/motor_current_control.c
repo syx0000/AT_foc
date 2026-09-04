@@ -40,7 +40,7 @@ static bool motor_current_control_config_valid(
     (config->quadrature_kp_q15 >= 0) && (config->integral_gain_q15 >= 0) &&
     (config->voltage_limit_percent > 0U) &&
     (config->voltage_limit_percent <= 50U) &&
-    (config->absolute_voltage_limit_mv > 0) &&
+    (config->hard_voltage_limit_mv > 0) &&
     (config->command_limit_ma > 0) &&
     (config->abort_current_ma >= config->command_limit_ma) &&
     (config->abort_current_ma <= MOTOR_SOFTWARE_OVERCURRENT_MA);
@@ -84,9 +84,9 @@ static bool motor_current_control_prepare(
   motor_current_control_bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
   motor_current_control_voltage_limit_mv = (int32_t)(
     (motor_current_control_bus_mv * motor_current_control_config.voltage_limit_percent) / 100U);
-  if (motor_current_control_voltage_limit_mv > motor_current_control_config.absolute_voltage_limit_mv)
+  if (motor_current_control_voltage_limit_mv > motor_current_control_config.hard_voltage_limit_mv)
   {
-    motor_current_control_voltage_limit_mv = motor_current_control_config.absolute_voltage_limit_mv;
+    motor_current_control_voltage_limit_mv = motor_current_control_config.hard_voltage_limit_mv;
   }
   motor_current_pi_axis_init(&motor_current_control_d_pi, motor_current_control_config.direct_kp_q15,
                              motor_current_control_config.integral_gain_q15,
@@ -110,8 +110,8 @@ void motor_current_control_init(void)
   motor_current_control_config.integral_gain_q15 = MOTOR_CURRENT_PI_KI_Q15;
   motor_current_control_config.voltage_limit_percent =
     MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT;
-  motor_current_control_config.absolute_voltage_limit_mv =
-    MOTOR_CURRENT_CONTROL_ABSOLUTE_VOLTAGE_LIMIT_MV;
+  motor_current_control_config.hard_voltage_limit_mv =
+    MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
   motor_current_control_config.command_limit_ma = MOTOR_CURRENT_COMMAND_MAX_MA;
   motor_current_control_config.abort_current_ma = MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA;
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;

@@ -125,7 +125,7 @@ bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
   current_control_config.integral_gain_q15 = MOTOR_CURRENT_PI_KI_Q15;
   current_control_config.voltage_limit_percent =
     MOTOR_TORQUE_TEST_BUS_VOLTAGE_LIMIT_PERCENT;
-  current_control_config.absolute_voltage_limit_mv =
+  current_control_config.hard_voltage_limit_mv =
     MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV;
   current_control_config.command_limit_ma =
     MOTOR_TORQUE_TEST_ABORT_CURRENT_MA;

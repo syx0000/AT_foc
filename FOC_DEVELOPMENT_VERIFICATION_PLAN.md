@@ -175,7 +175,7 @@ refactor: establish motor control architecture skeleton
 ```text
 project/bsp/motor_timebase.c/.h
 project/bsp/motor_pwm_port.c/.h
-project/bsp/motor_board_config.h
+project/config/motor_board_config.h
 ```
 
 实现：

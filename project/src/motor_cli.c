@@ -6,6 +6,8 @@
 #include "motor_control.h"
 #include "motor_log.h"
 #include "motor_open_loop.h"
+#include "motor_speed_feedback.h"
+#include "motor_speed_control.h"
 #include "motor_uart_port.h"
 #include "product_version.h"
 
@@ -21,16 +23,19 @@ static void motor_cli_command_execute(char *line)
   long frequency_millihz;
   long direct_current_ma;
   long quadrature_current_ma;
+  long speed_rpm;
   unsigned long acceleration_millihz_per_s;
   motor_open_loop_command_t open_command;
   motor_open_loop_status_t open_loop;
   motor_current_control_status_t current_control;
   motor_current_control_command_t current_command;
   motor_control_status_t motor;
+  motor_speed_feedback_t speed_feedback;
+  motor_speed_control_status_t speed_control;
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop\r\n");
+    printf("OK commands: help version status fault fault clear log level <0..4> motor stop open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <rpm> speed stop\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -42,11 +47,19 @@ static void motor_cli_command_execute(char *line)
     (void)motor_open_loop_status_read(&open_loop);
     (void)motor_current_control_status_read(&current_control);
     (void)motor_control_status_read(&motor);
-    printf("OK motor=%u motor_fault=%lu open=%u freq_mhz=%ld/%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
+    (void)motor_speed_feedback_read(&speed_feedback);
+    (void)motor_speed_control_status_read(&speed_control);
+    printf("OK motor=%u motor_fault=%lu open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
       (unsigned int)motor.state, (unsigned long)motor.fault_code,
       (unsigned int)open_loop.state,
       (long)open_loop.actual_frequency_millihz,
       (long)open_loop.target_frequency_millihz,
+      (long)(speed_feedback.filtered_speed_millirpm / 1000L),
+      (long)(speed_control.target_speed_millirpm / 1000L),
+      (unsigned int)speed_feedback.valid,
+      (unsigned int)speed_control.state,
+      (unsigned int)speed_control.fault,
+      (long)speed_control.quadrature_current_command_ma,
       (unsigned int)current_control.state,
       (unsigned int)current_control.fault,
       (long)current_control.direct_feedback_ma,
@@ -110,6 +123,37 @@ static void motor_cli_command_execute(char *line)
   {
     motor_control_stop();
     printf("OK current stopped\r\n");
+  }
+  else if (strcmp(line, "speed stop") == 0)
+  {
+    motor_control_stop();
+    printf("OK speed stopped\r\n");
+  }
+  else if (sscanf(line, "speed start %ld", &speed_rpm) == 1)
+  {
+    if ((speed_rpm <= 0) ||
+        (speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    {
+      printf("ERR 3 invalid_parameter\r\n");
+      return;
+    }
+    if (motor_control_speed_control_start((int32_t)speed_rpm))
+      printf("OK speed started target=%ld rpm\r\n", speed_rpm);
+    else
+      printf("ERR 10 open_not_running_or_speed_feedback_invalid\r\n");
+  }
+  else if (sscanf(line, "speed set %ld", &speed_rpm) == 1)
+  {
+    if ((speed_rpm <= 0) ||
+        (speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    {
+      printf("ERR 3 invalid_parameter\r\n");
+      return;
+    }
+    if (motor_control_speed_control_target_set((int32_t)speed_rpm))
+      printf("OK speed updated target=%ld rpm\r\n", speed_rpm);
+    else
+      printf("ERR 11 speed_not_running_or_invalid_command\r\n");
   }
   else if (sscanf(line, "current start %ld %ld", &direct_current_ma,
                   &quadrature_current_ma) == 2)

@@ -9,6 +9,7 @@ typedef enum {
   MOTOR_CONTROL_STATE_READY,
   MOTOR_CONTROL_STATE_OPEN_LOOP,
   MOTOR_CONTROL_STATE_CURRENT_CONTROL,
+  MOTOR_CONTROL_STATE_SPEED_CONTROL,
   MOTOR_CONTROL_STATE_FAULT
 } motor_control_state_t;
 typedef struct {
@@ -29,6 +30,18 @@ bool motor_control_current_control_start(
 /** @brief 更新运行中的Id/Iq指令。 @param command 新指令。 @return 成功返回true。 */
 bool motor_control_current_control_command_set(
   const motor_current_control_command_t *command);
+/**
+ * @brief 从运行中的正向开环无扰切换到Hall速度闭环。
+ * @param target_speed_rpm 正向目标机械转速，单位rpm。
+ * @return 开环、Hall反馈、电流环及目标均有效时返回true。
+ */
+bool motor_control_speed_control_start(int32_t target_speed_rpm);
+/**
+ * @brief 更新运行中的速度闭环目标。
+ * @param target_speed_rpm 新的正向目标机械转速，单位rpm。
+ * @return 速度环正在运行且目标有效时返回true。
+ */
+bool motor_control_speed_control_target_set(int32_t target_speed_rpm);
 /** @brief 安全停止并返回READY。 @param 无。 @return 无。 */
 void motor_control_stop(void);
 /** @brief 锁存故障并紧急关闭PWM。 @param fault_code 非零故障码。 @return 无。 */

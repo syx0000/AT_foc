@@ -26,7 +26,7 @@ typedef struct
   int32_t quadrature_kp_q15;
   int32_t integral_gain_q15;
   uint32_t voltage_limit_percent;
-  int32_t absolute_voltage_limit_mv;
+  int32_t hard_voltage_limit_mv;
   int32_t command_limit_ma;
   int32_t abort_current_ma;
 } motor_current_control_config_t;

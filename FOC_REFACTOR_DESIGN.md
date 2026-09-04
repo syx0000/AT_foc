@@ -100,7 +100,7 @@ project/src（生成代码 USER CODE 区） → foc_app/motor_control
 
 参数按所有权分成三类：
 
-1. `project/bsp/motor_board_config.h`：只保存板级硬件常量，例如电流采样极性、ADC比例、分流电阻和门极有效电平。PWM周期、ADC通道、GPIO等已由 WorkBench 生成的配置不重复定义，由端口层读取现有配置。
+1. `project/config/motor_board_config.h`：只保存板级硬件常量，例如PWM周期、GPIO映射、门极和制动输入有效电平，并与WorkBench生成配置交叉核对。
 2. `project/foc/foc_app/motor_config.c/.h`：保存本型号电机的默认参数和控制参数，例如极对数、相电阻、电感、磁链、最大电流、最大转速、PI参数及Hall映射表。每个数值必须注明单位和来源。
 3. `motor_control_t`：初始化时取得一份经过校验的运行时配置。FOC中断只读取运行时副本，不直接读取Flash，也不在运行中修改默认配置。
 
@@ -245,7 +245,7 @@ void motor_pwm_emergency_stop(motor_fault_code_t reason);
 
 ### 8.1 当前布局依据
 
-当前 AT32F456CEU7 Flash 总空间为 512 KB，扇区大小为 2 KB。现有 `project/inc/ota_config.h` 和 Bootloader 使用以下尾部布局：
+当前 AT32F456CEU7 Flash 总空间为 512 KB，扇区大小为 2 KB。现有 `project/config/ota_config.h` 和 Bootloader 使用以下尾部布局：
 
 ```text
 0x08040000 ─────────────── OTA Staging数据

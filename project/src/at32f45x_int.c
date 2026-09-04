@@ -38,6 +38,8 @@
 #include "motor_hall_port.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_speed_feedback.h"
+#include "motor_speed_control.h"
 #include "motor_current_transform.h"
 #include "motor_inductance_identification.h"
 #include "motor_current_loop_test.h"
@@ -230,6 +232,8 @@ void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
   interrupt_monitor_counters.systick++;
+  motor_speed_feedback_process_1khz();
+  motor_speed_control_process_1khz();
 
   /* add user code end SysTick_IRQ 0 */
 

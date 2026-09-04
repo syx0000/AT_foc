@@ -51,6 +51,24 @@
 #define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16           7482U
 #define MOTOR_HALL_SIGNAL_TIMEOUT_MS                100U
 
+/* Hall机械转速反馈：1 kHz更新，IIR滤波系数为1/8。 */
+#define MOTOR_SPEED_FEEDBACK_TIMEOUT_MS              100U
+#define MOTOR_SPEED_FEEDBACK_FILTER_SHIFT              3U
+
+/* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
+#define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
+#define MOTOR_SPEED_PI_KP_Q20                         5243L
+#define MOTOR_SPEED_PI_KI_Q20                           33L
+#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA          2000L
+#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         3000L
+#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S     300U
+/* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
+#define MOTOR_SPEED_STALL_MIN_TARGET_RPM               200U
+#define MOTOR_SPEED_STALL_MAX_FEEDBACK_RPM              50U
+#define MOTOR_SPEED_STALL_CURRENT_PERCENT               90U
+#define MOTOR_SPEED_STALL_TIMEOUT_MS                   2000U
+#define MOTOR_SPEED_OVERSPEED_RPM                      3300U
+
 /* 正式开环控制器默认安全配置。 */
 #define MOTOR_OPEN_LOOP_MAXIMUM_VOLTAGE_MV          4800L
 #define MOTOR_OPEN_LOOP_MAXIMUM_FREQUENCY_MILLIHZ 100000L
@@ -84,8 +102,10 @@
 #define MOTOR_CURRENT_PI_Q_KP_Q15                    8482L
 #define MOTOR_CURRENT_PI_KI_Q15                      1124L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
+/* 正常调制度当前取15%；现有线性控制允许最大50%，理论SVPWM边界约57.7%。 */
 #define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    15U
-#define MOTOR_CURRENT_CONTROL_ABSOLUTE_VOLTAGE_LIMIT_MV 7200L
+/* 48 V母线在线性SVPWM理论边界Vbus/sqrt(3)下的dq电压矢量硬上限。 */
+#define MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV 27700L
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
 #define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA             2000L
@@ -102,5 +122,41 @@
 #define MOTOR_TORQUE_TEST_HANDOVER_FREQUENCY_MILLIHZ 8000U
 #define MOTOR_TORQUE_TEST_BUS_VOLTAGE_LIMIT_PERCENT     15U
 #define MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV   7200L
+
+/* 编译期配置一致性检查：配置错误必须在生成固件前暴露。 */
+#if (MOTOR_POLE_PAIRS == 0U)
+#error "MOTOR_POLE_PAIRS must be greater than zero"
+#endif
+
+#if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)
+#error "motor_speed_control is designed for a 1 kHz update rate"
+#endif
+
+#if ((MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT == 0U) || \
+     (MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT > 50U))
+#error "current control modulation limit must be within 1..50 percent"
+#endif
+
+#if ((MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV <= 0L) || \
+     (MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV > 27700L))
+#error "48 V linear SVPWM hard voltage limit must not exceed 27700 mV"
+#endif
+
+#if ((MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA <= 0L) || \
+     (MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA > MOTOR_CURRENT_COMMAND_MAX_MA))
+#error "speed control current limit exceeds current-loop command limit"
+#endif
+
+#if (MOTOR_SPEED_STALL_CURRENT_PERCENT > 100U)
+#error "stall current percentage must not exceed 100 percent"
+#endif
+
+#if (MOTOR_SPEED_STALL_MIN_TARGET_RPM >= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)
+#error "stall target threshold must be below maximum command speed"
+#endif
+
+#if (MOTOR_SPEED_OVERSPEED_RPM <= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)
+#error "overspeed threshold must be above maximum command speed"
+#endif
 
 #endif /* MOTOR_CONTROL_CONFIG_H */
