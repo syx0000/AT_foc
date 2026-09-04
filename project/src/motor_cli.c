@@ -8,6 +8,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "at32f45x.h"
 #include "motor_cli.h"
 #include "motor_control_config.h"
 #include "motor_commissioning.h"
@@ -15,10 +16,12 @@
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
 #include "motor_control.h"
+#include "motor_direction.h"
 #include "motor_log.h"
 #include "motor_open_loop.h"
 #include "motor_parameter.h"
 #include "motor_parameter_storage.h"
+#include "motor_pwm_port.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_uart_port.h"
@@ -262,11 +265,15 @@ static void motor_cli_command_execute(char *line)
   motor_fault_clear_result_t fault_clear_result;
   motor_fault_record_t fault_record;
   uint32_t fault_index;
+  int32_t logical_open_actual_millihz;
+  int32_t logical_open_target_millihz;
+  int32_t logical_current_feedback_ma;
+  int32_t logical_current_reference_ma;
 
   if (strcmp(line, "help") == 0)
   {
     printf("OK commands:\r\n");
-    printf("  help | version | status\r\n");
+    printf("  help | version | status | reset\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
     printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
@@ -286,6 +293,22 @@ static void motor_cli_command_execute(char *line)
     printf("OK fw=%s hw=%s\r\n", FIRMWARE_VERSION_STRING,
            HARDWARE_VERSION_STRING);
   }
+  else if (strcmp(line, "reset") == 0)
+  {
+    (void)motor_control_status_read(&motor);
+    if ((motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+        (motor.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
+        (motor.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
+        motor_pwm_port_output_is_enabled())
+    {
+      printf("ERR reset_requires_motor_stopped_and_pwm_off\r\n");
+      return;
+    }
+    printf("OK resetting\r\n");
+    __DSB();
+    NVIC_SystemReset();
+    while (1) { }
+  }
   else if (strcmp(line, "status") == 0)
   {
     (void)motor_open_loop_status_read(&open_loop);
@@ -293,14 +316,26 @@ static void motor_cli_command_execute(char *line)
     (void)motor_control_status_read(&motor);
     (void)motor_speed_feedback_read(&speed_feedback);
     (void)motor_speed_control_status_read(&speed_control);
+    (void)motor_direction_transform_s32(
+      open_loop.actual_frequency_millihz,
+      motor_parameter_direction_inverted_get(), &logical_open_actual_millihz);
+    (void)motor_direction_transform_s32(
+      open_loop.target_frequency_millihz,
+      motor_parameter_direction_inverted_get(), &logical_open_target_millihz);
+    (void)motor_direction_transform_s32(
+      current_control.quadrature_feedback_ma,
+      motor_parameter_direction_inverted_get(), &logical_current_feedback_ma);
+    (void)motor_direction_transform_s32(
+      current_control.command.quadrature_reference_ma,
+      motor_parameter_direction_inverted_get(), &logical_current_reference_ma);
     printf("OK motor=%u motor_fault=%s(%u) direction=%s open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
       (unsigned int)motor.state,
       motor_control_fault_name_get(motor.fault_code),
       (unsigned int)motor.fault_code,
       motor_parameter_direction_inverted_get() ? "reverse" : "normal",
       (unsigned int)open_loop.state,
-      (long)open_loop.actual_frequency_millihz,
-      (long)open_loop.target_frequency_millihz,
+      (long)logical_open_actual_millihz,
+      (long)logical_open_target_millihz,
       (long)(speed_feedback.filtered_speed_millirpm / 1000L),
       (long)(speed_control.target_speed_millirpm / 1000L),
       (unsigned int)speed_feedback.valid,
@@ -311,8 +346,8 @@ static void motor_cli_command_execute(char *line)
       (unsigned int)current_control.fault,
       (long)current_control.direct_feedback_ma,
       (long)current_control.command.direct_reference_ma,
-      (long)current_control.quadrature_feedback_ma,
-      (long)current_control.command.quadrature_reference_ma,
+      (long)logical_current_feedback_ma,
+      (long)logical_current_reference_ma,
       (unsigned long)motor_uart_port_overflow_count_get());
   }
   else if (strcmp(line, "motor stop") == 0)

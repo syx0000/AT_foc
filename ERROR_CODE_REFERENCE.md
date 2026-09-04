@@ -68,6 +68,7 @@
 | 8 | `MOTOR_COMMISSIONING_ERROR_CURRENT_D` | `current_d` | `1=test_failed` |
 | 9 | `MOTOR_COMMISSIONING_ERROR_CURRENT_Q` | `current_q` | `motor_torque_loop_test_status_t` |
 | 10 | `MOTOR_COMMISSIONING_ERROR_PARAMETER` | `parameter` | `1=candidate_update_failed`，`2=trial_or_restore_failed` |
+| 11 | `MOTOR_COMMISSIONING_ERROR_STANDSTILL` | `standstill` | `1=timeout`，`2=current_unsafe`，`3=motor_fault` |
 
 ### 4.1 ADC零偏 detail
 

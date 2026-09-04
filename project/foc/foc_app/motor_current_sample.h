@@ -24,6 +24,9 @@ typedef struct
   uint32_t sample_count;       /**< 零偏生效后的累计采样次数。 */
   uint32_t overcurrent_count;  /**< 当前连续超过55 A的样本数。 */
   bool overcurrent_fault;      /**< 软件过流故障锁存标志。 */
+  int32_t overcurrent_trip_phase_a_ma; /**< 首次触发软件过流时的A相电流。 */
+  int32_t overcurrent_trip_phase_b_ma; /**< 首次触发软件过流时的B相电流。 */
+  int32_t overcurrent_trip_phase_c_ma; /**< 首次触发软件过流时的C相电流。 */
 } motor_current_sample_state_t;
 
 /**

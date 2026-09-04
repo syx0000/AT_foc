@@ -26,6 +26,7 @@
 #include "motor_parameter.h"
 #include "motor_pwm_port.h"
 #include "motor_resistance_identification.h"
+#include "motor_rotor_feedback.h"
 #include "motor_timebase.h"
 #include "motor_torque_loop_test.h"
 #include "wk_system.h"
@@ -36,12 +37,21 @@
 #define MOTOR_COMMISSIONING_HALL_SAMPLES 3U
 #define MOTOR_COMMISSIONING_HALL_TARGET_TIMEOUT_MS 5000U
 #define MOTOR_COMMISSIONING_HALL_SETTLE_MS 1000U
+#define MOTOR_COMMISSIONING_STANDSTILL_TIMEOUT_MS 30000U
+#define MOTOR_COMMISSIONING_STANDSTILL_STABLE_MS 500U
+#define MOTOR_COMMISSIONING_STANDSTILL_FREQUENCY_MILLIHZ 1000U
+#define MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA 500L
 
 static volatile motor_commissioning_status_t commissioning_status;
 static volatile bool commissioning_abort_requested;
 static volatile bool commissioning_hall_collecting;
 static volatile uint8_t commissioning_hall_previous_state;
 static motor_hall_calibration_t commissioning_hall;
+
+static void commissioning_current_d_result_print(
+  const motor_current_loop_test_result_t *result);
+static void commissioning_current_q_failure_print(
+  const motor_torque_loop_test_result_t *result);
 
 /** @brief 锁存当前辨识失败阶段及底层状态码。 @param error 失败阶段。 @param detail 模块原始状态码。 @return 无。 */
 static void commissioning_error_set(motor_commissioning_error_t error,
@@ -67,6 +77,7 @@ const char *motor_commissioning_error_name_get(
     case MOTOR_COMMISSIONING_ERROR_CURRENT_D: return "current_d";
     case MOTOR_COMMISSIONING_ERROR_CURRENT_Q: return "current_q";
     case MOTOR_COMMISSIONING_ERROR_PARAMETER: return "parameter";
+    case MOTOR_COMMISSIONING_ERROR_STANDSTILL: return "standstill";
     default: return "unknown";
   }
 }
@@ -131,6 +142,10 @@ const char *motor_commissioning_error_detail_name_get(
   if (error == MOTOR_COMMISSIONING_ERROR_PARAMETER)
     return (detail == 1U) ? "candidate_update_failed" :
            ((detail == 2U) ? "trial_or_restore_failed" : "unknown");
+  if (error == MOTOR_COMMISSIONING_ERROR_STANDSTILL)
+    return (detail == 1U) ? "timeout" :
+           ((detail == 2U) ? "current_unsafe" :
+           ((detail == 3U) ? "motor_fault" : "unknown"));
   return (detail == 1U) ? "test_failed" : "unknown";
 }
 
@@ -138,6 +153,83 @@ const char *motor_commissioning_error_detail_name_get(
 static void commissioning_step_set(uint32_t step)
 {
   commissioning_status.step = step;
+}
+
+/**
+ * @brief 等待旋转测试后的电机进入低速、低电流稳定状态。
+ * @param 无。
+ * @return 连续稳定达到门槛返回true；超时、过流或统一电机故障返回false。
+ */
+static bool commissioning_standstill_wait(void)
+{
+  motor_rotor_feedback_t rotor_feedback;
+  motor_current_sample_state_t current;
+  motor_control_status_t motor_status;
+  uint32_t start=motor_timebase_cycles_get();
+  uint32_t stable_start=start;
+  uint32_t timeout=(system_core_clock/1000U)*
+    MOTOR_COMMISSIONING_STANDSTILL_TIMEOUT_MS;
+  uint32_t stable_time=(system_core_clock/1000U)*
+    MOTOR_COMMISSIONING_STANDSTILL_STABLE_MS;
+  bool stable_started=false;
+
+  motor_control_stop();
+  while (!commissioning_abort_requested &&
+         (motor_timebase_cycles_elapsed(start)<timeout))
+  {
+    bool rotor_read=motor_rotor_feedback_read(&rotor_feedback);
+    bool current_read=motor_current_sample_state_read(&current);
+    bool speed_safe=rotor_read &&
+      ((!rotor_feedback.valid) ||
+       (rotor_feedback.electrical_frequency_millihz <=
+        MOTOR_COMMISSIONING_STANDSTILL_FREQUENCY_MILLIHZ));
+    bool current_safe=current_read && (!current.overcurrent_fault) &&
+      (current.phase_a_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
+      (current.phase_a_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
+      (current.phase_b_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
+      (current.phase_b_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
+      (current.phase_c_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
+      (current.phase_c_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA);
+
+    motor_control_poll();
+    if (!motor_control_status_read(&motor_status) ||
+        (motor_status.state == MOTOR_CONTROL_STATE_FAULT))
+    {
+      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,3U);
+      return false;
+    }
+    if (current_read && current.overcurrent_fault)
+    {
+      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,2U);
+      return false;
+    }
+    if (speed_safe && current_safe)
+    {
+      if (!stable_started)
+      {
+        stable_start=motor_timebase_cycles_get();
+        stable_started=true;
+      }
+      else if (motor_timebase_cycles_elapsed(stable_start)>=stable_time)
+      {
+        LOGI("Commissioning standstill: PASS wait=%lu ms frequency=%lu mHz current=%ld/%ld/%ld mA\r\n",
+          (unsigned long)(motor_timebase_cycles_elapsed(start)/
+                          (system_core_clock/1000U)),
+          rotor_feedback.valid ?
+            (unsigned long)rotor_feedback.electrical_frequency_millihz : 0UL,
+          current.phase_a_ma,current.phase_b_ma,current.phase_c_ma);
+        return true;
+      }
+    }
+    else
+    {
+      stable_started=false;
+    }
+    wk_delay_ms(1U);
+  }
+  if (!commissioning_abort_requested)
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,1U);
+  return false;
 }
 
 /** @brief 按当前活动参数和原始Hall状态重载运行时解码器。 @param 无。 @return 成功返回true。 */
@@ -173,12 +265,16 @@ static bool commissioning_candidate_trial_run(
       commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_D, 1U);
     else
     {
+      commissioning_current_d_result_print(d_result);
       tests_ok = motor_torque_loop_test_run_with_gains(
           q_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
           trial.current_ki_q15);
       if (!tests_ok)
+      {
+        commissioning_current_q_failure_print(q_result);
         commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
                                 (uint32_t)q_result->status);
+      }
     }
   }
   motor_control_stop();
@@ -243,10 +339,25 @@ static bool commissioning_resistance_run(void)
 static bool commissioning_inductance_run(void)
 {
   motor_parameter_t p; motor_inductance_identification_result_t result;
+  motor_current_sample_state_t current = {0};
+  motor_pwm_port_status_t pwm = {0};
   if (!motor_parameter_candidate_read(&p)) {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U); return false;
   }
   if (!motor_inductance_identification_run(p.phase_resistance_mohm, &result)) {
+    (void)motor_current_sample_state_read(&current);
+    (void)motor_pwm_port_status_read(&pwm);
+    LOGE("Commissioning L diag: status=%u phase=%ld/%ld/%ld mA oc_count=%lu oc=%u trip=%ld/%ld/%ld mA pwm_sw/gate/moe/bif/nfault=%u/%u/%u/%u/%u\r\n",
+      (unsigned int)result.status, current.phase_a_ma, current.phase_b_ma,
+      current.phase_c_ma, (unsigned long)current.overcurrent_count,
+      current.overcurrent_fault ? 1U : 0U,
+      current.overcurrent_trip_phase_a_ma,
+      current.overcurrent_trip_phase_b_ma,
+      current.overcurrent_trip_phase_c_ma,
+      pwm.software_output_enabled ? 1U : 0U,
+      pwm.gate_driver_enabled ? 1U : 0U,
+      pwm.timer_main_output_enabled ? 1U : 0U,
+      pwm.break_flag_active ? 1U : 0U, pwm.nfault_high ? 1U : 0U);
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_INDUCTANCE,
                             (uint32_t)result.status); return false;
   }
@@ -318,8 +429,12 @@ static bool commissioning_current_q_run(
   ok = motor_torque_loop_test_run_with_gains(
       result, parameter.current_d_kp_q15, parameter.current_q_kp_q15,
       parameter.current_ki_q15);
-  if (!ok) commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
-                                   (uint32_t)result->status);
+  if (!ok)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
+                            (uint32_t)result->status);
+    commissioning_current_q_failure_print(result);
+  }
   return ok;
 }
 
@@ -425,6 +540,30 @@ static void commissioning_current_q_result_print(
     result->final_frequency_millihz, result->sample_count);
 }
 
+/**
+ * @brief 打印Iq接管测试失败时的控制、电流及转子反馈快照。
+ * @param result 测试失败结果，不允许为空。
+ * @return 无。
+ */
+static void commissioning_current_q_failure_print(
+  const motor_torque_loop_test_result_t *result)
+{
+  LOGE("Commissioning Iq/handover diag: status=%u samples=%lu hall=%u frequency=%lu mHz angle=%u phase=%ld/%ld/%ld mA id/iq=%ld/%ld mA vd/vq=%ld/%ld mV pwm_sw/gate/moe/bif/nfault=%u/%u/%u/%u/%u\r\n",
+    (unsigned int)result->status, (unsigned long)result->sample_count,
+    (unsigned int)result->final_hall_state,
+    (unsigned long)result->final_frequency_millihz,
+    (unsigned int)result->final_electrical_angle_u16,
+    result->final_phase_a_ma, result->final_phase_b_ma,
+    result->final_phase_c_ma, result->final_direct_current_ma,
+    result->final_quadrature_current_ma, result->final_direct_voltage_mv,
+    result->final_quadrature_voltage_mv,
+    result->final_pwm_software_enabled ? 1U : 0U,
+    result->final_gate_driver_enabled ? 1U : 0U,
+    result->final_pwm_moe_enabled ? 1U : 0U,
+    result->final_pwm_break_active ? 1U : 0U,
+    result->final_nfault_high ? 1U : 0U);
+}
+
 void motor_commissioning_hall_edge_process(void)
 {
   motor_hall_port_sample_t sample; motor_open_loop_status_t open;
@@ -455,6 +594,7 @@ static bool commissioning_hall_direction_run(int8_t direction)
   motor_hall_calibration_error_t scan_error;
   uint32_t start;
   uint32_t timeout=(system_core_clock/1000U)*MOTOR_COMMISSIONING_HALL_TIMEOUT_MS;
+  int32_t physical_target_frequency_millihz;
   uint8_t state;
   bool target_reached=false;
   bool scan_control_valid=true;
@@ -469,7 +609,12 @@ static bool commissioning_hall_direction_run(int8_t direction)
   /* 使用旋转的正Vd磁场，使开环命令角直接表示Hall标定的励磁轴。 */
   command.direct_voltage_mv=MOTOR_COMMISSIONING_HALL_VOLTAGE_MV;
   command.quadrature_voltage_mv=0;
-  command.target_frequency_millihz=direction*MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
+  physical_target_frequency_millihz=
+    direction*MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
+  command.target_frequency_millihz=physical_target_frequency_millihz;
+  /* 统一入口接收逻辑方向；辨识流程中的direction指定物理扫描方向。 */
+  if (motor_parameter_direction_inverted_get())
+    command.target_frequency_millihz=-command.target_frequency_millihz;
   command.acceleration_millihz_per_s=MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
   if (!motor_control_open_loop_start(&command)) {
     commissioning_hall_collecting=false;
@@ -490,7 +635,7 @@ static bool commissioning_hall_direction_run(int8_t direction)
       break;
     if ((open_loop_status.state == MOTOR_OPEN_LOOP_RUNNING) &&
         (open_loop_status.actual_frequency_millihz ==
-         command.target_frequency_millihz))
+         physical_target_frequency_millihz))
     {
       target_reached=true;
       break;
@@ -673,10 +818,14 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     if (ok)
     {
       commissioning_step_set(7U);
+      ok=commissioning_standstill_wait();
+    }
+    if (ok)
+    {
+      commissioning_step_set(8U);
       ok=commissioning_candidate_trial_run(&d_result,&q_result);
       if(ok)
       {
-        commissioning_current_d_result_print(&d_result);
         commissioning_current_q_result_print(&q_result);
       }
     }

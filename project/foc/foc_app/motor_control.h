@@ -75,14 +75,14 @@ typedef struct {
 void motor_control_init(void);
 /** @brief 启动校准成功后进入READY。 @param 无。 @return 成功返回true。 */
 bool motor_control_ready_set(void);
-/** @brief 从READY启动正式开环。 @param command 开环指令。 @return 成功返回true。 */
+/** @brief 从READY启动正式开环。 @param command 逻辑开环指令，频率按活动方向映射。 @return 成功返回true。 */
 bool motor_control_open_loop_start(const motor_open_loop_command_t *command);
-/** @brief 更新运行中的开环指令。 @param command 新指令。 @return 成功返回true。 */
+/** @brief 更新运行中的开环指令。 @param command 新逻辑指令，频率按活动方向映射。 @return 成功返回true。 */
 bool motor_control_open_loop_command_set(const motor_open_loop_command_t *command);
-/** @brief 从运行中的开环无扰切换到Hall电流闭环。 @param command Id/Iq指令。 @return 成功返回true。 */
+/** @brief 从运行中的开环无扰切换到Hall电流闭环。 @param command 逻辑Id/Iq指令，Iq按活动方向映射。 @return 成功返回true。 */
 bool motor_control_current_control_start(
   const motor_current_control_command_t *command);
-/** @brief 更新运行中的Id/Iq指令。 @param command 新指令。 @return 成功返回true。 */
+/** @brief 更新运行中的Id/Iq指令。 @param command 新逻辑指令，Iq按活动方向映射。 @return 成功返回true。 */
 bool motor_control_current_control_command_set(
   const motor_current_control_command_t *command);
 /**

@@ -137,3 +137,22 @@ bool motor_pwm_port_output_is_enabled(void)
 {
   return motor_pwm_output_enabled;
 }
+
+bool motor_pwm_port_status_read(motor_pwm_port_status_t *status)
+{
+  if (status == NULL)
+  {
+    return false;
+  }
+
+  status->software_output_enabled = motor_pwm_output_enabled;
+  status->gate_driver_enabled = motor_pwm_gate_driver_enabled;
+  status->timer_main_output_enabled =
+    (MOTOR_PWM_TIMER->brk_bit.oen != 0U);
+  status->break_flag_active =
+    (tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) != RESET);
+  status->nfault_high =
+    (gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
+                              MOTOR_PWM_BREAK_PIN) != RESET);
+  return true;
+}

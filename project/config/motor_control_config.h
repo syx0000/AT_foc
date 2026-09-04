@@ -34,8 +34,8 @@
 #define MOTOR_POLE_PAIRS                           4U
 /* 设备逻辑方向默认与当前电气正方向一致；1表示逻辑方向反转。 */
 #define MOTOR_DIRECTION_INVERTED                   0U
-/* 反向闭环上板验证完成前保持0；0时禁止任何物理反向速度闭环指令。 */
-#define MOTOR_REVERSE_CONTROL_VERIFIED             0U
+/* 反向中低速闭环已完成上板验证；在线跨零换向和高速性能仍不在开放范围。 */
+#define MOTOR_REVERSE_CONTROL_VERIFIED             1U
 
 /* 母线电压参数，保护阈值单位为0.1 V。 */
 #define MOTOR_BUS_VOLTAGE_DIVIDER_RATIO           21U

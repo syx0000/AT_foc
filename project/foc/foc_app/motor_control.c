@@ -28,6 +28,30 @@ static uint32_t motor_fault_history_newest;
 static uint32_t motor_fault_sequence;
 static volatile uint32_t motor_fault_pending_mask;
 
+static bool motor_control_open_command_to_physical(
+  const motor_open_loop_command_t *logical_command,
+  motor_open_loop_command_t *physical_command)
+{
+  if ((logical_command == NULL) || (physical_command == NULL)) return false;
+  *physical_command = *logical_command;
+  return motor_direction_transform_s32(
+    logical_command->target_frequency_millihz,
+    motor_parameter_direction_inverted_get(),
+    &physical_command->target_frequency_millihz);
+}
+
+static bool motor_control_current_command_to_physical(
+  const motor_current_control_command_t *logical_command,
+  motor_current_control_command_t *physical_command)
+{
+  if ((logical_command == NULL) || (physical_command == NULL)) return false;
+  *physical_command = *logical_command;
+  return motor_direction_transform_s32(
+    logical_command->quadrature_reference_ma,
+    motor_parameter_direction_inverted_get(),
+    &physical_command->quadrature_reference_ma);
+}
+
 const char *motor_control_fault_name_get(motor_fault_code_t fault_code)
 {
   switch (fault_code)
@@ -111,19 +135,24 @@ bool motor_control_ready_set(void)
 }
 bool motor_control_open_loop_start(const motor_open_loop_command_t *command)
 {
+  motor_open_loop_command_t physical_command;
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_READY) ||
-      (!motor_open_loop_start(command))) return false;
+      (!motor_control_open_command_to_physical(command, &physical_command)) ||
+      (!motor_open_loop_start(&physical_command))) return false;
   motor_control_status.state = MOTOR_CONTROL_STATE_OPEN_LOOP;
   return true;
 }
 bool motor_control_open_loop_command_set(const motor_open_loop_command_t *command)
 {
+  motor_open_loop_command_t physical_command;
   return (motor_control_status.state == MOTOR_CONTROL_STATE_OPEN_LOOP) &&
-         motor_open_loop_command_set(command);
+         motor_control_open_command_to_physical(command, &physical_command) &&
+         motor_open_loop_command_set(&physical_command);
 }
 bool motor_control_current_control_start(
   const motor_current_control_command_t *command)
 {
+  motor_current_control_command_t physical_command;
   motor_open_loop_status_t open_loop;
   motor_rotor_feedback_t rotor_feedback;
   motor_slow_sensor_state_t sensor;
@@ -132,9 +161,12 @@ bool motor_control_current_control_start(
   uint32_t bus_mv;
   int32_t direct_seed_mv;
   int32_t quadrature_seed_mv;
+  uint32_t primask;
+  bool handover_ok;
 
   (void)motor_slow_sensor_process();
-  if ((motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+  if ((!motor_control_current_command_to_physical(command, &physical_command)) ||
+      (motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (!motor_open_loop_status_read(&open_loop)) ||
       (open_loop.state != MOTOR_OPEN_LOOP_RUNNING) ||
       (!motor_rotor_feedback_read(&rotor_feedback)) ||
@@ -150,9 +182,14 @@ bool motor_control_current_control_start(
   direct_seed_mv = (int32_t)(((int64_t)voltage_dq.direct_q15 * bus_mv) / 32768);
   quadrature_seed_mv = (int32_t)(
     ((int64_t)voltage_dq.quadrature_q15 * bus_mv) / 32768);
-  if (!motor_open_loop_control_release()) return false;
-  if (!motor_current_control_handover(command, direct_seed_mv,
-                                       quadrature_seed_mv))
+  /* 开环释放和电流环接管之间不允许被快速控制中断打断。 */
+  primask = __get_PRIMASK();
+  __disable_irq();
+  handover_ok = motor_open_loop_control_release() &&
+    motor_current_control_handover(&physical_command, direct_seed_mv,
+                                   quadrature_seed_mv);
+  __set_PRIMASK(primask);
+  if (!handover_ok)
   {
     motor_control_fault_set(MOTOR_FAULT_CURRENT_HANDOVER);
     return false;
@@ -163,8 +200,10 @@ bool motor_control_current_control_start(
 bool motor_control_current_control_command_set(
   const motor_current_control_command_t *command)
 {
+  motor_current_control_command_t physical_command;
   return (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) &&
-         motor_current_control_command_set(command);
+         motor_control_current_command_to_physical(command, &physical_command) &&
+         motor_current_control_command_set(&physical_command);
 }
 bool motor_control_speed_control_start(int32_t target_speed_rpm)
 {
@@ -194,8 +233,10 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
       initial_quadrature_current_ma = -MOTOR_CURRENT_COMMAND_MAX_MA;
 
     current_command.direct_reference_ma = 0;
-    current_command.quadrature_reference_ma =
-      initial_quadrature_current_ma;
+    if (!motor_direction_transform_s32(
+          initial_quadrature_current_ma,
+          motor_parameter_direction_inverted_get(),
+          &current_command.quadrature_reference_ma)) return false;
     if (!motor_control_current_control_start(&current_command)) return false;
   }
   else if (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL)
@@ -362,6 +403,7 @@ void motor_control_poll(void)
   uint32_t pending_mask;
   uint32_t fault_index;
   uint32_t primask;
+  motor_current_sample_state_t current;
 
   primask = __get_PRIMASK();
   __disable_irq();
@@ -374,6 +416,17 @@ void motor_control_poll(void)
   {
     if ((pending_mask & (1UL << fault_index)) != 0U)
     {
+      if ((fault_index == (uint32_t)MOTOR_FAULT_OVERCURRENT) &&
+          motor_current_sample_state_read(&current))
+      {
+        LOGE("Overcurrent trip diag: trip=%ld/%ld/%ld mA current=%ld/%ld/%ld mA count=%lu latched=%u\r\n",
+          current.overcurrent_trip_phase_a_ma,
+          current.overcurrent_trip_phase_b_ma,
+          current.overcurrent_trip_phase_c_ma,
+          current.phase_a_ma, current.phase_b_ma, current.phase_c_ma,
+          (unsigned long)current.overcurrent_count,
+          current.overcurrent_fault ? 1U : 0U);
+      }
       motor_control_fault_set((motor_fault_code_t)fault_index);
     }
   }

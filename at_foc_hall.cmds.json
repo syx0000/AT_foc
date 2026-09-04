@@ -91,6 +91,19 @@
             "subCmds": []
           },
           {
+            "name": "reset",
+            "intro_on": true,
+            "intro": "Software reset; accepted only while motor is not running and PWM is off",
+            "hex_on": false,
+            "loop_on": true,
+            "loop_ms": 100,
+            "loop_count": 1,
+            "cmd_hex": "72 65 73 65 74 0D 0A",
+            "is_group": false,
+            "down": false,
+            "subCmds": []
+          },
+          {
             "name": "log OFF (0)",
             "intro_on": true,
             "intro": "",

@@ -39,6 +39,9 @@ void motor_current_sample_init(void)
   motor_current_state.sample_count = 0U;
   motor_current_state.overcurrent_count = 0U;
   motor_current_state.overcurrent_fault = false;
+  motor_current_state.overcurrent_trip_phase_a_ma = 0L;
+  motor_current_state.overcurrent_trip_phase_b_ma = 0L;
+  motor_current_state.overcurrent_trip_phase_c_ma = 0L;
 }
 
 bool motor_current_sample_offsets_valid(
@@ -91,6 +94,9 @@ bool motor_current_sample_offsets_set(
   motor_current_state.sample_count = 0U;
   motor_current_state.overcurrent_count = 0U;
   motor_current_state.overcurrent_fault = false;
+  motor_current_state.overcurrent_trip_phase_a_ma = 0L;
+  motor_current_state.overcurrent_trip_phase_b_ma = 0L;
+  motor_current_state.overcurrent_trip_phase_c_ma = 0L;
   motor_current_offsets_ready = true;
   __set_PRIMASK(primask);
 
@@ -194,6 +200,12 @@ bool motor_current_sample_process(const motor_adc_fast_sample_t *sample)
        MOTOR_SOFTWARE_OVERCURRENT_SAMPLES))
   {
     motor_current_state.overcurrent_fault = true;
+    motor_current_state.overcurrent_trip_phase_a_ma =
+      motor_current_state.phase_a_ma;
+    motor_current_state.overcurrent_trip_phase_b_ma =
+      motor_current_state.phase_b_ma;
+    motor_current_state.overcurrent_trip_phase_c_ma =
+      motor_current_state.phase_c_ma;
     return true;
   }
 
@@ -220,6 +232,12 @@ bool motor_current_sample_state_read(motor_current_sample_state_t *state)
   state->sample_count = motor_current_state.sample_count;
   state->overcurrent_count = motor_current_state.overcurrent_count;
   state->overcurrent_fault = motor_current_state.overcurrent_fault;
+  state->overcurrent_trip_phase_a_ma =
+    motor_current_state.overcurrent_trip_phase_a_ma;
+  state->overcurrent_trip_phase_b_ma =
+    motor_current_state.overcurrent_trip_phase_b_ma;
+  state->overcurrent_trip_phase_c_ma =
+    motor_current_state.overcurrent_trip_phase_c_ma;
   __set_PRIMASK(primask);
 
   return motor_current_offsets_ready && (state->sample_count != 0U);

@@ -518,6 +518,8 @@ Hall顺序和边界角度可以自动采集。转子角度补偿首版使用正I
 
 当前只使用一份正反向共用的静态`hall_rotor_offset_u16`，暂不把动态角度补偿接入正式控制链。先完成静态补偿、正向闭环和反向低功率交叉验证，避免用动态项掩盖Hall边界表、方向映射或静态转子坐标误差。
 
+实物验证更新（2026.09.04）：反向`-300 rpm`速度闭环能够稳定运行；提高到`-3000 rpm`时，目标/反馈为`-3000/-2714 rpm`，速度环`Iq`指令达到`-2000 mA`限幅，实测`Iq=-523 mA`且`Id=3500 mA`（目标`Id=0`）。该结果说明高速区存在明显转子角度误差、电压饱和或高占空比电流采样失真风险。动态角度补偿由普通优化项提升为高速闭环开放前的阻塞待办，但在完成多速度正反向数据对比前，不直接判定系统延迟为唯一根因。
+
 后续在以下电角频率点采集稳定段数据：
 
 ```text
@@ -535,6 +537,8 @@ Hall顺序和边界角度可以自动采集。转子角度补偿首版使用正I
 决策门槛：最高工作速度下剩余动态误差小于约3°电角时暂不实现；超过5°且随速度近似线性时再实现并启用。若正反向不对称，或误差不随速度线性变化，应先检查Hall标定表、采样/PWM时序、速度估算和机械负载，不增加方向独立的固定offset来掩盖问题。
 
 实现时应预留但默认关闭动态补偿参数，限制最大补偿角，并在Hall失效、速度无效或方向不确定时立即将动态项清零。该功能必须经过正反向、多速度、加减速和交接过程验证后才能默认启用。
+
+验证期间采用逐级升速，不再直接跳到`±3000 rpm`。任一工况出现`|Id| > 500 mA`、`Iq`持续跟踪误差超过约30%、速度环`Iq`指令达到限幅，或明显振动/啸叫时立即降速停机。验收要求是在目标最高转速下正反向均不触发上述条件，动态角误差趋势近似线性且补偿启停无明显电流或转速阶跃。
 
 ### 13.8 阶段九：低电流Id闭环验证
 
@@ -906,6 +910,7 @@ IDLE → USER_PARAMETER_CHECK → ADC_OFFSET_CALIBRATION
 → RESISTANCE_IDENTIFICATION → INDUCTANCE_IDENTIFICATION
 → HALL_PRECHECK → HALL_ALIGN → HALL_FORWARD_SCAN
 → HALL_REVERSE_SCAN → BUILD_PARAMETER
+→ HALL_OFFSET_IDENTIFICATION → WAIT_STANDSTILL
 → CURRENT_D_AXIS_TEST → CURRENT_Q_AXIS_TEST
 → CURRENT_HANDOVER_TEST → WAIT_ACCEPT → COMPLETE
 

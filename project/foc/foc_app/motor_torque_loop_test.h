@@ -41,7 +41,15 @@ typedef struct
   int32_t final_phase_a_ma;
   int32_t final_phase_b_ma;
   int32_t final_phase_c_ma;
+  int32_t final_direct_current_ma;
+  int32_t final_quadrature_current_ma;
+  uint16_t final_electrical_angle_u16;
   uint8_t final_hall_state;
+  bool final_pwm_software_enabled;
+  bool final_gate_driver_enabled;
+  bool final_pwm_moe_enabled;
+  bool final_pwm_break_active;
+  bool final_nfault_high;
   uint32_t sample_count;
 } motor_torque_loop_test_result_t;
 

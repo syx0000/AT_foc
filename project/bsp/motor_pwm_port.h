@@ -19,6 +19,16 @@ typedef struct
   uint16_t phase_c; /**< C相TMR1 CH3比较值，有效范围0..9599。 */
 } motor_pwm_compare_t;
 
+/** PWM功率级诊断快照。 */
+typedef struct
+{
+  bool software_output_enabled; /**< 软件记录的PWM输出使能状态。 */
+  bool gate_driver_enabled;     /**< 软件记录的EN_GATE使能状态。 */
+  bool timer_main_output_enabled; /**< TMR1硬件MOE回读状态。 */
+  bool break_flag_active;       /**< TMR1硬件Break中断标志BIF。 */
+  bool nfault_high;             /**< DRV nFAULT引脚电平，高表示无故障。 */
+} motor_pwm_port_status_t;
+
 /**
  * @brief 将电机功率级置于初始化安全状态。
  * @param 无。
@@ -93,5 +103,13 @@ void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare);
  * @note 返回值是模块内部状态，不是TMR1寄存器或外部门极驱动器故障状态的直接回读值。
  */
 bool motor_pwm_port_output_is_enabled(void);
+
+/**
+ * @brief 读取PWM功率级的软件状态及硬件故障输入快照。
+ * @param status 输出诊断状态，不允许为空。
+ * @return 成功读取返回true；status为空返回false。
+ * @details 仅执行寄存器和GPIO只读访问，不清除BIF、不改变EN_GATE或MOE。
+ */
+bool motor_pwm_port_status_read(motor_pwm_port_status_t *status);
 
 #endif /* MOTOR_PWM_PORT_H */

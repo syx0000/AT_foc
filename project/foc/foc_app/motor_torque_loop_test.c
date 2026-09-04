@@ -7,6 +7,8 @@
  */
 
 #include <stddef.h>
+#include <string.h>
+#include "at32f45x.h"
 #include "motor_board_config.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
@@ -31,6 +33,53 @@ static volatile int32_t motor_torque_loop_test_id_peak, motor_torque_loop_test_i
 static volatile motor_torque_loop_test_status_t motor_torque_loop_test_status;
 static motor_ramp_t motor_torque_loop_test_id_ramp, motor_torque_loop_test_iq_ramp;
 
+/**
+ * @brief 将测试退出时的电流环、相电流和转子反馈保存到结果中。
+ * @param result 待更新的测试结果，不允许为空。
+ * @return 无。
+ */
+static void motor_torque_loop_test_snapshot(
+  motor_torque_loop_test_result_t *result)
+{
+  motor_current_control_status_t control;
+  motor_current_sample_state_t current = {0};
+  motor_rotor_feedback_t rotor_feedback;
+  motor_pwm_port_status_t pwm_status;
+
+  if (motor_current_control_status_read(&control))
+  {
+    result->final_direct_current_ma = control.direct_feedback_ma;
+    result->final_quadrature_current_ma = control.quadrature_feedback_ma;
+    result->final_direct_voltage_mv = control.direct_voltage_mv;
+    result->final_quadrature_voltage_mv = control.quadrature_voltage_mv;
+    result->final_electrical_angle_u16 = control.electrical_angle_u16;
+  }
+  if (motor_current_sample_state_read(&current))
+  {
+    result->final_phase_a_ma = current.phase_a_ma;
+    result->final_phase_b_ma = current.phase_b_ma;
+    result->final_phase_c_ma = current.phase_c_ma;
+  }
+  if (motor_rotor_feedback_read(&rotor_feedback))
+  {
+    result->final_frequency_millihz =
+      rotor_feedback.electrical_frequency_millihz;
+    result->final_hall_state = rotor_feedback.source_state;
+    if (result->final_electrical_angle_u16 == 0U)
+      result->final_electrical_angle_u16 =
+        rotor_feedback.electrical_angle_u16;
+  }
+  if (motor_pwm_port_status_read(&pwm_status))
+  {
+    result->final_pwm_software_enabled =
+      pwm_status.software_output_enabled;
+    result->final_gate_driver_enabled = pwm_status.gate_driver_enabled;
+    result->final_pwm_moe_enabled = pwm_status.timer_main_output_enabled;
+    result->final_pwm_break_active = pwm_status.break_flag_active;
+    result->final_nfault_high = pwm_status.nfault_high;
+  }
+}
+
 static int32_t motor_torque_loop_test_abs(int32_t value)
 {
   return (value < 0) ? -value : value;
@@ -48,6 +97,7 @@ static uint32_t motor_torque_loop_test_ramp_rate_get(int32_t initial,
 void motor_torque_loop_test_fast_process(void)
 {
   motor_current_control_status_t control;
+  motor_current_sample_state_t current;
   motor_current_control_command_t command;
   int32_t absolute_value;
 
@@ -58,11 +108,14 @@ void motor_torque_loop_test_fast_process(void)
   if ((!motor_current_control_status_read(&control)) ||
       (control.state != MOTOR_CURRENT_CONTROL_RUNNING))
   {
-    motor_torque_loop_test_status = (control.fault == MOTOR_CURRENT_CONTROL_FAULT_HALL) ?
+    (void)motor_current_sample_state_read(&current);
+    motor_torque_loop_test_status = current.overcurrent_fault ?
+      MOTOR_TORQUE_TEST_STATUS_OVERCURRENT :
+      ((control.fault == MOTOR_CURRENT_CONTROL_FAULT_HALL) ?
       MOTOR_TORQUE_TEST_STATUS_HALL_LOST :
       ((control.fault == MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT) ?
        MOTOR_TORQUE_TEST_STATUS_OVERCURRENT :
-       MOTOR_TORQUE_TEST_STATUS_PWM_FAULT);
+       MOTOR_TORQUE_TEST_STATUS_PWM_FAULT));
     motor_torque_loop_test_fault = true;
     motor_torque_loop_test_active = false;
     return;
@@ -122,11 +175,13 @@ bool motor_torque_loop_test_run_with_gains(
   uint32_t bootstrap_ms;
   uint32_t bus_mv;
   int32_t seed_direct_mv, seed_quadrature_mv;
+  uint32_t primask;
+  bool handover_ok;
 
   if ((result == NULL) || (direct_kp_q15 <= 0) ||
       (quadrature_kp_q15 <= 0) || (integral_gain_q15 <= 0)) return false;
+  (void)memset(result, 0, sizeof(*result));
   result->status = MOTOR_TORQUE_TEST_STATUS_OK;
-  result->sample_count = 0U;
   if (motor_pwm_port_output_is_enabled())
   {
     result->status = MOTOR_TORQUE_TEST_STATUS_PWM_BUSY;
@@ -171,8 +226,12 @@ bool motor_torque_loop_test_run_with_gains(
     if ((open_status.state == MOTOR_OPEN_LOOP_FAULT) ||
         (!motor_pwm_port_output_is_enabled()))
     {
+      (void)motor_current_sample_state_read(&current);
       motor_open_loop_stop();
-      result->status = MOTOR_TORQUE_TEST_STATUS_BOOTSTRAP_FAILED;
+      result->status = current.overcurrent_fault ?
+        MOTOR_TORQUE_TEST_STATUS_OVERCURRENT :
+        MOTOR_TORQUE_TEST_STATUS_BOOTSTRAP_FAILED;
+      motor_torque_loop_test_snapshot(result);
       return false;
     }
     if (rotor_feedback.valid &&
@@ -219,12 +278,21 @@ bool motor_torque_loop_test_run_with_gains(
     MOTOR_TORQUE_TEST_QUADRATURE_REFERENCE_MA,
     motor_torque_loop_test_ramp_rate_get(current_command.quadrature_reference_ma,
                                          MOTOR_TORQUE_TEST_QUADRATURE_REFERENCE_MA));
-  if ((!motor_open_loop_control_release()) ||
-      (!motor_current_control_handover(&current_command, seed_direct_mv,
-                                       seed_quadrature_mv)))
+  /* PWM保持开启时，开环释放与电流环接管必须构成不可分割的切换。 */
+  primask = __get_PRIMASK();
+  __disable_irq();
+  handover_ok = motor_open_loop_control_release() &&
+    motor_current_control_handover(&current_command, seed_direct_mv,
+                                   seed_quadrature_mv);
+  __set_PRIMASK(primask);
+  if (!handover_ok)
   {
     motor_pwm_port_emergency_stop();
-    result->status = MOTOR_TORQUE_TEST_STATUS_PWM_FAULT;
+    (void)motor_current_sample_state_read(&current);
+    result->status = current.overcurrent_fault ?
+      MOTOR_TORQUE_TEST_STATUS_OVERCURRENT :
+      MOTOR_TORQUE_TEST_STATUS_PWM_FAULT;
+    motor_torque_loop_test_snapshot(result);
     return false;
   }
 
@@ -247,12 +315,7 @@ bool motor_torque_loop_test_run_with_gains(
   (void)motor_rotor_feedback_read(&rotor_feedback);
   result->status = motor_torque_loop_test_fault ? motor_torque_loop_test_status : MOTOR_TORQUE_TEST_STATUS_OK;
   result->sample_count = motor_torque_loop_test_fault ? motor_torque_loop_test_count : motor_torque_loop_test_statistics_count;
-  result->final_frequency_millihz =
-    rotor_feedback.electrical_frequency_millihz;
-  result->final_hall_state = rotor_feedback.source_state;
-  result->final_phase_a_ma = current.phase_a_ma;
-  result->final_phase_b_ma = current.phase_b_ma;
-  result->final_phase_c_ma = current.phase_c_ma;
+  motor_torque_loop_test_snapshot(result);
   if (motor_torque_loop_test_fault || (!motor_torque_loop_test_done) || (motor_torque_loop_test_statistics_count == 0U)) return false;
 
   result->direct_average_ma = (int32_t)(motor_torque_loop_test_id_sum / motor_torque_loop_test_statistics_count);
