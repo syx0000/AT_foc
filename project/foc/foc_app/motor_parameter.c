@@ -76,6 +76,7 @@ static bool motor_parameter_hall_sequence_validate(
   uint8_t predecessor_count[8] = {0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U};
   uint8_t state;
   uint8_t index;
+  uint8_t changed_bits;
 
   if ((positive_next[0] != 0U) || (positive_next[7] != 0U))
   {
@@ -85,6 +86,12 @@ static bool motor_parameter_hall_sequence_validate(
   {
     if ((positive_next[state] < 1U) || (positive_next[state] > 6U) ||
         (positive_next[state] == state))
+    {
+      return false;
+    }
+    changed_bits = (uint8_t)(state ^ positive_next[state]);
+    if ((changed_bits != 1U) && (changed_bits != 2U) &&
+        (changed_bits != 4U))
     {
       return false;
     }

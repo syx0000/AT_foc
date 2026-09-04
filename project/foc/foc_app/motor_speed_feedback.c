@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_control_config.h"
-#include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_speed_feedback.h"
 #include "motor_timebase.h"
 
@@ -29,7 +29,7 @@ void motor_speed_feedback_process_1khz(void)
 
   timeout_cycles =
     (system_core_clock / 1000U) * MOTOR_SPEED_FEEDBACK_TIMEOUT_MS;
-  if ((!motor_hall_port_sample_read(&hall_sample)) ||
+  if ((!motor_hall_decoder_sample_read(&hall_sample)) ||
       (!hall_sample.valid) ||
       (hall_sample.direction == 0) ||
       (hall_sample.electrical_frequency_millihz == 0U) ||

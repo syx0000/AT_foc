@@ -1,7 +1,7 @@
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_hall_angle_observer.h"
-#include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_open_loop.h"
 
 static volatile motor_hall_angle_observer_t motor_hall_angle_observer;
@@ -25,7 +25,7 @@ void motor_hall_angle_observer_edge_process(void)
   uint16_t filtered_angle;
   int16_t angle_error;
 
-  if ((!motor_hall_port_sample_read(&hall_sample)) ||
+  if ((!motor_hall_decoder_sample_read(&hall_sample)) ||
       (!motor_open_loop_status_read(&open_loop_status)) ||
       (!hall_sample.valid) ||
       (open_loop_status.state != MOTOR_OPEN_LOOP_RUNNING))

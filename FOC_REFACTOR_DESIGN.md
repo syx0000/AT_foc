@@ -636,7 +636,7 @@ ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据
 
 低优先级代码被高优先级中断抢占时，测量值包含抢占时间，这一结果用于评估真实最坏响应时间。192 MHz下DWT 32位计数器约22.37秒回绕，短时间间隔通过无符号减法兼容单次回绕。
 
-## 16. 当前实现与实测基线（2026.09.03.4）
+## 16. 当前实现与实测基线（2026.09.04.5）
 
 - `motor_adc_port`统一快速两相电流和慢速四半字DMA采样，实测频率分别为10 kHz和1 kHz。
 - 电流采样使用2.5 mΩ分流电阻、DRV8353硬件10 V/V增益，实测确认ADC低于零偏为正电流。
@@ -652,7 +652,8 @@ ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据
 - `motor_current_pi`：单轴电流PI、输出预置和外部限幅抗饱和回算。
 - `motor_voltage_limit`：dq合成电压联合限幅，不读取母线电压或硬件状态。
 - `motor_ramp`：通用有符号线性斜坡，支持跨零和运行中更新目标。
-- 本层禁止包含ADC、Hall、PWM、AT32寄存器及WorkBench生成接口。
+- `motor_hall_decoder`：按运行时Hall表完成跳转校验、物理方向判断、异常统计和六边沿滑动测速。
+- 本层禁止包含ADC/PWM/Hall GPIO等硬件端口、AT32寄存器及WorkBench生成接口。
 
 ### 17.2 `foc_app`控制与流程层
 
@@ -665,7 +666,7 @@ ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据
 
 - `motor_adc_port`只负责原始ADC采样快照。
 - `motor_pwm_port`只负责比较值、MOE、门极使能和硬件故障安全操作。
-- `motor_hall_port`只负责Hall边沿、状态、方向及周期测量。
+- `motor_hall_port`只负责Hall GPIO组合状态、原始边沿计数及DWT时间戳采集。
 - `motor_timebase`只提供统一周期计数和时间换算。
 
 依赖方向固定为：`foc_app -> foc_kernel + bsp`。`foc_kernel`不得反向依赖

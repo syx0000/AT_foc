@@ -7,7 +7,7 @@
 #include "motor_slow_sensor.h"
 #include "motor_open_loop.h"
 #include "motor_pwm_port.h"
-#include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_speed_feedback.h"
@@ -81,7 +81,7 @@ void interrupt_monitor_poll(void)
   current_state_valid = motor_current_sample_state_read(&current_state);
   slow_sensor_state_valid = motor_slow_sensor_state_read(&slow_sensor_state);
   open_loop_status_valid = motor_open_loop_status_read(&open_loop_status);
-  hall_sample_valid = motor_hall_port_sample_read(&hall_sample);
+  hall_sample_valid = motor_hall_decoder_sample_read(&hall_sample);
   hall_angle_observer_valid =
     motor_hall_angle_observer_read(&hall_angle_observer);
   hall_angle_estimator_valid =

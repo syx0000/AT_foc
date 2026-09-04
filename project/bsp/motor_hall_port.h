@@ -6,18 +6,10 @@
 
 typedef struct
 {
-  uint8_t state;              /**< Hall组合状态，bit0=HA、bit1=HB、bit2=HC。 */
-  bool valid;                 /**< 状态为1..6时有效；0和7表示非法。 */
+  uint8_t state;              /**< 原始Hall组合，bit0=HA、bit1=HB、bit2=HC。 */
   uint32_t edge_count;        /**< 三路Hall任意边沿的累计捕获次数。 */
-  uint32_t timestamp_cycles;  /**< 最近一次边沿对应的DWT周期时间戳。 */
-  uint32_t positive_count;    /**< 按1→5→4→6→2→3顺序变化的累计次数。 */
-  uint32_t negative_count;    /**< 按相反六步顺序变化的累计次数。 */
-  uint32_t invalid_transition_count; /**< 非法状态或非相邻状态跳变累计次数。 */
-  uint32_t duplicate_count;   /**< 中断发生但Hall组合状态未变化的累计次数。 */
-  uint32_t electrical_frequency_millihz; /**< 最近完整六步周期估算的电频率，单位mHz。 */
-  int8_t direction;           /**< 最近合法方向：1为positive，-1为negative，0为未知。 */
-  uint32_t frequency_update_count; /**< 每产生一次新的边沿测速结果递增，用于识别新测量。 */
-} motor_hall_sample_t;
+  uint32_t timestamp_cycles;  /**< 本次原始边沿对应的DWT周期时间戳。 */
+} motor_hall_port_sample_t;
 
 /**
  * @brief 初始化Hall硬件端口状态。
@@ -37,10 +29,10 @@ void motor_hall_port_init(void);
 void motor_hall_port_edge_capture(void);
 
 /**
- * @brief 原子读取最近一次Hall采样快照。
- * @param sample 输出Hall状态、有效性、边沿计数和时间戳，不允许为空。
+ * @brief 原子读取最近一次原始Hall采样快照。
+ * @param sample 输出原始组合状态、边沿计数和时间戳，不允许为空。
  * @return 参数有效时返回true，传入NULL时返回false。
  */
-bool motor_hall_port_sample_read(motor_hall_sample_t *sample);
+bool motor_hall_port_sample_read(motor_hall_port_sample_t *sample);
 
 #endif /* MOTOR_HALL_PORT_H */

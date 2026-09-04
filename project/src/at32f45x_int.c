@@ -36,6 +36,7 @@
 #include "motor_pwm_port.h"
 #include "motor_open_loop.h"
 #include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_speed_feedback.h"
@@ -378,6 +379,7 @@ void EXINT9_5_IRQHandler(void)
 {
   /* add user code begin EXINT9_5_IRQ 0 */
   uint32_t hall_edge_handled = 0U;
+  motor_hall_port_sample_t hall_port_sample;
 
   /* add user code end EXINT9_5_IRQ 0 */
 
@@ -415,8 +417,14 @@ void EXINT9_5_IRQHandler(void)
   if (hall_edge_handled != 0U)
   {
     motor_hall_port_edge_capture();
-    motor_hall_angle_observer_edge_process();
-    motor_hall_angle_estimator_edge_process();
+    if (motor_hall_port_sample_read(&hall_port_sample))
+    {
+      (void)motor_hall_decoder_edge_process(
+        hall_port_sample.state, hall_port_sample.edge_count,
+        hall_port_sample.timestamp_cycles);
+      motor_hall_angle_observer_edge_process();
+      motor_hall_angle_estimator_edge_process();
+    }
   }
 
   /* add user code end EXINT9_5_IRQ 1 */

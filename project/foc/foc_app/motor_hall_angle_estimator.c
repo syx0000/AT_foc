@@ -3,7 +3,7 @@
 #include "motor_board_config.h"
 #include "motor_control_config.h"
 #include "motor_hall_angle_estimator.h"
-#include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_timebase.h"
 
 static const uint16_t motor_hall_edge_angle_u16[8] =
@@ -38,7 +38,7 @@ void motor_hall_angle_estimator_edge_process(void)
 {
   motor_hall_sample_t hall_sample;
 
-  if ((!motor_hall_port_sample_read(&hall_sample)) ||
+  if ((!motor_hall_decoder_sample_read(&hall_sample)) ||
       (!hall_sample.valid) ||
       (hall_sample.direction != 1) ||
       (hall_sample.electrical_frequency_millihz == 0U))

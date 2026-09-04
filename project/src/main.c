@@ -50,6 +50,7 @@
 #include "motor_slow_sensor.h"
 #include "motor_open_loop.h"
 #include "motor_hall_port.h"
+#include "motor_hall_decoder.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_speed_feedback.h"
@@ -128,6 +129,8 @@ static bool motor_driver_prepare_for_calibration(void)
 int main(void)
 {
   /* add user code begin 1 */
+  motor_parameter_t motor_parameter;
+  motor_hall_port_sample_t hall_port_sample;
 
   /* add user code end 1 */
 
@@ -251,6 +254,15 @@ int main(void)
   /* init exint function. */
   wk_exint_config();
   motor_hall_port_init();
+  (void)motor_parameter_active_read(&motor_parameter);
+  (void)motor_hall_port_sample_read(&hall_port_sample);
+  if (!motor_hall_decoder_init(motor_parameter.hall_positive_next,
+                               system_core_clock,
+                               hall_port_sample.state,
+                               hall_port_sample.timestamp_cycles))
+  {
+    LOGE("Hall decoder init failed\r\n");
+  }
 
   /* add user code begin 2 */
   motor_uart_port_init();

@@ -1,5 +1,10 @@
 # 修改记录
 
+2026.09.04.5  Hall端口与解码解耦：motor_hall_port仅采集三路GPIO组合、边沿计数和DWT时间戳，不再包含固定顺序、方向及测速业务；
+              foc_kernel新增motor_hall_decoder，使用活动参数中的Hall正向表判断合法跳转和物理方向，并保留最近6段合法边沿滑动测速；
+              解码器统一处理重复中断、0/7非法电平、跨状态跳变、方向切换及DWT计数回绕，快照使用序列锁避免主循环读取撕裂；
+              Hall角度观察器、估算器、速度反馈及诊断日志统一改读解码结果，默认参数下保持原有正向序列与运行行为；
+              新增纯算法测试用例，覆盖正反方向、六种Hall接线排列和异常路径；Keil工程加入解码器并完成44个工程源文件及测试源文件ARMCC编译。
 2026.09.04.4  运行时电机参数管理：新增默认、活动和候选三层参数，覆盖极对数、逻辑方向、Rs/Ld/Lq、电流/速度PI及Hall跳转和边界角度；
               新增参数完整性与Hall六状态闭环校验，候选参数只有在电机READY且PWM关闭时才能accept，支持discard恢复活动值；
               串口新增motor params active/candidate、motor param set以及motor commissioning diff/accept/discard命令；
