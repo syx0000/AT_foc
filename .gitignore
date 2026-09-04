@@ -11,6 +11,7 @@ bootloader/mdk_v5/listings/
 bootloader/mdk_v5/build_log.txt
 
 # Editor/IDE
+.codex_build/
 *.bak
 *.tmp
 *.swp

@@ -310,7 +310,7 @@ int main(void)
         else
         {
           LOGE("Motor control: failed to enter READY\r\n");
-          motor_control_fault_set(3U);
+          motor_control_fault_set(MOTOR_FAULT_READY_TRANSITION);
         }
 
       }
@@ -319,18 +319,18 @@ int main(void)
         LOGE("ADC calibration: offset_a=%u offset_b=%u valid=0\r\n",
              (unsigned int)calibration_result.phase_a_offset_raw,
              (unsigned int)calibration_result.phase_b_offset_raw);
-        motor_control_fault_set(4U);
+        motor_control_fault_set(MOTOR_FAULT_CURRENT_OFFSET_INVALID);
       }
     }
     else
     {
       LOGE("ADC calibration: timeout or invalid request\r\n");
-      motor_control_fault_set(5U);
+      motor_control_fault_set(MOTOR_FAULT_CURRENT_CALIBRATION_TIMEOUT);
     }
   }
   else
   {
-    motor_control_fault_set(6U);
+    motor_control_fault_set(MOTOR_FAULT_DRIVER_NOT_READY);
     LOGE("DRV calibration blocked: nFAULT=%u BIF=%u MOE=%u\r\n",
          (unsigned int)gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
                                                  MOTOR_PWM_BREAK_PIN),
@@ -346,7 +346,6 @@ int main(void)
     (void)motor_slow_sensor_process();
     motor_cli_poll();
     motor_control_poll();
-    interrupt_monitor_poll();
 
     /* add user code end 3 */
   }

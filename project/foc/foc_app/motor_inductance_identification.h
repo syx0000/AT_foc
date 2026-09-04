@@ -4,8 +4,22 @@
 #include <stdbool.h>
 #include <stdint.h>
 
+typedef enum
+{
+  MOTOR_INDUCTANCE_IDENT_OK = 0,
+  MOTOR_INDUCTANCE_IDENT_INVALID_ARGUMENT,
+  MOTOR_INDUCTANCE_IDENT_INVALID_STATE,
+  MOTOR_INDUCTANCE_IDENT_BUS_VOLTAGE_INVALID,
+  MOTOR_INDUCTANCE_IDENT_PWM_ENABLE_FAILED,
+  MOTOR_INDUCTANCE_IDENT_OVERCURRENT,
+  MOTOR_INDUCTANCE_IDENT_DRIVER_FAULT,
+  MOTOR_INDUCTANCE_IDENT_CURRENT_TOO_LOW,
+  MOTOR_INDUCTANCE_IDENT_IMPEDANCE_INVALID
+} motor_inductance_identification_status_t;
+
 typedef struct
 {
+  motor_inductance_identification_status_t status;
   uint32_t direct_inductance_uh;
   uint32_t quadrature_inductance_uh;
   uint32_t direct_current_amplitude_ma;

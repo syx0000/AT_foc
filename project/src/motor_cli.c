@@ -220,10 +220,27 @@ static void motor_cli_command_execute(char *line)
   motor_parameter_field_t parameter_field;
   motor_commissioning_status_t commissioning;
   motor_parameter_storage_status_t parameter_storage;
+  motor_fault_clear_result_t fault_clear_result;
+  motor_fault_record_t fault_record;
+  uint32_t fault_index;
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate/load/defaults/storage motor param set <name> <value> motor commissioning start/status/abort/diff/accept/discard/save calibrate current_offset calibrate hall sequence/angle/offset identify resistance/inductance calculate current_pi test current_d/current_q/current_handover\r\n");
+    printf("OK commands:\r\n");
+    printf("  help | version | status\r\n");
+    printf("  fault | fault clear | log level <0..4>\r\n");
+    printf("  motor stop | motor direction [normal|reverse]\r\n");
+    printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
+    printf("  open stop\r\n");
+    printf("  current start|set <id_ma> <iq_ma> | current stop\r\n");
+    printf("  speed start|set <signed_rpm> | speed stop\r\n");
+    printf("  motor params active|candidate|load|defaults|storage\r\n");
+    printf("  motor param set <name> <value>\r\n");
+    printf("  motor commissioning start|status|abort|diff|accept|discard|save\r\n");
+    printf("  calibrate current_offset\r\n");
+    printf("  calibrate hall sequence|angle|offset\r\n");
+    printf("  identify resistance|inductance | calculate current_pi\r\n");
+    printf("  test current_d|current_q|current_handover\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -237,8 +254,10 @@ static void motor_cli_command_execute(char *line)
     (void)motor_control_status_read(&motor);
     (void)motor_speed_feedback_read(&speed_feedback);
     (void)motor_speed_control_status_read(&speed_control);
-    printf("OK motor=%u motor_fault=%lu direction=%s open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
-      (unsigned int)motor.state, (unsigned long)motor.fault_code,
+    printf("OK motor=%u motor_fault=%s(%u) direction=%s open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
+      (unsigned int)motor.state,
+      motor_control_fault_name_get(motor.fault_code),
+      (unsigned int)motor.fault_code,
       motor_parameter_direction_inverted_get() ? "reverse" : "normal",
       (unsigned int)open_loop.state,
       (long)open_loop.actual_frequency_millihz,
@@ -324,9 +343,14 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "motor commissioning status") == 0)
   {
     (void)motor_commissioning_status_read(&commissioning);
-    printf("OK commissioning state=%u task=%u step=%lu error=%lu runs=%lu\r\n",
+    printf("OK commissioning state=%u task=%u step=%lu error=%s(%u) detail=%s(%lu) runs=%lu\r\n",
       commissioning.state,commissioning.task,commissioning.step,
-      commissioning.error,commissioning.run_count);
+      motor_commissioning_error_name_get(commissioning.error),
+      (unsigned int)commissioning.error,
+      motor_commissioning_error_detail_name_get(
+        commissioning.error, commissioning.error_detail),
+      (unsigned long)commissioning.error_detail,
+      commissioning.run_count);
   }
   else if (strcmp(line, "motor commissioning abort") == 0)
   {
@@ -347,7 +371,7 @@ static void motor_cli_command_execute(char *line)
   }
   else if (strcmp(line, "calibrate hall offset") == 0)
   {
-    printf("ERR hall_offset_requires_manual_torque_validation\r\n");
+    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_HALL_OFFSET);
   }
   else if (strcmp(line, "identify resistance") == 0)
   {
@@ -414,15 +438,33 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "fault") == 0)
   {
     (void)motor_control_status_read(&motor);
-    printf("OK state=%u fault=%lu\r\n", (unsigned int)motor.state,
-           (unsigned long)motor.fault_code);
+    printf("OK state=%u fault=%s(%u)\r\n", (unsigned int)motor.state,
+           motor_control_fault_name_get(motor.fault_code),
+           (unsigned int)motor.fault_code);
+    for (fault_index = 0U; fault_index < MOTOR_FAULT_HISTORY_DEPTH;
+         fault_index++)
+    {
+      if (!motor_control_fault_history_read(fault_index, &fault_record)) break;
+      printf("#%lu sequence=%lu first=%s(%u) last=%s(%u) mask=0x%08lX count=%lu\r\n",
+        (unsigned long)fault_index,
+        (unsigned long)fault_record.sequence,
+        motor_control_fault_name_get(fault_record.first_code),
+        (unsigned int)fault_record.first_code,
+        motor_control_fault_name_get(fault_record.last_code),
+        (unsigned int)fault_record.last_code,
+        (unsigned long)fault_record.code_mask,
+        (unsigned long)fault_record.occurrence_count);
+    }
   }
   else if (strcmp(line, "fault clear") == 0)
   {
-    if (motor_control_fault_clear())
+    fault_clear_result = motor_control_fault_clear_ex();
+    if (fault_clear_result == MOTOR_FAULT_CLEAR_OK)
       printf("OK fault cleared\r\n");
     else
-      printf("ERR 7 fault_clear_denied\r\n");
+      printf("ERR fault_clear_denied reason=%s(%u)\r\n",
+        motor_control_fault_clear_result_name_get(fault_clear_result),
+        (unsigned int)fault_clear_result);
   }
   else if (strcmp(line, "open stop") == 0)
   {

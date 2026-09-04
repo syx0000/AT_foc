@@ -18,6 +18,7 @@ static volatile uint32_t motor_inductance_identification_phase;
 static volatile uint32_t motor_inductance_identification_phase_step;
 static volatile uint16_t motor_inductance_identification_voltage_q15;
 static volatile uint32_t motor_inductance_identification_current_amplitude_q15;
+static volatile motor_inductance_identification_status_t motor_inductance_identification_fault;
 
 static uint32_t motor_inductance_identification_sqrt(uint32_t value)
 {
@@ -58,6 +59,10 @@ void motor_inductance_identification_fast_process(void)
       ((uint32_t)((current.phase_b_ma < 0) ? -current.phase_b_ma : current.phase_b_ma) >= MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA) ||
       ((uint32_t)((current.phase_c_ma < 0) ? -current.phase_c_ma : current.phase_c_ma) >= MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA) ||
       (MOTOR_PWM_TIMER->brk_bit.oen == 0U)) {
+    motor_inductance_identification_fault =
+      (MOTOR_PWM_TIMER->brk_bit.oen == 0U) ?
+      MOTOR_INDUCTANCE_IDENT_DRIVER_FAULT :
+      MOTOR_INDUCTANCE_IDENT_OVERCURRENT;
     motor_inductance_identification_state = IDENT_FAULT;
     motor_pwm_port_emergency_stop();
     return;
@@ -93,11 +98,18 @@ static bool motor_inductance_identification_axis_run(motor_inductance_identifica
   motor_inductance_identification_state = axis;
   motor_inductance_identification_count = 0U; motor_inductance_identification_sum_sin = 0; motor_inductance_identification_sum_cos = 0; motor_inductance_identification_phase = 0U;
   motor_inductance_identification_voltage_apply(0, 0);
-  if (!motor_pwm_port_output_enable()) { motor_inductance_identification_state = IDENT_FAULT; return false; }
+  if (!motor_pwm_port_output_enable()) {
+    motor_inductance_identification_fault = MOTOR_INDUCTANCE_IDENT_PWM_ENABLE_FAILED;
+    motor_inductance_identification_state = IDENT_FAULT; return false;
+  }
   while ((motor_inductance_identification_state == axis)) wk_delay_ms(1U);
   if (motor_inductance_identification_state != IDENT_DONE) return false;
   *current_ma = (motor_inductance_identification_current_amplitude_q15 * (uint32_t)MOTOR_CURRENT_Q15_BASE_MA) / 32768U;
-  return (*current_ma != 0U);
+  if (*current_ma == 0U) {
+    motor_inductance_identification_fault = MOTOR_INDUCTANCE_IDENT_CURRENT_TOO_LOW;
+    return false;
+  }
+  return true;
 }
 
 static uint32_t motor_inductance_identification_inductance_get(uint16_t voltage_mv, uint32_t current_ma,
@@ -117,20 +129,40 @@ bool motor_inductance_identification_run(uint32_t phase_resistance_mohm,
 {
   motor_slow_sensor_state_t sensor;
   uint32_t bus_mv;
-  if ((result == NULL) || (phase_resistance_mohm == 0U)) return false;
+  if (result == NULL) return false;
+  result->status = MOTOR_INDUCTANCE_IDENT_INVALID_ARGUMENT;
+  if (phase_resistance_mohm == 0U) return false;
   (void)motor_slow_sensor_process();
-  if ((!motor_slow_sensor_state_read(&sensor)) || motor_pwm_port_output_is_enabled()) return false;
+  if (!motor_slow_sensor_state_read(&sensor)) {
+    result->status = MOTOR_INDUCTANCE_IDENT_BUS_VOLTAGE_INVALID; return false;
+  }
+  if (motor_pwm_port_output_is_enabled()) {
+    result->status = MOTOR_INDUCTANCE_IDENT_INVALID_STATE; return false;
+  }
   bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
+  if (bus_mv == 0U) {
+    result->status = MOTOR_INDUCTANCE_IDENT_BUS_VOLTAGE_INVALID; return false;
+  }
+  motor_inductance_identification_fault = MOTOR_INDUCTANCE_IDENT_OK;
   motor_inductance_identification_voltage_q15 = (uint16_t)(((uint64_t)MOTOR_INDUCTANCE_IDENT_VOLTAGE_MV * 32768U) / bus_mv);
   motor_inductance_identification_phase_step = (uint32_t)(((uint64_t)MOTOR_INDUCTANCE_IDENT_FREQUENCY_HZ << 32) / MOTOR_PWM_FREQUENCY_HZ);
   result->injection_voltage_mv = (uint16_t)(((uint64_t)motor_inductance_identification_voltage_q15 * bus_mv) / 32768U);
-  if (!motor_inductance_identification_axis_run(IDENT_D, &result->direct_current_amplitude_ma)) return false;
+  if (!motor_inductance_identification_axis_run(IDENT_D, &result->direct_current_amplitude_ma)) {
+    result->status = motor_inductance_identification_fault; return false;
+  }
   wk_delay_ms(100U);
-  if (!motor_inductance_identification_axis_run(IDENT_Q, &result->quadrature_current_amplitude_ma)) return false;
+  if (!motor_inductance_identification_axis_run(IDENT_Q, &result->quadrature_current_amplitude_ma)) {
+    result->status = motor_inductance_identification_fault; return false;
+  }
   result->direct_inductance_uh = motor_inductance_identification_inductance_get(result->injection_voltage_mv,
     result->direct_current_amplitude_ma, phase_resistance_mohm);
   result->quadrature_inductance_uh = motor_inductance_identification_inductance_get(result->injection_voltage_mv,
     result->quadrature_current_amplitude_ma, phase_resistance_mohm);
   motor_inductance_identification_state = IDENT_IDLE;
-  return (result->direct_inductance_uh != 0U) && (result->quadrature_inductance_uh != 0U);
+  if ((result->direct_inductance_uh == 0U) ||
+      (result->quadrature_inductance_uh == 0U)) {
+    result->status = MOTOR_INDUCTANCE_IDENT_IMPEDANCE_INVALID; return false;
+  }
+  result->status = MOTOR_INDUCTANCE_IDENT_OK;
+  return true;
 }

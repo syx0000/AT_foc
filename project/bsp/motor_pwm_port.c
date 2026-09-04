@@ -31,6 +31,8 @@ void motor_pwm_port_init(void)
   motor_pwm_gate_driver_enabled = false;
   motor_pwm_command_valid = false;
   motor_pwm_output_enabled = false;
+  tmr_interrupt_enable(MOTOR_PWM_TIMER, TMR_BRK_INT, TRUE);
+  nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
 }
 
 void motor_pwm_port_gate_driver_set(bool enable)
@@ -60,7 +62,12 @@ bool motor_pwm_port_fault_clear(void)
   tmr_flag_clear(MOTOR_PWM_TIMER, TMR_BRK_FLAG);
   __DSB();
 
-  return (tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) == RESET);
+  if (tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) != RESET)
+  {
+    return false;
+  }
+  tmr_interrupt_enable(MOTOR_PWM_TIMER, TMR_BRK_INT, TRUE);
+  return true;
 }
 
 bool motor_pwm_port_output_enable(void)

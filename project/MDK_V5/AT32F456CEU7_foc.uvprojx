@@ -559,6 +559,7 @@
             <File><FileName>motor_hall_angle_math.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_angle_math.c</FilePath></File>
             <File><FileName>motor_hall_calibration.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_calibration.c</FilePath></File>
             <File><FileName>motor_current_pi_design.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_current_pi_design.c</FilePath></File>
+            <File><FileName>motor_hall_offset_identification.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_kernel\motor_hall_offset_identification.c</FilePath></File>
           </Files>
         </Group>
         <Group>

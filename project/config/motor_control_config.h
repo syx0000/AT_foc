@@ -133,6 +133,10 @@
 #define MOTOR_TORQUE_TEST_BUS_VOLTAGE_LIMIT_PERCENT     15U
 #define MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV   7200L
 
+/* Hall转子角度补偿辨识：正Iq低功率闭环平均电压的有效性和单次修正限制。 */
+#define MOTOR_HALL_OFFSET_MINIMUM_VQ_MV                 500U
+#define MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16      10923U /* 60度电角 */
+
 /* 编译期配置一致性检查：配置错误必须在生成固件前暴露。 */
 #if (MOTOR_POLE_PAIRS == 0U)
 #error "MOTOR_POLE_PAIRS must be greater than zero"
@@ -144,6 +148,17 @@
 
 #if (MOTOR_REVERSE_CONTROL_VERIFIED > 1U)
 #error "MOTOR_REVERSE_CONTROL_VERIFIED must be 0 or 1"
+#endif
+
+#if ((MOTOR_HALL_OFFSET_MINIMUM_VQ_MV == 0U) || \
+     (MOTOR_HALL_OFFSET_MINIMUM_VQ_MV > \
+      MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV))
+#error "Hall offset minimum Vq must fit the torque-test voltage limit"
+#endif
+
+#if ((MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16 == 0U) || \
+     (MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16 >= 16384U))
+#error "Hall offset correction limit must be within 0..90 electrical degrees"
 #endif
 
 #if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)

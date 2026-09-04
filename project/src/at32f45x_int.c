@@ -48,6 +48,7 @@
 #include "motor_current_control.h"
 #include "motor_torque_loop_test.h"
 #include "motor_uart_port.h"
+#include "motor_control.h"
 
 /* add user code end private includes */
 
@@ -110,7 +111,8 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   /* add user code begin HardFault_IRQ 0 */
-
+  __disable_irq();
+  motor_pwm_port_emergency_stop();
   /* add user code end HardFault_IRQ 0 */
   /* go to infinite loop when hard fault exception occurs */
   while (1)
@@ -130,7 +132,8 @@ void HardFault_Handler(void)
 void MemManage_Handler(void)
 {
   /* add user code begin MemoryManagement_IRQ 0 */
-
+  __disable_irq();
+  motor_pwm_port_emergency_stop();
   /* add user code end MemoryManagement_IRQ 0 */
   /* go to infinite loop when memory manage exception occurs */
   while (1)
@@ -149,7 +152,8 @@ void MemManage_Handler(void)
 void BusFault_Handler(void)
 {
   /* add user code begin BusFault_IRQ 0 */
-
+  __disable_irq();
+  motor_pwm_port_emergency_stop();
   /* add user code end BusFault_IRQ 0 */
   /* go to infinite loop when bus fault exception occurs */
   while (1)
@@ -168,7 +172,8 @@ void BusFault_Handler(void)
 void UsageFault_Handler(void)
 {
   /* add user code begin UsageFault_IRQ 0 */
-
+  __disable_irq();
+  motor_pwm_port_emergency_stop();
   /* add user code end UsageFault_IRQ 0 */
   /* go to infinite loop when usage fault exception occurs */
   while (1)
@@ -294,7 +299,7 @@ void ADC1_2_IRQHandler(void)
     motor_current_calibration_sample_process(&adc_fast_sample);
     if (motor_current_sample_process(&adc_fast_sample))
     {
-      motor_pwm_port_emergency_stop();
+      motor_control_fault_notify_from_isr(MOTOR_FAULT_OVERCURRENT);
     }
     motor_open_loop_fast_process();
     motor_hall_angle_estimator_fast_process();
@@ -530,5 +535,22 @@ void USART3_IRQHandler(void)
 }
 
 /* add user code begin 1 */
+
+/**
+ * @brief 处理TMR1硬件Break中断。
+ * @param 无。
+ * @return 无。
+ * @details Break硬件首先自动清除MOE；本函数继续关闭门极驱动并投递故障，
+ *          不在中断中清除BIF或打印日志，留待故障恢复流程确认nFAULT后处理。
+ */
+void TMR1_BRK_TMR9_IRQHandler(void)
+{
+  if (tmr_interrupt_flag_get(TMR1, TMR_BRK_FLAG) != RESET)
+  {
+    /* BIF在nFAULT仍为低时不能安全清除；先屏蔽该中断，防止重复进入。 */
+    tmr_interrupt_enable(TMR1, TMR_BRK_INT, FALSE);
+    motor_control_fault_notify_from_isr(MOTOR_FAULT_HARDWARE_BREAK);
+  }
+}
 
 /* add user code end 1 */
