@@ -394,11 +394,12 @@
               <FileType>1</FileType>
               <FilePath>..\src\main.c</FilePath>
             </File>
-            <File>
-              <FileName>motor_log.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\src\motor_log.c</FilePath>
-            </File>
+              <File>
+                <FileName>motor_log.c</FileName>
+                <FileType>1</FileType>
+                <FilePath>..\src\motor_log.c</FilePath>
+              </File>
+              <File><FileName>motor_cli.c</FileName><FileType>1</FileType><FilePath>..\src\motor_cli.c</FilePath></File>
             <File>
               <FileName>interrupt_monitor.c</FileName>
               <FileType>1</FileType>
@@ -474,11 +475,12 @@
               <FileType>1</FileType>
               <FilePath>..\bsp\motor_timebase.c</FilePath>
             </File>
-            <File>
-              <FileName>motor_hall_port.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\bsp\motor_hall_port.c</FilePath>
-            </File>
+              <File>
+                <FileName>motor_hall_port.c</FileName>
+                <FileType>1</FileType>
+                <FilePath>..\bsp\motor_hall_port.c</FilePath>
+              </File>
+              <File><FileName>motor_uart_port.c</FileName><FileType>1</FileType><FilePath>..\bsp\motor_uart_port.c</FilePath></File>
           </Files>
         </Group>
         <Group>
@@ -528,6 +530,7 @@
             <File><FileName>motor_current_loop_test.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_loop_test.c</FilePath></File>
             <File><FileName>motor_torque_loop_test.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_torque_loop_test.c</FilePath></File>
             <File><FileName>motor_current_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_control.c</FilePath></File>
+            <File><FileName>motor_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_control.c</FilePath></File>
           </Files>
         </Group>
         <Group>

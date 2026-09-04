@@ -39,7 +39,6 @@
 /* add user code begin private includes */
 #include <stdio.h>
 #include "product_version.h"
-#include "motor_control_config.h"
 #include "motor_log.h"
 #include "interrupt_monitor.h"
 #include "motor_pwm_port.h"
@@ -54,11 +53,10 @@
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_current_transform.h"
-#include "motor_resistance_identification.h"
-#include "motor_inductance_identification.h"
-#include "motor_current_loop_test.h"
 #include "motor_current_control.h"
-#include "motor_torque_loop_test.h"
+#include "motor_uart_port.h"
+#include "motor_cli.h"
+#include "motor_control.h"
 
 /* add user code end private includes */
 
@@ -158,6 +156,7 @@ int main(void)
   motor_hall_angle_estimator_init();
   motor_current_transform_init();
   motor_current_control_init();
+  motor_control_init();
 
   /* init gpio function. */
   wk_gpio_config();
@@ -248,6 +247,7 @@ int main(void)
   motor_hall_port_init();
 
   /* add user code begin 2 */
+  motor_uart_port_init();
   LOGI("AT_foc_hall\r\n");
   LOGI("FW: %s\r\n", FIRMWARE_VERSION_STRING);
   LOGI("HW: %s\r\n", HARDWARE_VERSION_STRING);
@@ -273,120 +273,35 @@ int main(void)
              (unsigned int)calibration_result.phase_b_offset_raw,
              (unsigned long)calibration_result.sample_count);
 
-        /* 等待10 kHz正式电流处理产生有效样本，再允许开启开环PWM。 */
         wk_delay_ms(2U);
+        if (motor_control_ready_set())
         {
-          motor_resistance_identification_result_t resistance_result;
-
-          LOGI("Rs identification: started target=3000 mA max_voltage=1000 mV\r\n");
-          if (motor_resistance_identification_run(&resistance_result))
-          {
-            LOGI("Rs identification: PASS ud=%u mV ia=%ld mA rs=%lu mOhm samples=%lu\r\n",
-                 (unsigned int)resistance_result.applied_voltage_mv,
-                 (long)resistance_result.phase_a_average_ma,
-                 (unsigned long)resistance_result.resistance_average_mohm,
-                 (unsigned long)resistance_result.sample_count);
-            {
-              motor_inductance_identification_result_t inductance_result;
-              LOGI("L identification: started frequency=600 Hz voltage=500 mV\r\n");
-              if (motor_inductance_identification_run(
-                    resistance_result.resistance_average_mohm,
-                    &inductance_result))
-              {
-                LOGI("L identification: PASS Ld=%lu uH Lq=%lu uH Id_amp=%lu mA Iq_amp=%lu mA\r\n",
-                     (unsigned long)inductance_result.direct_inductance_uh,
-                     (unsigned long)inductance_result.quadrature_inductance_uh,
-                     (unsigned long)inductance_result.direct_current_amplitude_ma,
-                     (unsigned long)inductance_result.quadrature_current_amplitude_ma);
-                {
-                  motor_current_loop_test_result_t current_loop_result;
-                  LOGI("Current loop test: started Id_ref=2000 mA Iq_ref=0 mA\r\n");
-                  if (motor_current_loop_test_run(&current_loop_result))
-                  {
-                    LOGI("Current loop test: PASS Id_avg=%ld Iq_avg=%ld mA peak=%ld/%ld mA Vd/Vq=%ld/%ld mV samples=%lu\r\n",
-                         (long)current_loop_result.direct_average_ma,
-                         (long)current_loop_result.quadrature_average_ma,
-                         (long)current_loop_result.direct_peak_ma,
-                         (long)current_loop_result.quadrature_peak_ma,
-                         (long)current_loop_result.direct_voltage_mv,
-                         (long)current_loop_result.quadrature_voltage_mv,
-                         (unsigned long)current_loop_result.sample_count);
-                    {
-                      motor_torque_loop_test_result_t torque_result;
-                      LOGI("Torque loop test: started Id_ref=0 mA Iq_ref=%ld mA duration=%lu ms\r\n",
-                           (long)MOTOR_TORQUE_TEST_QUADRATURE_REFERENCE_MA,
-                           (unsigned long)(MOTOR_TORQUE_TEST_DURATION_SAMPLES /
-                                           (MOTOR_PWM_FREQUENCY_HZ / 1000U)));
-                      if (motor_torque_loop_test_run(&torque_result))
-                      {
-                        LOGI("Torque loop test: PASS Id/Iq_avg=%ld/%ld mA peak=%ld/%ld mA Vd/Vq_avg=%ld/%ld mV final=%ld/%ld mV freq=%lu.%03lu Hz samples=%lu\r\n",
-                             (long)torque_result.direct_average_ma,
-                             (long)torque_result.quadrature_average_ma,
-                             (long)torque_result.direct_peak_ma,
-                             (long)torque_result.quadrature_peak_ma,
-                             (long)torque_result.direct_voltage_average_mv,
-                             (long)torque_result.quadrature_voltage_average_mv,
-                             (long)torque_result.final_direct_voltage_mv,
-                             (long)torque_result.final_quadrature_voltage_mv,
-                             (unsigned long)(torque_result.final_frequency_millihz / 1000U),
-                             (unsigned long)(torque_result.final_frequency_millihz % 1000U),
-                             (unsigned long)torque_result.sample_count);
-                      }
-                      else
-                      {
-                        LOGE("Torque loop test: FAIL status=%u samples=%lu hall=%u freq=%lu.%03lu Hz current=%ld/%ld/%ld mA\r\n",
-                             (unsigned int)torque_result.status,
-                             (unsigned long)torque_result.sample_count,
-                             (unsigned int)torque_result.final_hall_state,
-                             (unsigned long)(torque_result.final_frequency_millihz / 1000U),
-                             (unsigned long)(torque_result.final_frequency_millihz % 1000U),
-                             (long)torque_result.final_phase_a_ma,
-                             (long)torque_result.final_phase_b_ma,
-                             (long)torque_result.final_phase_c_ma);
-                        motor_pwm_port_emergency_stop();
-                      }
-                    }
-                  }
-                  else
-                  {
-                    LOGE("Current loop test: FAIL\r\n");
-                    motor_pwm_port_emergency_stop();
-                  }
-                }
-              }
-              else
-              {
-                LOGE("L identification: FAIL\r\n");
-                motor_pwm_port_emergency_stop();
-              }
-            }
-          }
-          else
-          {
-            LOGE("Rs identification: FAIL status=%u ud=%u mV ia=%ld mA\r\n",
-                 (unsigned int)resistance_result.status,
-                 (unsigned int)resistance_result.applied_voltage_mv,
-                 (long)resistance_result.phase_a_average_ma);
-          }
+          LOGI("Motor control: READY, waiting for command\r\n");
         }
-        /* 电阻辨识完成后保持PWM关闭，不自动进入开环旋转。 */
+        else
+        {
+          LOGE("Motor control: failed to enter READY\r\n");
+          motor_control_fault_set(3U);
+        }
+
       }
       else
       {
         LOGE("ADC calibration: offset_a=%u offset_b=%u valid=0\r\n",
              (unsigned int)calibration_result.phase_a_offset_raw,
              (unsigned int)calibration_result.phase_b_offset_raw);
-        motor_pwm_port_emergency_stop();
+        motor_control_fault_set(4U);
       }
     }
     else
     {
       LOGE("ADC calibration: timeout or invalid request\r\n");
-      motor_pwm_port_emergency_stop();
+      motor_control_fault_set(5U);
     }
   }
   else
   {
+    motor_control_fault_set(6U);
     LOGE("DRV calibration blocked: nFAULT=%u BIF=%u MOE=%u\r\n",
          (unsigned int)gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
                                                  MOTOR_PWM_BREAK_PIN),
@@ -400,6 +315,8 @@ int main(void)
   {
     /* add user code begin 3 */
     (void)motor_slow_sensor_process();
+    motor_cli_poll();
+    motor_control_poll();
     interrupt_monitor_poll();
 
     /* add user code end 3 */

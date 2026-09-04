@@ -82,4 +82,11 @@ bool motor_current_sample_process(const motor_adc_fast_sample_t *sample);
  */
 bool motor_current_sample_state_read(motor_current_sample_state_t *state);
 
+/**
+ * @brief 在三相电流恢复安全且零偏有效时清除软件过流锁存。
+ * @param 无。
+ * @return 满足清除条件并完成清除时返回true，否则返回false。
+ */
+bool motor_current_sample_fault_clear(void);
+
 #endif /* MOTOR_CURRENT_SAMPLE_H */

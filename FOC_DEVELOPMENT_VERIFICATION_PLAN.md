@@ -727,6 +727,14 @@ refactor: complete minimal hall foc control stack
 - 已建立正式`motor_current_control`，统一管理电流闭环计算、PWM和故障停机。
 - 转矩测试已迁移为正式控制器的调用者，仅保留起转、交接、斜坡和统计职责。
 - 本轮结构调整已通过ARMCC逐文件编译，尚未执行调整后的上板回归测试。
+
+### 18.3 USART1命令链路待验证项
+
+- 上电日志结束后应进入READY，且不自动开启PWM或执行辨识、试转。
+- 921600 8N1下依次验证`help`、`version`、`status`、`log level`和`motor stop`。
+- 验证USART1 IDLE分帧、连续多行、超长行以及单帧邮箱溢出计数。
+- 架空并限流后验证`open start/set/stop`，再验证Hall有效时`current start/set/stop`无扰接管。
+- 人为触发安全故障后验证`fault`和`fault clear`的拒绝及恢复条件。
 - 200 Hz电流PI固定角度测试通过：Id指令2000 mA、平均1991 mA，Iq平均-12 mA，峰值低于10 A限制。
 - 当前快速中断最坏负载约21.7%，仍有控制功能扩展余量。
 

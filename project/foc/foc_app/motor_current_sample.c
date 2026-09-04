@@ -216,3 +216,29 @@ bool motor_current_sample_state_read(motor_current_sample_state_t *state)
 
   return motor_current_offsets_ready && (state->sample_count != 0U);
 }
+
+bool motor_current_sample_fault_clear(void)
+{
+  uint32_t primask;
+  bool safe;
+
+  primask = __get_PRIMASK();
+  __disable_irq();
+  safe = motor_current_offsets_ready &&
+    (motor_current_sample_abs(motor_current_state.phase_a_ma) <
+     MOTOR_SOFTWARE_OVERCURRENT_MA) &&
+    (motor_current_sample_abs(motor_current_state.phase_b_ma) <
+     MOTOR_SOFTWARE_OVERCURRENT_MA) &&
+    (motor_current_sample_abs(motor_current_state.phase_c_ma) <
+     MOTOR_SOFTWARE_OVERCURRENT_MA);
+  if (safe)
+  {
+    motor_current_state.overcurrent_count = 0U;
+    motor_current_state.overcurrent_fault = false;
+  }
+  if (primask == 0U)
+  {
+    __enable_irq();
+  }
+  return safe;
+}

@@ -43,6 +43,7 @@
 #include "motor_current_loop_test.h"
 #include "motor_current_control.h"
 #include "motor_torque_loop_test.h"
+#include "motor_uart_port.h"
 
 /* add user code end private includes */
 
@@ -470,6 +471,7 @@ void USART1_IRQHandler(void)
     /* clear flag */
     usart_flag_clear(USART1, USART_IDLEF_FLAG);
     interrupt_monitor_counters.usart1_idle++;
+    motor_uart_port_idle_capture();
     /* add user code end USART1_USART_IDLEF_FLAG */ 
   }
 
