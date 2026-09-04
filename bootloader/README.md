@@ -8,7 +8,7 @@ Flash (512KB total):
 0x08003800 - 0x08004000   Upgrade Flag         (14-16KB, 2KB)
 0x08004000 - 0x08070000   App Execute Area     (16-448KB, 432KB)
 0x08070000 - 0x0807F800   App Backup Area      (448-510KB, 62KB)
-0x0807F800 - 0x08080000   User Data (Flash)    (510-512KB, 2KB, FOC params)
+0x0807F000 - 0x08080000   User Data A/B (Flash) (508-512KB, 4KB, FOC params)
 
 SRAM (128KB):
 0x20000000 - 0x20020000   128KB

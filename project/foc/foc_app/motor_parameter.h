@@ -59,6 +59,22 @@ typedef struct
 void motor_parameter_init(void);
 
 /**
+ * @brief 在启动阶段用已校验的持久化参数替换活动值和候选值。
+ * @param parameter 从Flash记录读取且待再次校验的完整参数，不允许为空。
+ * @return 参数合法且当前没有试运行时返回true，否则返回false。
+ * @details 仅修改RAM，不检查电机状态，不写Flash；应在控制模块初始化前调用。
+ */
+bool motor_parameter_boot_load(const motor_parameter_t *parameter);
+
+/**
+ * @brief 将活动参数和候选参数恢复为编译期默认值。
+ * @param 无。
+ * @return 当前没有候选试运行时返回true，否则返回false。
+ * @details 仅修改RAM，不写Flash；调用方负责确认电机已停止且PWM关闭。
+ */
+bool motor_parameter_defaults_restore(void);
+
+/**
  * @brief 原子读取当前活动电机参数。
  * @param parameter 输出完整活动参数，不允许为空。
  * @return 参数有效时返回true；传入NULL时返回false。

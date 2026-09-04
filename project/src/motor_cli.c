@@ -3,15 +3,19 @@
 #include "motor_cli.h"
 #include "motor_control_config.h"
 #include "motor_commissioning.h"
+#include "motor_hall_decoder.h"
+#include "motor_hall_port.h"
 #include "motor_current_control.h"
 #include "motor_control.h"
 #include "motor_log.h"
 #include "motor_open_loop.h"
 #include "motor_parameter.h"
+#include "motor_parameter_storage.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_uart_port.h"
 #include "product_version.h"
+#include "wk_system.h"
 
 #define MOTOR_CLI_LINE_SIZE 96U
 static char motor_cli_line[MOTOR_CLI_LINE_SIZE];
@@ -175,6 +179,24 @@ static bool motor_cli_direction_set(bool inverted)
   return true;
 }
 
+/**
+ * @brief 参数切换后按当前原始Hall电平重载运行时解码器。
+ * @param 无。
+ * @return 活动参数及Hall采样有效且解码器初始化成功时返回true。
+ */
+static bool motor_cli_parameter_runtime_reload(void)
+{
+  motor_parameter_t parameter;
+  motor_hall_port_sample_t hall;
+
+  return motor_parameter_active_read(&parameter) &&
+    motor_hall_port_sample_read(&hall) &&
+    motor_hall_decoder_init(parameter.hall_positive_next, system_core_clock,
+                            hall.state, hall.timestamp_cycles) &&
+    motor_current_control_parameter_reload() &&
+    motor_speed_control_parameter_reload();
+}
+
 static void motor_cli_command_execute(char *line)
 {
   unsigned int level;
@@ -197,10 +219,11 @@ static void motor_cli_command_execute(char *line)
   motor_parameter_t parameter;
   motor_parameter_field_t parameter_field;
   motor_commissioning_status_t commissioning;
+  motor_parameter_storage_status_t parameter_storage;
 
   if (strcmp(line, "help") == 0)
   {
-    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate motor param set <name> <value> motor commissioning start/status/abort/diff/accept/discard calibrate current_offset calibrate hall sequence/angle/offset identify resistance/inductance calculate current_pi test current_d/current_q/current_handover\r\n");
+    printf("OK commands: help version status fault fault clear log level <0..4> motor stop motor direction [normal/reverse] open start/set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s> open stop current start/set <id_ma> <iq_ma> current stop speed start/set <signed_rpm> speed stop motor params active/candidate/load/defaults/storage motor param set <name> <value> motor commissioning start/status/abort/diff/accept/discard/save calibrate current_offset calibrate hall sequence/angle/offset identify resistance/inductance calculate current_pi test current_d/current_q/current_handover\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -270,6 +293,30 @@ static void motor_cli_command_execute(char *line)
     (void)motor_parameter_candidate_read(&parameter);
     motor_cli_parameter_print("candidate", &parameter);
   }
+  else if (strcmp(line, "motor params storage") == 0)
+  {
+    (void)motor_parameter_storage_status_read(&parameter_storage);
+    printf("OK storage source=%u sequence=%lu slot_a=%u slot_b=%u\r\n",
+      (unsigned int)parameter_storage.source,
+      (unsigned long)parameter_storage.sequence,
+      (unsigned int)parameter_storage.slot_a_valid,
+      (unsigned int)parameter_storage.slot_b_valid);
+  }
+  else if (strcmp(line, "motor params load") == 0)
+  {
+    if (motor_parameter_storage_load() && motor_cli_parameter_runtime_reload())
+      printf("OK parameters loaded from flash\r\n");
+    else
+      printf("ERR parameter_load_requires_ready_pwm_off_and_valid_slot\r\n");
+  }
+  else if (strcmp(line, "motor params defaults") == 0)
+  {
+    if (motor_parameter_storage_defaults() &&
+        motor_cli_parameter_runtime_reload())
+      printf("OK runtime parameters restored to defaults, use save to persist\r\n");
+    else
+      printf("ERR parameter_defaults_requires_ready_pwm_off\r\n");
+  }
   else if (strcmp(line, "motor commissioning diff") == 0)
   {
     motor_cli_parameter_diff_print();
@@ -331,7 +378,10 @@ static void motor_cli_command_execute(char *line)
     if (motor_parameter_candidate_accept())
     {
       (void)motor_commissioning_review_complete(true);
-      printf("OK candidate applied to runtime parameter manager\r\n");
+      if (motor_cli_parameter_runtime_reload())
+        printf("OK candidate applied to runtime parameter manager\r\n");
+      else
+        printf("ERR candidate_applied_but_hall_decoder_reload_failed\r\n");
     }
     else
       printf("ERR 12 accept_requires_ready_pwm_off_and_valid_candidate\r\n");
@@ -341,6 +391,13 @@ static void motor_cli_command_execute(char *line)
     motor_parameter_candidate_discard();
     (void)motor_commissioning_review_complete(false);
     printf("OK candidate discarded\r\n");
+  }
+  else if (strcmp(line, "motor commissioning save") == 0)
+  {
+    if (motor_parameter_storage_save())
+      printf("OK active parameters saved to flash\r\n");
+    else
+      printf("ERR parameter_save_requires_ready_pwm_off_or_flash_failed\r\n");
   }
   else if (sscanf(line, "motor param set %31s %ld",
                   parameter_name, &parameter_value) == 2)

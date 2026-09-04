@@ -7,7 +7,7 @@
  *
  * AT32F456CEU7 Flash: 512KB total (0x08000000 - 0x08080000)
  * Sector size: 2KB per sector (verified from iflytek FLASH_PAGE_SIZE_OTA = 0x800)
- * Reserve last sector (0x0807F800 - 0x0807FFFF, 2KB) for parameter storage.
+ * Reserve last two sectors (0x0807F000 - 0x0807FFFF, 4KB) for A/B parameter storage.
  */
 #ifndef __FLASH_PORT_H__
 #define __FLASH_PORT_H__
@@ -22,8 +22,8 @@ extern "C" {
 /* AT32F456 Flash sector size (verified: iflytek FLASH_PAGE_SIZE_OTA = 0x800) */
 #define FLASH_SECTOR_SIZE       0x800U       /* 2KB */
 
-/* Parameter storage location: last 2KB sector of 512KB Flash */
-#define FLASH_USER_START_ADDR   0x0807F800U
+/* Parameter storage location: last two 2KB sectors of 512KB Flash */
+#define FLASH_USER_START_ADDR   0x0807F000U
 #define FLASH_USER_END_ADDR     0x08080000U
 
 /* Write granularity: AT32 supports word (4B) program */
@@ -47,7 +47,12 @@ typedef uint32_t HAL_StatusTypeDef;
  * @brief  Erase the user data sector (2KB at FLASH_USER_START_ADDR)
  * @retval HAL_OK on success, HAL_ERROR on failure
  */
-HAL_StatusTypeDef Flash_EraseSector(void);
+/**
+ * @brief 擦除参数区内指定的一个2KB扇区。
+ * @param addr 扇区首地址，必须2KB对齐并位于参数区内。
+ * @return 成功返回HAL_OK，地址非法或硬件操作失败返回HAL_ERROR。
+ */
+HAL_StatusTypeDef flash_port_sector_erase(uint32_t addr);
 
 /**
  * @brief  Program data to flash (must be erased first)
@@ -56,7 +61,7 @@ HAL_StatusTypeDef Flash_EraseSector(void);
  * @param  len:  byte length
  * @retval HAL_OK on success
  */
-HAL_StatusTypeDef Flash_WriteData(uint32_t addr, const void *data, uint32_t len);
+HAL_StatusTypeDef flash_port_write(uint32_t addr, const void *data, uint32_t len);
 
 /**
  * @brief  Read data from flash (memcpy from absolute address)
@@ -64,7 +69,7 @@ HAL_StatusTypeDef Flash_WriteData(uint32_t addr, const void *data, uint32_t len)
  * @param  buf:  destination buffer
  * @param  len:  byte length
  */
-void Flash_ReadData(uint32_t addr, void *buf, uint32_t len);
+void flash_port_read(uint32_t addr, void *buf, uint32_t len);
 
 /**
  * @brief  Compute IEEE 802.3 CRC32 over a buffer
@@ -72,7 +77,7 @@ void Flash_ReadData(uint32_t addr, void *buf, uint32_t len);
  * @param  len:  byte length
  * @retval CRC32 result
  */
-uint32_t Flash_Crc32(const void *data, uint32_t len);
+uint32_t flash_port_crc32(const void *data, uint32_t len);
 
 #ifdef __cplusplus
 }

@@ -15,32 +15,41 @@
 #include "at32f45x_flash.h"
 #include <string.h>
 
-HAL_StatusTypeDef Flash_EraseSector(void)
+HAL_StatusTypeDef flash_port_sector_erase(uint32_t addr)
 {
+    uint32_t primask;
+    flash_status_type st;
+
+    if ((addr < FLASH_USER_START_ADDR) || (addr >= FLASH_USER_END_ADDR) ||
+        ((addr & (FLASH_SECTOR_SIZE - 1U)) != 0U)) return HAL_ERROR;
     flash_unlock();
     /* Disable interrupts to prevent flash operation interruption */
-    __set_PRIMASK(1);
+    primask = __get_PRIMASK();
+    __disable_irq();
     flash_flag_clear(FLASH_ODF_FLAG | FLASH_PRGMERR_FLAG | FLASH_EPPERR_FLAG);
 
-    flash_status_type st = flash_sector_erase(FLASH_USER_START_ADDR);
+    st = flash_sector_erase(addr);
 
     flash_flag_clear(FLASH_ODF_FLAG | FLASH_PRGMERR_FLAG | FLASH_EPPERR_FLAG);
-    __set_PRIMASK(0);
+    __set_PRIMASK(primask);
     flash_lock();
     return (st == FLASH_OPERATE_DONE) ? HAL_OK : HAL_ERROR;
 }
 
-HAL_StatusTypeDef Flash_WriteData(uint32_t addr, const void *data, uint32_t len)
+HAL_StatusTypeDef flash_port_write(uint32_t addr, const void *data, uint32_t len)
 {
+    uint32_t primask;
     /* Address must be 4-byte aligned */
     if (addr & (FLASH_WRITE_GRANULARITY - 1)) return HAL_ERROR;
     /* Must fall within Flash memory range (512KB) */
-    if (addr < 0x08000000U || addr >= 0x08080000U) return HAL_ERROR;
-    if (addr + len > 0x08080000U) return HAL_ERROR;
+    if ((data == NULL) || (len == 0U)) return HAL_ERROR;
+    if (addr < FLASH_USER_START_ADDR || addr >= FLASH_USER_END_ADDR) return HAL_ERROR;
+    if ((len > FLASH_USER_END_ADDR - addr)) return HAL_ERROR;
 
     flash_unlock();
     /* Disable interrupts during write (per iflytek reference) */
-    __set_PRIMASK(1);
+    primask = __get_PRIMASK();
+    __disable_irq();
     flash_flag_clear(FLASH_ODF_FLAG | FLASH_PRGMERR_FLAG | FLASH_EPPERR_FLAG);
 
     HAL_StatusTypeDef st = HAL_OK;
@@ -72,17 +81,17 @@ HAL_StatusTypeDef Flash_WriteData(uint32_t addr, const void *data, uint32_t len)
         }
     }
 
-    __set_PRIMASK(0);
+    __set_PRIMASK(primask);
     flash_lock();
     return st;
 }
 
-void Flash_ReadData(uint32_t addr, void *buf, uint32_t len)
+void flash_port_read(uint32_t addr, void *buf, uint32_t len)
 {
     memcpy(buf, (const void *)(uintptr_t)addr, len);
 }
 
-uint32_t Flash_Crc32(const void *data, uint32_t len)
+uint32_t flash_port_crc32(const void *data, uint32_t len)
 {
     const uint8_t *p = (const uint8_t *)data;
     uint32_t crc = 0xFFFFFFFFu;

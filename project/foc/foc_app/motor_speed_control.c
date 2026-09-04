@@ -54,8 +54,11 @@ static bool motor_speed_control_command_valid(int32_t speed_millirpm)
 
 void motor_speed_control_init(void)
 {
-  motor_speed_control_config.proportional_gain_q20 = MOTOR_SPEED_PI_KP_Q20;
-  motor_speed_control_config.integral_gain_q20 = MOTOR_SPEED_PI_KI_Q20;
+  motor_parameter_t parameter;
+
+  (void)motor_parameter_active_read(&parameter);
+  motor_speed_control_config.proportional_gain_q20 = parameter.speed_kp_q20;
+  motor_speed_control_config.integral_gain_q20 = parameter.speed_ki_q20;
   motor_speed_control_config.current_limit_ma =
     MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
   motor_speed_control_config.maximum_speed_rpm =
@@ -77,6 +80,17 @@ void motor_speed_control_init(void)
   motor_speed_control_status.quadrature_current_command_ma = 0;
   motor_speed_control_status.stall_time_ms = 0U;
   motor_speed_control_status.update_count = 0U;
+}
+
+bool motor_speed_control_parameter_reload(void)
+{
+  motor_parameter_t parameter;
+  motor_speed_control_config_t config = motor_speed_control_config;
+
+  if (!motor_parameter_active_read(&parameter)) return false;
+  config.proportional_gain_q20 = parameter.speed_kp_q20;
+  config.integral_gain_q20 = parameter.speed_ki_q20;
+  return motor_speed_control_config_set(&config);
 }
 
 bool motor_speed_control_config_set(

@@ -7,6 +7,7 @@
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_parameter.h"
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
 #include "motor_voltage_limit.h"
@@ -105,9 +106,12 @@ static bool motor_current_control_prepare(
 
 void motor_current_control_init(void)
 {
-  motor_current_control_config.direct_kp_q15 = MOTOR_CURRENT_PI_D_KP_Q15;
-  motor_current_control_config.quadrature_kp_q15 = MOTOR_CURRENT_PI_Q_KP_Q15;
-  motor_current_control_config.integral_gain_q15 = MOTOR_CURRENT_PI_KI_Q15;
+  motor_parameter_t parameter;
+
+  (void)motor_parameter_active_read(&parameter);
+  motor_current_control_config.direct_kp_q15 = parameter.current_d_kp_q15;
+  motor_current_control_config.quadrature_kp_q15 = parameter.current_q_kp_q15;
+  motor_current_control_config.integral_gain_q15 = parameter.current_ki_q15;
   motor_current_control_config.voltage_limit_percent =
     MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT;
   motor_current_control_config.hard_voltage_limit_mv =
@@ -117,6 +121,18 @@ void motor_current_control_init(void)
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;
   motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_NONE;
   motor_current_control_status.sample_count = 0U;
+}
+
+bool motor_current_control_parameter_reload(void)
+{
+  motor_parameter_t parameter;
+  motor_current_control_config_t config = motor_current_control_config;
+
+  if (!motor_parameter_active_read(&parameter)) return false;
+  config.direct_kp_q15 = parameter.current_d_kp_q15;
+  config.quadrature_kp_q15 = parameter.current_q_kp_q15;
+  config.integral_gain_q15 = parameter.current_ki_q15;
+  return motor_current_control_config_set(&config);
 }
 
 bool motor_current_control_config_set(const motor_current_control_config_t *config)

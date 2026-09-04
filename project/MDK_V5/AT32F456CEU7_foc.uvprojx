@@ -537,6 +537,7 @@
             <File><FileName>motor_current_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_current_control.c</FilePath></File>
             <File><FileName>motor_speed_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_speed_control.c</FilePath></File>
             <File><FileName>motor_parameter.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_parameter.c</FilePath></File>
+            <File><FileName>motor_parameter_storage.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_parameter_storage.c</FilePath></File>
             <File><FileName>motor_commissioning.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_commissioning.c</FilePath></File>
             <File><FileName>motor_control.c</FileName><FileType>1</FileType><FilePath>..\foc\foc_app\motor_control.c</FilePath></File>
           </Files>

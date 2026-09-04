@@ -12,8 +12,8 @@
  *   0x08003800  App Header         2KB
  *   0x08004000  App Code         238KB
  *   0x0803F800  Staging Header     2KB
- *   0x08040000  Staging Area     254KB
- *   0x0807F800  User Data          2KB
+ *   0x08040000  Staging Area     252KB
+ *   0x0807F000  User Data A/B       4KB
  */
 #ifndef __OTA_APP_H__
 #define __OTA_APP_H__
@@ -49,7 +49,7 @@ void ota_init(void);
  * Begin OTA session: erase staging area, prepare to receive.
  * Blocks while erasing staging sectors (~127 sectors * ~5ms = ~635ms).
  *
- * @param size      Expected firmware size in bytes (must fit in 254KB)
+ * @param size      Expected firmware size in bytes (must fit in 252KB)
  * @param crc32     Expected CRC32 (IEEE 802.3) of the entire firmware
  * @param version   Version number (stored in header)
  * @return          0 on success, -1 on error

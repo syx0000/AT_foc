@@ -52,6 +52,14 @@ typedef struct
 void motor_speed_control_init(void);
 
 /**
+ * @brief 在停止状态把活动电机参数中的速度PI增益装入正式控制器。
+ * @param 无。
+ * @return 活动参数有效且速度控制器已停止时返回true，否则返回false。
+ * @details 仅更新PI增益，Iq、最高转速和加速度限制继续使用板级配置。
+ */
+bool motor_speed_control_parameter_reload(void);
+
+/**
  * @brief 在停止状态更新速度PI、Iq限幅、最高转速和加速度配置。
  * @param config 新配置，不允许为空。
  * @return 参数有效且控制器已停止时返回true，否则返回false。

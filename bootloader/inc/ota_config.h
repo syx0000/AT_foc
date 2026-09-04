@@ -13,8 +13,8 @@
  *   0x08003800  App Header           2KB (app_header_t, 128B有效)
  *   0x08004000  App 执行区          238KB
  *   0x0803F800  Staging Header       2KB
- *   0x08040000  Staging 暂存区      254KB
- *   0x0807F800  User Data (FOC)      2KB (不动)
+ *   0x08040000  Staging 暂存区      252KB
+ *   0x0807F000  User Data A/B         4KB
  */
 
 #ifndef __OTA_CONFIG_H__
@@ -35,8 +35,8 @@ extern "C" {
 #define APP_MAX_SIZE            0x3B800U            /* 238KB max app size */
 #define STAGING_HEADER_ADDR     0x0803F800U         /* Staging Header sector (2KB) */
 #define STAGING_START_ADDR      0x08040000U         /* Staging area base */
-#define STAGING_MAX_SIZE        0x3F800U            /* 254KB max staging size */
-#define USER_DATA_ADDR          0x0807F800U         /* FOC parameter sector (2KB) */
+#define STAGING_MAX_SIZE        0x3F000U            /* 252KB max staging size */
+#define USER_DATA_ADDR          0x0807F000U         /* FOC parameter A/B sectors (4KB) */
 #define FLASH_SECTOR_SIZE       0x800U              /* AT32F456 sector = 2KB */
 #define FLASH_PAGE_SIZE_OTA     FLASH_SECTOR_SIZE   /* Legacy alias */
 

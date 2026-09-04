@@ -56,6 +56,14 @@ typedef struct
 void motor_current_control_init(void);
 
 /**
+ * @brief 在停止状态把活动电机参数中的电流PI增益装入正式控制器。
+ * @param 无。
+ * @return 活动参数有效且控制器已停止时返回true，否则返回false。
+ * @details 仅更新PI增益，电压、电流和保护限制继续使用板级配置。
+ */
+bool motor_current_control_parameter_reload(void);
+
+/**
  * @brief 在停止状态更新PI、限压与电流保护配置。
  * @param config 控制器配置，不允许为空。
  * @return 参数有效且控制器已停止时返回true，否则返回false。

@@ -129,6 +129,29 @@ void motor_parameter_init(void)
   motor_parameter_trial_active = false;
 }
 
+bool motor_parameter_boot_load(const motor_parameter_t *parameter)
+{
+  uint32_t primask;
+
+  if (motor_parameter_trial_active || !motor_parameter_validate(parameter))
+    return false;
+  primask = __get_PRIMASK();
+  __disable_irq();
+  motor_parameter_active = *parameter;
+  motor_parameter_candidate = *parameter;
+  __set_PRIMASK(primask);
+  return true;
+}
+
+bool motor_parameter_defaults_restore(void)
+{
+  motor_parameter_t defaults;
+
+  if (motor_parameter_trial_active) return false;
+  motor_parameter_default_build(&defaults);
+  return motor_parameter_boot_load(&defaults);
+}
+
 bool motor_parameter_active_read(motor_parameter_t *parameter)
 {
   uint32_t primask;

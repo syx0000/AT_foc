@@ -61,6 +61,7 @@
 #include "motor_cli.h"
 #include "motor_control.h"
 #include "motor_parameter.h"
+#include "motor_parameter_storage.h"
 #include "motor_commissioning.h"
 
 /* add user code end private includes */
@@ -131,6 +132,7 @@ int main(void)
 {
   /* add user code begin 1 */
   motor_parameter_t motor_parameter;
+  motor_parameter_storage_status_t parameter_storage;
   motor_hall_port_sample_t hall_port_sample;
 
   /* add user code end 1 */
@@ -156,6 +158,7 @@ int main(void)
   wk_timebase_init();
   motor_timebase_init();
   motor_parameter_init();
+  (void)motor_parameter_storage_init();
   motor_commissioning_init();
   motor_adc_port_init();
   motor_current_sample_init();
@@ -272,6 +275,12 @@ int main(void)
   LOGI("FW: %s\r\n", FIRMWARE_VERSION_STRING);
   LOGI("HW: %s\r\n", HARDWARE_VERSION_STRING);
   LOGI("APP: OK\r\n");
+  (void)motor_parameter_storage_status_read(&parameter_storage);
+  LOGI("Motor parameters: source=%u sequence=%lu slot_a=%u slot_b=%u\r\n",
+       (unsigned int)parameter_storage.source,
+       (unsigned long)parameter_storage.sequence,
+       (unsigned int)parameter_storage.slot_a_valid,
+       (unsigned int)parameter_storage.slot_b_valid);
   if (motor_driver_prepare_for_calibration())
   {
     motor_current_calibration_result_t calibration_result;
