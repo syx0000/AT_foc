@@ -1,5 +1,13 @@
 /**
  * @file    flash_port.c
+ * @brief   片内Flash访问端口 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
+/**
+ * @file    flash_port.c
  * @brief   AT32F456 internal Flash read/write implementation
  *
  * Migrated from cubemx_yxsui/Core/Src/flash_port.c

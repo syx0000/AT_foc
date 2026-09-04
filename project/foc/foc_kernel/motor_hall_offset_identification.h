@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_offset_identification.h
+ * @brief   Hall转子角度补偿辨识算法 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_HALL_OFFSET_IDENTIFICATION_H
 #define MOTOR_HALL_OFFSET_IDENTIFICATION_H
 

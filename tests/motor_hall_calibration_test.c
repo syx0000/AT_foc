@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_calibration_test.c
+ * @brief   Hall双向自动标定算法 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -98,7 +106,7 @@ static void complete_calibration_test(bool reverse_sequence,
   assert(motor_hall_calibration_result_get(&calibration, &result));
   assert(result.valid && result.reverse_verified);
   assert(result.maximum_edge_deviation_u16 <= 1U);
-  assert(result.maximum_forward_reverse_error_u16 == 0U);
+  assert(result.maximum_forward_reverse_residual_u16 == 0U);
   for (index = 0U; index < 6U; index++)
   {
     assert(result.positive_next[sequence[index]] ==
@@ -296,12 +304,60 @@ static void angle_and_reverse_error_test(void)
          MOTOR_HALL_CALIBRATION_REVERSE_MISMATCH);
 }
 
+/**
+ * @brief 验证双向扫描存在共同负载角差时，以环形中点生成Hall边界角。
+ * @param 无。
+ * @return 无；失败时由assert终止测试。
+ */
+static void common_reverse_offset_test(void)
+{
+  static const uint8_t sequence[6] = {1U, 5U, 4U, 6U, 2U, 3U};
+  motor_hall_calibration_t calibration;
+  motor_hall_calibration_result_t result;
+  uint8_t lap;
+  uint8_t index;
+  uint8_t previous;
+  uint8_t current;
+  uint16_t forward_angle;
+  uint32_t timestamp;
+
+  assert(motor_hall_calibration_init(&calibration, &test_config) == 0);
+  assert(motor_hall_calibration_scan_begin(&calibration, 1) == 0);
+  timestamp = standard_forward_fill(&calibration, 0U, 0U);
+  assert(motor_hall_calibration_scan_end(&calibration) == 0);
+  assert(motor_hall_calibration_scan_begin(&calibration, -1) == 0);
+  for (lap = 0U; lap < 2U; lap++)
+  {
+    for (index = 0U; index < 6U; index++)
+    {
+      previous = sequence[(6U - index) % 6U];
+      current = sequence[(5U - index) % 6U];
+      forward_angle = (uint16_t)(1000U +
+        ((uint32_t)((6U - index) % 6U) * 10923U));
+      timestamp += 100U;
+      assert(motor_hall_calibration_edge_add(
+        &calibration, previous, current,
+        (uint16_t)(forward_angle + 15000U), timestamp) == 0);
+    }
+  }
+  assert(motor_hall_calibration_scan_end(&calibration) == 0);
+  assert(motor_hall_calibration_result_get(&calibration, &result));
+  assert(result.maximum_forward_reverse_residual_u16 == 0U);
+  for (index = 0U; index < 6U; index++)
+  {
+    forward_angle = (uint16_t)(1000U + ((uint32_t)index * 10923U));
+    assert(result.entry_angle_u16[sequence[index]] ==
+           (uint16_t)(forward_angle + 7500U));
+  }
+}
+
 int main(void)
 {
   permutation_matrix_test();
   transition_error_test();
   incomplete_and_wrap_test();
   angle_and_reverse_error_test();
+  common_reverse_offset_test();
   printf("motor_hall_calibration_test: PASS\n");
   return 0;
 }

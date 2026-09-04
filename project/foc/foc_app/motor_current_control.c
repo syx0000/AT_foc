@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_control.c
+ * @brief   FOC电流闭环控制器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_board_config.h"
@@ -6,7 +14,7 @@
 #include "motor_current_pi.h"
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
-#include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 #include "motor_parameter.h"
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
@@ -72,11 +80,12 @@ static bool motor_current_control_prepare(
   int32_t direct_seed_mv, int32_t quadrature_seed_mv)
 {
   motor_slow_sensor_state_t sensor;
-  motor_hall_angle_estimator_t hall;
+  motor_rotor_feedback_t rotor_feedback;
   (void)motor_slow_sensor_process();
   if ((!motor_current_control_command_valid(command)) ||
       (!motor_slow_sensor_state_read(&sensor)) ||
-      (!motor_hall_angle_estimator_read(&hall)) || (!hall.valid) ||
+      (!motor_rotor_feedback_read(&rotor_feedback)) ||
+      (!rotor_feedback.valid) ||
       (sensor.bus_voltage_0p1v < MOTOR_BUS_UNDERVOLTAGE_0P1V) ||
       (sensor.bus_voltage_0p1v > MOTOR_BUS_OVERVOLTAGE_0P1V))
   {
@@ -148,14 +157,15 @@ bool motor_current_control_config_set(const motor_current_control_config_t *conf
 
 bool motor_current_control_start(const motor_current_control_command_t *command)
 {
-  motor_hall_angle_estimator_t hall;
+  motor_rotor_feedback_t rotor_feedback;
   if (motor_pwm_port_output_is_enabled() ||
       (!motor_current_control_prepare(command, 0, 0)) ||
-      (!motor_hall_angle_estimator_read(&hall)))
+      (!motor_rotor_feedback_read(&rotor_feedback)))
   {
     return false;
   }
-  motor_current_control_voltage_apply(0, 0, hall.electrical_angle_u16);
+  motor_current_control_voltage_apply(
+    0, 0, rotor_feedback.electrical_angle_u16);
   if (!motor_pwm_port_output_enable())
   {
     motor_current_control_status.state = MOTOR_CURRENT_CONTROL_FAULT;
@@ -199,7 +209,7 @@ void motor_current_control_stop(void)
 void motor_current_control_fast_process(void)
 {
   motor_current_sample_state_t current;
-  motor_hall_angle_estimator_t hall;
+  motor_rotor_feedback_t rotor_feedback;
   motor_alpha_beta_q15_t alpha_beta;
   motor_direct_quadrature_q15_t dq;
   int32_t direct_ma, quadrature_ma, direct_mv, quadrature_mv;
@@ -208,7 +218,12 @@ void motor_current_control_fast_process(void)
   if (motor_current_control_status.state != MOTOR_CURRENT_CONTROL_RUNNING) return;
   if (!motor_current_sample_state_read(&current))
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_SAMPLE;
-  else if ((!motor_hall_angle_estimator_read(&hall)) || (!hall.valid))
+  else if (!motor_rotor_feedback_read(&rotor_feedback))
+  {
+    /* Hall快照正被边沿中断更新时跳过本周期，下一控制周期重新读取。 */
+    return;
+  }
+  else if (!rotor_feedback.valid)
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_HALL;
   else if (current.overcurrent_fault ||
            (motor_current_control_abs(current.phase_a_ma) >= motor_current_control_config.abort_current_ma) ||
@@ -220,7 +235,8 @@ void motor_current_control_fast_process(void)
   else
   {
     alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
-    dq = motor_foc_park_q15(alpha_beta, hall.electrical_angle_u16);
+    dq = motor_foc_park_q15(alpha_beta,
+                            rotor_feedback.electrical_angle_u16);
     direct_ma = (int32_t)(((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
     quadrature_ma = (int32_t)(((int64_t)dq.quadrature_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
     direct_mv = motor_current_pi_axis_process(&motor_current_control_d_pi,
@@ -235,14 +251,16 @@ void motor_current_control_fast_process(void)
       motor_current_pi_axis_output_track(&motor_current_control_q_pi, quadrature_mv);
     }
     motor_current_control_voltage_apply(direct_mv, quadrature_mv,
-                                        hall.electrical_angle_u16);
+                                        rotor_feedback.electrical_angle_u16);
     motor_current_control_status.command = motor_current_control_command;
     motor_current_control_status.direct_feedback_ma = direct_ma;
     motor_current_control_status.quadrature_feedback_ma = quadrature_ma;
     motor_current_control_status.direct_voltage_mv = direct_mv;
     motor_current_control_status.quadrature_voltage_mv = quadrature_mv;
-    motor_current_control_status.electrical_angle_u16 = hall.electrical_angle_u16;
-    motor_current_control_status.electrical_frequency_millihz = hall.electrical_frequency_millihz;
+    motor_current_control_status.electrical_angle_u16 =
+      rotor_feedback.electrical_angle_u16;
+    motor_current_control_status.electrical_frequency_millihz =
+      rotor_feedback.electrical_frequency_millihz;
     motor_current_control_status.voltage_limited = limited;
     motor_current_control_status.sample_count++;
     return;

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_angle_observer.c
+ * @brief   Hall边沿角度观察器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_hall_angle_observer.h"

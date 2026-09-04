@@ -1,3 +1,11 @@
+/**
+ * @file    motor_open_loop.h
+ * @brief   电机开环控制器 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_OPEN_LOOP_H
 #define MOTOR_OPEN_LOOP_H
 

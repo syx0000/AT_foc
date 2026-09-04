@@ -1,3 +1,11 @@
+/**
+ * @file    motor_board_config.h
+ * @brief   电机板级硬件映射配置 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_BOARD_CONFIG_H
 #define MOTOR_BOARD_CONFIG_H
 

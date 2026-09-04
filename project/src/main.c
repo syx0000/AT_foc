@@ -53,6 +53,7 @@
 #include "motor_hall_decoder.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_current_transform.h"
@@ -166,6 +167,7 @@ int main(void)
   motor_open_loop_init();
   motor_hall_angle_observer_init();
   motor_hall_angle_estimator_init();
+  motor_rotor_feedback_init();
   motor_speed_feedback_init();
   motor_speed_control_init();
   motor_current_transform_init();

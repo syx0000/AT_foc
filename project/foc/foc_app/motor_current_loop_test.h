@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_loop_test.h
+ * @brief   motor current loop 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_CURRENT_LOOP_TEST_H
 #define MOTOR_CURRENT_LOOP_TEST_H
 #include <stdbool.h>

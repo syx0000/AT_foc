@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_decoder.c
+ * @brief   Hall状态解码与测速算法 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include <string.h>
 #include "motor_hall_decoder.h"
@@ -217,13 +225,19 @@ bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample)
   uint32_t sequence_after;
 
   if ((sample == NULL) || (!motor_hall_decoder_initialized)) return false;
-  do
-  {
-    sequence_before = motor_hall_decoder_sequence;
-    if ((sequence_before & 1U) != 0U) continue;
-    *sample = motor_hall_decoder_sample;
-    sequence_after = motor_hall_decoder_sequence;
-  } while ((sequence_before != sequence_after) ||
-           ((sequence_after & 1U) != 0U));
+
+  /*
+   * 本接口会被高优先级ADC中断调用，不能等待可能正被抢占的Hall中断完成写入，
+   * 否则两个中断上下文会互相等待。单次快照失败不会影响控制，调用方可在下一
+   * 控制周期重新读取。
+   */
+  sequence_before = motor_hall_decoder_sequence;
+  if ((sequence_before & 1U) != 0U) return false;
+
+  *sample = motor_hall_decoder_sample;
+  sequence_after = motor_hall_decoder_sequence;
+  if ((sequence_before != sequence_after) ||
+      ((sequence_after & 1U) != 0U)) return false;
+
   return true;
 }

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_speed_control.c
+ * @brief   电机速度闭环控制器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_control_config.h"

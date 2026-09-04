@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_angle_observer.h
+ * @brief   Hall边沿角度观察器 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_HALL_ANGLE_OBSERVER_H
 #define MOTOR_HALL_ANGLE_OBSERVER_H
 

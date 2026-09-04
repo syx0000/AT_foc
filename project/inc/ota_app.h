@@ -1,5 +1,13 @@
 /**
  * @file    ota_app.h
+ * @brief   应用侧OTA升级管理 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
+/**
+ * @file    ota_app.h
  * @brief   OTA firmware upgrade state machine (App side)
  *
  * 兼容cubemx参考工程的Stage 2 OTA协议:

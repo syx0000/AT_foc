@@ -1,3 +1,11 @@
+/**
+ * @file    motor_performance_monitor.c
+ * @brief   电机实时性能统计 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include "at32f45x.h"
 #include "motor_performance_monitor.h"
 #include "motor_timebase.h"

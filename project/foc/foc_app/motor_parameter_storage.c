@@ -1,3 +1,11 @@
+/**
+ * @file    motor_parameter_storage.c
+ * @brief   电机参数Flash双槽存储 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include <string.h>
 #include "flash_port.h"

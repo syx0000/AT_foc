@@ -118,12 +118,13 @@
 | 7 | `incomplete_sequence` | 六个合法状态或样本数不完整 |
 | 8 | `sector_angle_invalid` | 扇区宽度超出配置范围 |
 | 9 | `edge_deviation_exceeded` | 同一边沿角度重复性超差 |
-| 10 | `reverse_mismatch` | 正反向边沿角不一致 |
+| 10 | `reverse_mismatch` | 六个Hall边沿的正反向角差无法形成一致的共同偏移，超过配置残差阈值 |
 | 11 | `sequence_error` | 六步跳转表不能形成闭环序列 |
 | 100 | `port_sample_failed` | 无法读取当前Hall端口状态 |
 | 101 | `open_loop_start_failed` | Hall扫描开环无法启动 |
 | 102 | `scan_timeout` | 规定时间内未采满六状态样本 |
 | 103 | `result_invalid` | 结果读取或候选参数准备失败 |
+| 104 | `target_frequency_not_reached_or_lost` | 开环未在限时内达到目标频率，或稳定/采样阶段丢失目标频率与运行状态 |
 
 ### 4.5 Hall转子补偿 detail
 

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_log.h
+ * @brief   电机分级日志 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_LOG_H
 #define MOTOR_LOG_H
 

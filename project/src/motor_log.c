@@ -1,3 +1,11 @@
+/**
+ * @file    motor_log.c
+ * @brief   电机分级日志 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include "motor_log.h"
 
 volatile uint8_t motor_log_level = MOTOR_LOG_LEVEL_INFO;

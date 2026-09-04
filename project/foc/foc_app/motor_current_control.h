@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_control.h
+ * @brief   FOC电流闭环控制器 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_CURRENT_CONTROL_H
 #define MOTOR_CURRENT_CONTROL_H
 

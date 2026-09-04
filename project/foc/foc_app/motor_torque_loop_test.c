@@ -1,10 +1,18 @@
+/**
+ * @file    motor_torque_loop_test.c
+ * @brief   motor torque loop 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "motor_board_config.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
-#include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 #include "motor_open_loop.h"
 #include "motor_pwm_port.h"
 #include "motor_ramp.h"
@@ -103,7 +111,7 @@ bool motor_torque_loop_test_run_with_gains(
 {
   motor_open_loop_command_t open_command;
   motor_open_loop_status_t open_status;
-  motor_hall_angle_estimator_t hall;
+  motor_rotor_feedback_t rotor_feedback;
   motor_current_sample_state_t current;
   motor_slow_sensor_state_t sensor;
   motor_current_control_command_t current_command;
@@ -158,7 +166,7 @@ bool motor_torque_loop_test_run_with_gains(
        bootstrap_ms < MOTOR_TORQUE_TEST_BOOTSTRAP_TIMEOUT_MS; bootstrap_ms++)
   {
     wk_delay_ms(1U);
-    (void)motor_hall_angle_estimator_read(&hall);
+    (void)motor_rotor_feedback_read(&rotor_feedback);
     (void)motor_open_loop_status_read(&open_status);
     if ((open_status.state == MOTOR_OPEN_LOOP_FAULT) ||
         (!motor_pwm_port_output_is_enabled()))
@@ -167,7 +175,8 @@ bool motor_torque_loop_test_run_with_gains(
       result->status = MOTOR_TORQUE_TEST_STATUS_BOOTSTRAP_FAILED;
       return false;
     }
-    if (hall.valid && (hall.electrical_frequency_millihz >=
+    if (rotor_feedback.valid &&
+        (rotor_feedback.electrical_frequency_millihz >=
                        MOTOR_TORQUE_TEST_HANDOVER_FREQUENCY_MILLIHZ)) break;
   }
   if (bootstrap_ms >= MOTOR_TORQUE_TEST_BOOTSTRAP_TIMEOUT_MS)
@@ -179,7 +188,8 @@ bool motor_torque_loop_test_run_with_gains(
 
   (void)motor_slow_sensor_process();
   if ((!motor_slow_sensor_state_read(&sensor)) ||
-      (!motor_current_sample_state_read(&current)) || (!hall.valid))
+      (!motor_current_sample_state_read(&current)) ||
+      (!rotor_feedback.valid))
   {
     motor_open_loop_stop();
     result->status = MOTOR_TORQUE_TEST_STATUS_SENSOR_INVALID;
@@ -187,7 +197,8 @@ bool motor_torque_loop_test_run_with_gains(
   }
   bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
   alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
-  dq = motor_foc_park_q15(alpha_beta, hall.electrical_angle_u16);
+  dq = motor_foc_park_q15(
+    alpha_beta, rotor_feedback.electrical_angle_u16);
   current_command.direct_reference_ma = (int32_t)(
     ((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
   current_command.quadrature_reference_ma = (int32_t)(
@@ -197,7 +208,8 @@ bool motor_torque_loop_test_run_with_gains(
     (int16_t)(((int64_t)open_status.applied_direct_voltage_mv * 32768) / bus_mv),
     (int16_t)(((int64_t)open_status.applied_quadrature_voltage_mv * 32768) / bus_mv),
     open_status.electrical_angle_u16);
-  dq = motor_foc_park_q15(alpha_beta, hall.electrical_angle_u16);
+  dq = motor_foc_park_q15(
+    alpha_beta, rotor_feedback.electrical_angle_u16);
   seed_direct_mv = (int32_t)(((int64_t)dq.direct_q15 * bus_mv) / 32768);
   seed_quadrature_mv = (int32_t)(((int64_t)dq.quadrature_q15 * bus_mv) / 32768);
 
@@ -232,11 +244,12 @@ bool motor_torque_loop_test_run_with_gains(
 
   (void)motor_current_control_status_read(&control);
   (void)motor_current_sample_state_read(&current);
-  (void)motor_hall_angle_estimator_read(&hall);
+  (void)motor_rotor_feedback_read(&rotor_feedback);
   result->status = motor_torque_loop_test_fault ? motor_torque_loop_test_status : MOTOR_TORQUE_TEST_STATUS_OK;
   result->sample_count = motor_torque_loop_test_fault ? motor_torque_loop_test_count : motor_torque_loop_test_statistics_count;
-  result->final_frequency_millihz = hall.electrical_frequency_millihz;
-  result->final_hall_state = hall.hall_state;
+  result->final_frequency_millihz =
+    rotor_feedback.electrical_frequency_millihz;
+  result->final_hall_state = rotor_feedback.source_state;
   result->final_phase_a_ma = current.phase_a_ma;
   result->final_phase_b_ma = current.phase_b_ma;
   result->final_phase_c_ma = current.phase_c_ma;

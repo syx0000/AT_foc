@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_calibration.c
+ * @brief   Hall双向自动标定算法 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include <string.h>
 #include "motor_hall_calibration.h"
@@ -159,6 +167,81 @@ static motor_hall_calibration_error_t motor_hall_calibration_forward_check(
   return MOTOR_HALL_CALIBRATION_OK;
 }
 
+/**
+ * @brief 校验反向样本，并以正反向边沿角的环形中点生成Hall边界角。
+ * @param calibration 已完成正反向采样的标定上下文。
+ * @param entry_angle_u16 输出六个Hall状态的双向中点边界角。
+ * @param sector_width_u16 输出按中点边界角计算的正向扇区宽度。
+ * @param maximum_deviation 输出正反向样本的最大重复性偏差。
+ * @param maximum_reverse_residual 输出各边沿正反角差相对共同偏移的最大残差。
+ * @return 数据完整且重复性、共同偏移残差及扇区宽度均合格时返回OK。
+ */
+static motor_hall_calibration_error_t motor_hall_calibration_reverse_check(
+  const motor_hall_calibration_t *calibration,
+  uint16_t entry_angle_u16[8], uint16_t sector_width_u16[8],
+  uint16_t *maximum_deviation, uint16_t *maximum_reverse_residual)
+{
+  int16_t difference[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  int16_t reference_difference = 0;
+  int16_t mean_difference;
+  int32_t difference_delta_sum = 0;
+  int32_t residual;
+  uint16_t reverse_angle;
+  uint16_t deviation;
+  uint16_t width;
+  uint8_t state;
+  uint8_t next;
+  motor_hall_calibration_error_t error;
+
+  error = motor_hall_calibration_forward_check(
+    calibration, entry_angle_u16, sector_width_u16, maximum_deviation);
+  if (error != MOTOR_HALL_CALIBRATION_OK) return error;
+
+  for (state = 1U; state <= 6U; state++)
+  {
+    if (calibration->reverse_angle[state].count <
+        calibration->config.minimum_samples_per_state)
+      return MOTOR_HALL_CALIBRATION_INCOMPLETE_SEQUENCE;
+    deviation = motor_hall_calibration_angle_deviation(
+      &calibration->reverse_angle[state]);
+    if (deviation > *maximum_deviation) *maximum_deviation = deviation;
+    if (deviation > calibration->config.maximum_edge_deviation_u16)
+      return MOTOR_HALL_CALIBRATION_EDGE_DEVIATION_EXCEEDED;
+    reverse_angle = motor_hall_calibration_angle_mean(
+      &calibration->reverse_angle[state]);
+    difference[state] = (int16_t)(reverse_angle - entry_angle_u16[state]);
+    if (state == 1U) reference_difference = difference[state];
+    difference_delta_sum +=
+      (int16_t)(difference[state] - reference_difference);
+  }
+  mean_difference = (int16_t)(reference_difference +
+    difference_delta_sum / 6);
+  *maximum_reverse_residual = 0U;
+  for (state = 1U; state <= 6U; state++)
+  {
+    residual = (int16_t)(difference[state] - mean_difference);
+    if (residual < 0) residual = -residual;
+    if ((uint16_t)residual > *maximum_reverse_residual)
+      *maximum_reverse_residual = (uint16_t)residual;
+    entry_angle_u16[state] = (uint16_t)(entry_angle_u16[state] +
+      difference[state] / 2);
+  }
+  if (*maximum_reverse_residual >
+      calibration->config.maximum_forward_reverse_residual_u16)
+    return MOTOR_HALL_CALIBRATION_REVERSE_MISMATCH;
+
+  for (state = 1U; state <= 6U; state++)
+  {
+    next = calibration->positive_next[state];
+    width = (uint16_t)(entry_angle_u16[next] - entry_angle_u16[state]);
+    sector_width_u16[state] = width;
+    if ((width < calibration->config.minimum_sector_width_u16) ||
+        (width > calibration->config.maximum_sector_width_u16))
+      return MOTOR_HALL_CALIBRATION_SECTOR_ANGLE_INVALID;
+  }
+  return MOTOR_HALL_CALIBRATION_OK;
+}
+
 motor_hall_calibration_error_t motor_hall_calibration_init(
   motor_hall_calibration_t *calibration,
   const motor_hall_calibration_config_t *config)
@@ -170,7 +253,7 @@ motor_hall_calibration_error_t motor_hall_calibration_init(
        config->maximum_sector_width_u16) ||
       (config->maximum_sector_width_u16 >= 32768U) ||
       (config->maximum_edge_deviation_u16 >= 32768U) ||
-      (config->maximum_forward_reverse_error_u16 >= 32768U))
+      (config->maximum_forward_reverse_residual_u16 >= 32768U))
   {
     return MOTOR_HALL_CALIBRATION_INVALID_ARGUMENT;
   }
@@ -274,10 +357,7 @@ motor_hall_calibration_error_t motor_hall_calibration_scan_end(
   uint16_t entry_angle_u16[8] = {0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U};
   uint16_t sector_width_u16[8] = {0U, 0U, 0U, 0U, 0U, 0U, 0U, 0U};
   uint16_t maximum_deviation;
-  uint16_t reverse_deviation;
-  uint16_t reverse_angle;
-  uint16_t difference;
-  uint8_t state;
+  uint16_t maximum_reverse_residual;
   motor_hall_calibration_error_t error;
 
   if (calibration == NULL) return MOTOR_HALL_CALIBRATION_INVALID_ARGUMENT;
@@ -293,38 +373,11 @@ motor_hall_calibration_error_t motor_hall_calibration_scan_end(
   if (calibration->state != MOTOR_HALL_CALIBRATION_REVERSE_SCAN)
     return MOTOR_HALL_CALIBRATION_SEQUENCE_ERROR;
 
-  error = motor_hall_calibration_forward_check(
-    calibration, entry_angle_u16, sector_width_u16, &maximum_deviation);
+  error = motor_hall_calibration_reverse_check(
+    calibration, entry_angle_u16, sector_width_u16, &maximum_deviation,
+    &maximum_reverse_residual);
   if (error != MOTOR_HALL_CALIBRATION_OK)
     return motor_hall_calibration_fault_set(calibration, error);
-  for (state = 1U; state <= 6U; state++)
-  {
-    if (calibration->reverse_angle[state].count <
-        calibration->config.minimum_samples_per_state)
-    {
-      return motor_hall_calibration_fault_set(
-        calibration, MOTOR_HALL_CALIBRATION_INCOMPLETE_SEQUENCE);
-    }
-    reverse_deviation = motor_hall_calibration_angle_deviation(
-      &calibration->reverse_angle[state]);
-    if (reverse_deviation >
-        calibration->config.maximum_edge_deviation_u16)
-    {
-      return motor_hall_calibration_fault_set(
-        calibration, MOTOR_HALL_CALIBRATION_EDGE_DEVIATION_EXCEEDED);
-    }
-    reverse_angle = motor_hall_calibration_angle_mean(
-      &calibration->reverse_angle[state]);
-    difference = (uint16_t)((int16_t)(reverse_angle -
-                                      entry_angle_u16[state]));
-    if ((int16_t)difference < 0)
-      difference = (uint16_t)(-(int16_t)difference);
-    if (difference > calibration->config.maximum_forward_reverse_error_u16)
-    {
-      return motor_hall_calibration_fault_set(
-        calibration, MOTOR_HALL_CALIBRATION_REVERSE_MISMATCH);
-    }
-  }
   calibration->state = MOTOR_HALL_CALIBRATION_COMPLETE;
   return MOTOR_HALL_CALIBRATION_OK;
 }
@@ -333,9 +386,6 @@ bool motor_hall_calibration_result_get(
   const motor_hall_calibration_t *calibration,
   motor_hall_calibration_result_t *result)
 {
-  uint16_t reverse_angle;
-  uint16_t difference;
-  uint16_t deviation;
   uint8_t state;
   motor_hall_calibration_error_t error;
 
@@ -347,9 +397,10 @@ bool motor_hall_calibration_result_get(
   {
     return false;
   }
-  error = motor_hall_calibration_forward_check(
+  error = motor_hall_calibration_reverse_check(
     calibration, result->entry_angle_u16, result->sector_width_u16,
-    &result->maximum_edge_deviation_u16);
+    &result->maximum_edge_deviation_u16,
+    &result->maximum_forward_reverse_residual_u16);
   if (error != MOTOR_HALL_CALIBRATION_OK) return false;
   (void)memcpy(result->positive_next, calibration->positive_next,
                sizeof(result->positive_next));
@@ -359,18 +410,6 @@ bool motor_hall_calibration_result_get(
       calibration->forward_angle[state].count;
     result->reverse_samples[state] =
       calibration->reverse_angle[state].count;
-    deviation = motor_hall_calibration_angle_deviation(
-      &calibration->reverse_angle[state]);
-    if (deviation > result->maximum_edge_deviation_u16)
-      result->maximum_edge_deviation_u16 = deviation;
-    reverse_angle = motor_hall_calibration_angle_mean(
-      &calibration->reverse_angle[state]);
-    difference = (uint16_t)((int16_t)(reverse_angle -
-      result->entry_angle_u16[state]));
-    if ((int16_t)difference < 0)
-      difference = (uint16_t)(-(int16_t)difference);
-    if (difference > result->maximum_forward_reverse_error_u16)
-      result->maximum_forward_reverse_error_u16 = difference;
   }
   result->reverse_verified = true;
   result->valid = true;

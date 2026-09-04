@@ -1,3 +1,11 @@
+/**
+ * @file    motor_parameter.c
+ * @brief   运行时电机参数管理 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include <string.h>
 #include "at32f45x.h"

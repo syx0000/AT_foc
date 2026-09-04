@@ -1,12 +1,21 @@
+/**
+ * @file    motor_control.c
+ * @brief   电机统一控制状态机 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_control.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
 #include "motor_current_sample.h"
+#include "motor_current_transform.h"
 #include "motor_direction.h"
 #include "motor_foc_math.h"
-#include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 #include "motor_log.h"
 #include "motor_parameter.h"
 #include "motor_pwm_port.h"
@@ -116,7 +125,7 @@ bool motor_control_current_control_start(
   const motor_current_control_command_t *command)
 {
   motor_open_loop_status_t open_loop;
-  motor_hall_angle_estimator_t hall;
+  motor_rotor_feedback_t rotor_feedback;
   motor_slow_sensor_state_t sensor;
   motor_alpha_beta_q15_t alpha_beta;
   motor_direct_quadrature_q15_t voltage_dq;
@@ -128,14 +137,16 @@ bool motor_control_current_control_start(
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (!motor_open_loop_status_read(&open_loop)) ||
       (open_loop.state != MOTOR_OPEN_LOOP_RUNNING) ||
-      (!motor_hall_angle_estimator_read(&hall)) || (!hall.valid) ||
+      (!motor_rotor_feedback_read(&rotor_feedback)) ||
+      (!rotor_feedback.valid) ||
       (!motor_slow_sensor_state_read(&sensor))) return false;
   bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
   alpha_beta = motor_foc_inverse_park_q15(
     (int16_t)(((int64_t)open_loop.applied_direct_voltage_mv * 32768) / bus_mv),
     (int16_t)(((int64_t)open_loop.applied_quadrature_voltage_mv * 32768) / bus_mv),
     open_loop.electrical_angle_u16);
-  voltage_dq = motor_foc_park_q15(alpha_beta, hall.electrical_angle_u16);
+  voltage_dq = motor_foc_park_q15(
+    alpha_beta, rotor_feedback.electrical_angle_u16);
   direct_seed_mv = (int32_t)(((int64_t)voltage_dq.direct_q15 * bus_mv) / 32768);
   quadrature_seed_mv = (int32_t)(
     ((int64_t)voltage_dq.quadrature_q15 * bus_mv) / 32768);
@@ -158,18 +169,52 @@ bool motor_control_current_control_command_set(
 bool motor_control_speed_control_start(int32_t target_speed_rpm)
 {
   motor_current_control_command_t current_command;
+  motor_current_control_status_t current_status;
+  motor_current_transform_state_t current_transform;
+  int32_t initial_quadrature_current_ma;
 
   if (!motor_control_speed_command_valid(target_speed_rpm))
   {
     return false;
   }
-  current_command.direct_reference_ma = 0;
-  current_command.quadrature_reference_ma = 0;
-  if (!motor_control_current_control_start(&current_command))
+
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_OPEN_LOOP)
+  {
+    if ((!motor_current_transform_state_read(&current_transform)) ||
+        (!current_transform.valid))
+    {
+      return false;
+    }
+    initial_quadrature_current_ma = (int32_t)(
+      ((int64_t)current_transform.quadrature_q15 *
+       MOTOR_CURRENT_Q15_BASE_MA) / 32768L);
+    if (initial_quadrature_current_ma > MOTOR_CURRENT_COMMAND_MAX_MA)
+      initial_quadrature_current_ma = MOTOR_CURRENT_COMMAND_MAX_MA;
+    else if (initial_quadrature_current_ma < -MOTOR_CURRENT_COMMAND_MAX_MA)
+      initial_quadrature_current_ma = -MOTOR_CURRENT_COMMAND_MAX_MA;
+
+    current_command.direct_reference_ma = 0;
+    current_command.quadrature_reference_ma =
+      initial_quadrature_current_ma;
+    if (!motor_control_current_control_start(&current_command)) return false;
+  }
+  else if (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL)
+  {
+    if ((!motor_current_control_status_read(&current_status)) ||
+        (current_status.state != MOTOR_CURRENT_CONTROL_RUNNING))
+    {
+      return false;
+    }
+    initial_quadrature_current_ma =
+      current_status.command.quadrature_reference_ma;
+  }
+  else
   {
     return false;
   }
-  if (!motor_speed_control_start(target_speed_rpm * 1000L, 0))
+
+  if (!motor_speed_control_start(target_speed_rpm * 1000L,
+                                 initial_quadrature_current_ma))
   {
     motor_control_fault_set(MOTOR_FAULT_SPEED_START);
     return false;

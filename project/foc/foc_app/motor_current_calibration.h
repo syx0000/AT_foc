@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_calibration.h
+ * @brief   电流采样零偏校准 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_CURRENT_CALIBRATION_H
 #define MOTOR_CURRENT_CALIBRATION_H
 

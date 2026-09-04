@@ -1,3 +1,11 @@
+/**
+ * @file    motor_speed_feedback.h
+ * @brief   电机机械速度反馈 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_SPEED_FEEDBACK_H
 #define MOTOR_SPEED_FEEDBACK_H
 

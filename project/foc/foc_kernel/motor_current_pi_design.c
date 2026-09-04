@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_pi_design.c
+ * @brief   电流PI参数设计 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <limits.h>
 #include <stddef.h>
 #include "motor_current_pi_design.h"

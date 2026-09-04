@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_decoder_test.c
+ * @brief   Hall状态解码与测速算法 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>

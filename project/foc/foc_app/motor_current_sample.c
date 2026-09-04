@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_sample.c
+ * @brief   三相电流采样与保护 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include "at32f45x.h"
 #include "motor_current_sample.h"
 #include "motor_control_config.h"

@@ -1,5 +1,13 @@
 /**
  * @file    ota_app.c
+ * @brief   应用侧OTA升级管理 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
+/**
+ * @file    ota_app.c
  * @brief   OTA firmware upgrade state machine — AT32F456 adaptation
  *
  * Based on cubemx_yxsui/Core/Src/ota_app.c, adapted:

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_torque_loop_test.h
+ * @brief   motor torque loop 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_TORQUE_LOOP_TEST_H
 #define MOTOR_TORQUE_LOOP_TEST_H
 

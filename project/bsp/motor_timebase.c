@@ -1,3 +1,11 @@
+/**
+ * @file    motor_timebase.c
+ * @brief   电机统一时间基准 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include "at32f45x.h"
 #include "motor_timebase.h"
 

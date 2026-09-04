@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_calibration.h
+ * @brief   Hall双向自动标定算法 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_HALL_CALIBRATION_H
 #define MOTOR_HALL_CALIBRATION_H
 
@@ -38,7 +46,7 @@ typedef struct
   uint16_t minimum_sector_width_u16;
   uint16_t maximum_sector_width_u16;
   uint16_t maximum_edge_deviation_u16;
-  uint16_t maximum_forward_reverse_error_u16;
+  uint16_t maximum_forward_reverse_residual_u16; /**< 正反角差相对共同偏移的最大残差阈值。 */
   uint32_t maximum_edge_interval_cycles; /**< 0表示不检查相邻事件间隔。 */
 } motor_hall_calibration_config_t;
 
@@ -71,7 +79,7 @@ typedef struct
   uint32_t forward_samples[8];
   uint32_t reverse_samples[8];
   uint16_t maximum_edge_deviation_u16;
-  uint16_t maximum_forward_reverse_error_u16;
+  uint16_t maximum_forward_reverse_residual_u16; /**< 六个边沿正反共同偏移的最大残差。 */
   bool reverse_verified;
   bool valid;
 } motor_hall_calibration_result_t;

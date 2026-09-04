@@ -1,3 +1,11 @@
+/**
+ * @file    motor_current_pi_design_test.c
+ * @brief   电流PI参数设计 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include "motor_current_pi_design.h"

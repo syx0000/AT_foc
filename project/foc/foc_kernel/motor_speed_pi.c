@@ -1,3 +1,11 @@
+/**
+ * @file    motor_speed_pi.c
+ * @brief   速度PI定点算法 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "motor_speed_pi.h"
 

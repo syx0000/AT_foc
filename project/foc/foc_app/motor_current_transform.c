@@ -1,9 +1,17 @@
+/**
+ * @file    motor_current_transform.c
+ * @brief   三相电流坐标变换 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_current_transform.h"
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
-#include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 
 static volatile motor_current_transform_state_t motor_current_transform_state;
 static volatile int64_t motor_current_direct_sum_q15;
@@ -35,13 +43,13 @@ void motor_current_transform_init(void)
 void motor_current_transform_fast_process(void)
 {
   motor_current_sample_state_t current;
-  motor_hall_angle_estimator_t angle;
+  motor_rotor_feedback_t rotor_feedback;
   motor_alpha_beta_q15_t alpha_beta;
   motor_direct_quadrature_q15_t direct_quadrature;
 
   if ((!motor_current_sample_state_read(&current)) ||
-      (!motor_hall_angle_estimator_read(&angle)) ||
-      (!angle.valid))
+      (!motor_rotor_feedback_read(&rotor_feedback)) ||
+      (!rotor_feedback.valid))
   {
     motor_current_transform_state.valid = false;
     return;
@@ -50,12 +58,13 @@ void motor_current_transform_fast_process(void)
   alpha_beta = motor_foc_clarke_q15(current.phase_a_q15,
                                     current.phase_b_q15);
   direct_quadrature = motor_foc_park_q15(alpha_beta,
-                                         angle.electrical_angle_u16);
+                                         rotor_feedback.electrical_angle_u16);
   motor_current_transform_state.alpha_q15 = alpha_beta.alpha_q15;
   motor_current_transform_state.beta_q15 = alpha_beta.beta_q15;
   motor_current_transform_state.direct_q15 = direct_quadrature.direct_q15;
   motor_current_transform_state.quadrature_q15 = direct_quadrature.quadrature_q15;
-  motor_current_transform_state.electrical_angle_u16 = angle.electrical_angle_u16;
+  motor_current_transform_state.electrical_angle_u16 =
+    rotor_feedback.electrical_angle_u16;
   motor_current_transform_state.sample_count++;
   motor_current_transform_state.valid = true;
 

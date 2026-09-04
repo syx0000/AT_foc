@@ -1,3 +1,11 @@
+/**
+ * @file    motor_control.h
+ * @brief   电机统一控制状态机 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_CONTROL_H
 #define MOTOR_CONTROL_H
 #include <stdbool.h>

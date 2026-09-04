@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_port.c
+ * @brief   电机Hall硬件端口 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x_conf.h"
 #include "motor_hall_port.h"

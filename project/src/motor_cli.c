@@ -1,3 +1,11 @@
+/**
+ * @file    motor_cli.c
+ * @brief   电机调试串口命令 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include "motor_cli.h"

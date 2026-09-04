@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_offset_identification_test.c
+ * @brief   Hall转子角度补偿辨识算法 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <stdio.h>
 #include "motor_hall_offset_identification.h"

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_ramp.c
+ * @brief   通用定点斜坡算法 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "motor_ramp.h"
 

@@ -1,3 +1,11 @@
+/**
+ * @file    motor_performance_monitor.h
+ * @brief   电机实时性能统计 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_PERFORMANCE_MONITOR_H
 #define MOTOR_PERFORMANCE_MONITOR_H
 

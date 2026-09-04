@@ -1,5 +1,13 @@
 /**
  * @file    flash_port.h
+ * @brief   片内Flash访问端口 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
+/**
+ * @file    flash_port.h
  * @brief   AT32F456 internal Flash read/write API
  *
  * Migrated from cubemx_yxsui/Core/Inc/flash_port.h

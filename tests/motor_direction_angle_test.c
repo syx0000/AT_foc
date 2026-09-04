@@ -1,3 +1,11 @@
+/**
+ * @file    motor_direction_angle_test.c
+ * @brief   电机方向与角度变换 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <limits.h>
 #include <stdint.h>

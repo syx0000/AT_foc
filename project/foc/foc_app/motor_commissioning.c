@@ -1,3 +1,11 @@
+/**
+ * @file    motor_commissioning.c
+ * @brief   电机自动辨识与标定管理器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_board_config.h"
@@ -26,6 +34,8 @@
 #define MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ 5000L
 #define MOTOR_COMMISSIONING_HALL_TIMEOUT_MS 12000U
 #define MOTOR_COMMISSIONING_HALL_SAMPLES 3U
+#define MOTOR_COMMISSIONING_HALL_TARGET_TIMEOUT_MS 5000U
+#define MOTOR_COMMISSIONING_HALL_SETTLE_MS 1000U
 
 static volatile motor_commissioning_status_t commissioning_status;
 static volatile bool commissioning_abort_requested;
@@ -95,6 +105,7 @@ const char *motor_commissioning_error_detail_name_get(
     if (detail == 101U) return "open_loop_start_failed";
     if (detail == 102U) return "scan_timeout";
     if (detail == 103U) return "result_invalid";
+    if (detail == 104U) return "target_frequency_not_reached_or_lost";
     return "unknown";
   }
   if (error == MOTOR_COMMISSIONING_ERROR_HALL_OFFSET)
@@ -439,17 +450,25 @@ void motor_commissioning_hall_edge_process(void)
 static bool commissioning_hall_direction_run(int8_t direction)
 {
   motor_open_loop_command_t command; motor_hall_port_sample_t sample;
+  motor_control_status_t motor_status;
+  motor_open_loop_status_t open_loop_status;
   motor_hall_calibration_error_t scan_error;
-  uint32_t start=motor_timebase_cycles_get(); uint32_t timeout=(system_core_clock/1000U)*MOTOR_COMMISSIONING_HALL_TIMEOUT_MS;
-  if ((motor_hall_calibration_scan_begin(&commissioning_hall,direction) !=
-       MOTOR_HALL_CALIBRATION_OK) ||
-      !motor_hall_port_sample_read(&sample)) {
+  uint32_t start;
+  uint32_t timeout=(system_core_clock/1000U)*MOTOR_COMMISSIONING_HALL_TIMEOUT_MS;
+  uint8_t state;
+  bool target_reached=false;
+  bool scan_control_valid=true;
+
+  commissioning_hall_collecting=false;
+  if (motor_hall_calibration_scan_begin(&commissioning_hall,direction) !=
+      MOTOR_HALL_CALIBRATION_OK) {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN,
       (commissioning_hall.error != MOTOR_HALL_CALIBRATION_OK) ?
       (uint32_t)commissioning_hall.error : 100U); return false;
   }
-  commissioning_hall_previous_state=sample.state; commissioning_hall_collecting=true;
-  command.direct_voltage_mv=0; command.quadrature_voltage_mv=MOTOR_COMMISSIONING_HALL_VOLTAGE_MV;
+  /* 使用旋转的正Vd磁场，使开环命令角直接表示Hall标定的励磁轴。 */
+  command.direct_voltage_mv=MOTOR_COMMISSIONING_HALL_VOLTAGE_MV;
+  command.quadrature_voltage_mv=0;
   command.target_frequency_millihz=direction*MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
   command.acceleration_millihz_per_s=MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
   if (!motor_control_open_loop_start(&command)) {
@@ -457,10 +476,88 @@ static bool commissioning_hall_direction_run(int8_t direction)
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 101U);
     return false;
   }
+
+  /* 加速阶段不采样；达到目标频率后再等待负载角稳定。 */
+  start=motor_timebase_cycles_get();
+  while (!commissioning_abort_requested &&
+         (motor_timebase_cycles_elapsed(start) <
+          ((system_core_clock/1000U)*MOTOR_COMMISSIONING_HALL_TARGET_TIMEOUT_MS)))
+  {
+    motor_control_poll();
+    if (!motor_control_status_read(&motor_status) ||
+        (motor_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+        !motor_open_loop_status_read(&open_loop_status))
+      break;
+    if ((open_loop_status.state == MOTOR_OPEN_LOOP_RUNNING) &&
+        (open_loop_status.actual_frequency_millihz ==
+         command.target_frequency_millihz))
+    {
+      target_reached=true;
+      break;
+    }
+    wk_delay_ms(1U);
+  }
+  if (commissioning_abort_requested) {
+    motor_control_stop();
+    return false;
+  }
+  if (!target_reached) {
+    motor_control_stop();
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 104U);
+    return false;
+  }
+
+  start=motor_timebase_cycles_get();
+  while (!commissioning_abort_requested &&
+         (motor_timebase_cycles_elapsed(start) <
+          ((system_core_clock/1000U)*MOTOR_COMMISSIONING_HALL_SETTLE_MS)))
+  {
+    motor_control_poll();
+    if (!motor_control_status_read(&motor_status) ||
+        (motor_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+        !motor_open_loop_status_read(&open_loop_status) ||
+        (open_loop_status.state != MOTOR_OPEN_LOOP_RUNNING) ||
+        (open_loop_status.actual_frequency_millihz !=
+         command.target_frequency_millihz))
+    {
+      motor_control_stop();
+      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 104U);
+      return false;
+    }
+    wk_delay_ms(1U);
+  }
+  if (commissioning_abort_requested) {
+    motor_control_stop();
+    return false;
+  }
+  if (!motor_hall_port_sample_read(&sample) ||
+      (sample.state < 1U) || (sample.state > 6U)) {
+    motor_control_stop();
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 100U);
+    return false;
+  }
+
+  commissioning_hall_previous_state=sample.state;
+  commissioning_hall_collecting=true;
+  start=motor_timebase_cycles_get();
   while (commissioning_hall_collecting && !commissioning_abort_requested &&
-         motor_timebase_cycles_elapsed(start)<timeout) wk_delay_ms(1U);
+         motor_timebase_cycles_elapsed(start)<timeout) {
+    motor_control_poll();
+    if (!motor_control_status_read(&motor_status) ||
+        (motor_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP))
+    {
+      scan_control_valid=false;
+      commissioning_hall_collecting=false;
+    }
+    else
+      wk_delay_ms(1U);
+  }
   commissioning_hall_collecting=false; motor_control_stop();
   if (commissioning_abort_requested) return false;
+  if (!scan_control_valid) {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 104U);
+    return false;
+  }
   if (commissioning_hall.state == MOTOR_HALL_CALIBRATION_FAULT) {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN,
                             (uint32_t)commissioning_hall.error); return false;
@@ -470,6 +567,32 @@ static bool commissioning_hall_direction_run(int8_t direction)
   }
   scan_error = motor_hall_calibration_scan_end(&commissioning_hall);
   if (scan_error != MOTOR_HALL_CALIBRATION_OK) {
+    for (state=1U; state<=6U; state++) {
+      const motor_hall_calibration_angle_accumulator_t *forward =
+        &commissioning_hall.forward_angle[state];
+      const motor_hall_calibration_angle_accumulator_t *reverse =
+        &commissioning_hall.reverse_angle[state];
+      uint16_t forward_mean = forward->reference_angle_u16;
+      uint16_t reverse_mean = reverse->reference_angle_u16;
+      uint16_t difference = 0U;
+
+      if (forward->count != 0U)
+        forward_mean = (uint16_t)(forward_mean +
+          (int32_t)(forward->delta_sum / (int64_t)forward->count));
+      if (reverse->count != 0U)
+        reverse_mean = (uint16_t)(reverse_mean +
+          (int32_t)(reverse->delta_sum / (int64_t)reverse->count));
+      if ((forward->count != 0U) && (reverse->count != 0U)) {
+        int16_t signed_difference = (int16_t)(reverse_mean-forward_mean);
+        difference = (uint16_t)((signed_difference < 0) ?
+          -(int32_t)signed_difference : signed_difference);
+      }
+      LOGE("Commissioning Hall diag: direction=%ld state=%u samples=%lu/%lu mean=%u/%u difference=%u f_delta=%ld/%ld r_delta=%ld/%ld\r\n",
+        (long)direction,state,(unsigned long)forward->count,
+        (unsigned long)reverse->count,forward_mean,reverse_mean,difference,
+        (long)forward->minimum_delta,(long)forward->maximum_delta,
+        (long)reverse->minimum_delta,(long)reverse->maximum_delta);
+    }
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN,
                             (uint32_t)scan_error); return false;
   }
@@ -498,8 +621,9 @@ static bool commissioning_hall_run(void)
   if (!motor_parameter_candidate_set(&p)) {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U); return false;
   }
-  LOGI("Commissioning Hall: PASS max_dev=%u reverse_error=%u candidate=1\r\n",
-    result.maximum_edge_deviation_u16,result.maximum_forward_reverse_error_u16);
+  LOGI("Commissioning Hall: PASS max_dev=%u reverse_residual=%u candidate=1\r\n",
+    result.maximum_edge_deviation_u16,
+    result.maximum_forward_reverse_residual_u16);
   return true;
 }
 

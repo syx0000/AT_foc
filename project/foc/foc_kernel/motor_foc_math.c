@@ -1,3 +1,11 @@
+/**
+ * @file    motor_foc_math.c
+ * @brief   FOC定点数学运算 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include "motor_foc_math.h"
 
 #define MOTOR_Q15_ONE                32767

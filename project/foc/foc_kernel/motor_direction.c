@@ -1,3 +1,11 @@
+/**
+ * @file    motor_direction.c
+ * @brief   电机逻辑方向变换 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <limits.h>
 #include <stddef.h>
 #include "motor_direction.h"

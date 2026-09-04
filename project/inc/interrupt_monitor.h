@@ -1,3 +1,11 @@
+/**
+ * @file    interrupt_monitor.h
+ * @brief   中断频率与控制诊断统计 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef INTERRUPT_MONITOR_H
 #define INTERRUPT_MONITOR_H
 

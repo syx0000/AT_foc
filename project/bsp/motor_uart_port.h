@@ -1,3 +1,11 @@
+/**
+ * @file    motor_uart_port.h
+ * @brief   电机调试串口端口 公共数据结构和接口声明
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #ifndef MOTOR_UART_PORT_H
 #define MOTOR_UART_PORT_H
 #include <stdbool.h>

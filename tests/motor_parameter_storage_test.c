@@ -1,3 +1,11 @@
+/**
+ * @file    motor_parameter_storage_test.c
+ * @brief   电机参数Flash双槽存储 单元测试
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <assert.h>
 #include <stddef.h>
 #include <stdint.h>

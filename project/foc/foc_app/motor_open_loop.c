@@ -1,3 +1,11 @@
+/**
+ * @file    motor_open_loop.c
+ * @brief   电机开环控制器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_board_config.h"

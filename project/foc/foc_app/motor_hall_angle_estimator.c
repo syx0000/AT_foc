@@ -1,3 +1,11 @@
+/**
+ * @file    motor_hall_angle_estimator.c
+ * @brief   Hall转子电角度估算器 功能实现
+ * @author  随永祥
+ * @date    2026-09-04
+ * @version 1.0
+ */
+
 #include <stddef.h>
 #include "at32f45x.h"
 #include "motor_board_config.h"

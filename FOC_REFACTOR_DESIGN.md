@@ -779,9 +779,15 @@ ADC普通组转换完成中断和DMA完整传输中断对应同一批1 kHz数据
 ### 17.2 `foc_app`控制与流程层
 
 - `motor_open_loop`：管理对齐、运行指令、频率斜坡、PWM所有权和故障状态。
-- `motor_current_control`：正式Hall角度电流闭环，是闭环运行时唯一PWM写入者。
+- `motor_rotor_feedback`：向控制链提供统一的电角度、机械速度、方向、时间戳和反馈源状态；当前由Hall适配器提供数据，后续可增加SPI绝对编码器实现。
+- `motor_current_control`：正式转子角度电流闭环，是闭环运行时唯一PWM写入者，不直接依赖Hall或编码器驱动。
 - `motor_*_identification`和`motor_*_test`：只管理辨识/验证时序和结果统计。
 - 测试模块允许计算交接坐标和采集统计，但不得复制正式PI、限幅或PWM控制链。
+
+FOC电流变换、电流控制、开环接管、机械速度反馈和转矩接管测试统一读取
+`motor_rotor_feedback`。Hall解码、Hall边沿角估算和Hall自动标定仍属于Hall反馈源
+内部实现，禁止控制模块绕过统一接口直接读取这些模块。当前版本不允许运行时切换
+反馈源，以避免角度跳变；SPI编码器接入后先通过编译配置选择反馈源。
 
 ### 17.3 `bsp`硬件端口层
 
