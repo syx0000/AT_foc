@@ -197,6 +197,37 @@ static bool motor_cli_parameter_runtime_reload(void)
     motor_speed_control_parameter_reload();
 }
 
+/**
+ * @brief 执行辨识任务并保证成功、拒绝或失败均有明确CLI回显。
+ * @param task 待执行的完整流程或单项任务。
+ * @return 无。
+ * @details 当前辨识为阻塞式；成功回显在任务完成后发送，入口条件不满足时
+ *          立即返回电机状态，执行失败时同时返回辨识阶段及详细错误。
+ */
+static void motor_cli_commissioning_execute(motor_commissioning_task_t task)
+{
+  motor_control_status_t motor;
+  motor_commissioning_status_t commissioning;
+
+  if (motor_commissioning_run(task))
+  {
+    printf("OK commissioning complete task=%u, review diff then accept/discard\r\n",
+           (unsigned int)task);
+    return;
+  }
+
+  (void)motor_control_status_read(&motor);
+  (void)motor_commissioning_status_read(&commissioning);
+  printf("ERR commissioning rejected_or_failed task=%u motor=%u state=%u error=%s(%u) detail=%s(%lu)\r\n",
+         (unsigned int)task, (unsigned int)motor.state,
+         (unsigned int)commissioning.state,
+         motor_commissioning_error_name_get(commissioning.error),
+         (unsigned int)commissioning.error,
+         motor_commissioning_error_detail_name_get(
+           commissioning.error, commissioning.error_detail),
+         (unsigned long)commissioning.error_detail);
+}
+
 static void motor_cli_command_execute(char *line)
 {
   unsigned int level;
@@ -358,44 +389,44 @@ static void motor_cli_command_execute(char *line)
   }
   else if (strcmp(line, "motor commissioning start") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_FULL);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_FULL);
   }
   else if (strcmp(line, "calibrate current_offset") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_OFFSET);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_OFFSET);
   }
   else if ((strcmp(line, "calibrate hall sequence") == 0) ||
            (strcmp(line, "calibrate hall angle") == 0))
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_HALL);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_HALL);
   }
   else if (strcmp(line, "calibrate hall offset") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_HALL_OFFSET);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_HALL_OFFSET);
   }
   else if (strcmp(line, "identify resistance") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_RESISTANCE);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_RESISTANCE);
   }
   else if (strcmp(line, "identify inductance") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_INDUCTANCE);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_INDUCTANCE);
   }
   else if (strcmp(line, "calculate current_pi") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_PI);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_PI);
   }
   else if (strcmp(line, "test current_d") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_D);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_D);
   }
   else if (strcmp(line, "test current_q") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_Q);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_Q);
   }
   else if (strcmp(line, "test current_handover") == 0)
   {
-    (void)motor_commissioning_run(MOTOR_COMMISSIONING_TASK_CURRENT_HANDOVER);
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_HANDOVER);
   }
   else if (strcmp(line, "motor commissioning accept") == 0)
   {
