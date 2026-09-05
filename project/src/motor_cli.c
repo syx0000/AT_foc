@@ -12,9 +12,12 @@
 #include "motor_cli.h"
 #include "motor_control_config.h"
 #include "motor_commissioning.h"
+#include "motor_adc_port.h"
 #include "motor_hall_decoder.h"
+#include "motor_hall_angle_estimator.h"
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
+#include "motor_current_sample.h"
 #include "motor_control.h"
 #include "motor_direction.h"
 #include "motor_log.h"
@@ -24,13 +27,107 @@
 #include "motor_pwm_port.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
+#include "motor_timebase.h"
 #include "motor_uart_port.h"
 #include "product_version.h"
 #include "wk_system.h"
 
 #define MOTOR_CLI_LINE_SIZE 96U
+#define MOTOR_CLI_DEBUG_PERIOD_US 2000U
 static char motor_cli_line[MOTOR_CLI_LINE_SIZE];
 static uint16_t motor_cli_line_length;
+
+typedef enum
+{
+  MOTOR_CLI_DEBUG_STOPPED = 0,
+  MOTOR_CLI_DEBUG_STREAM
+} motor_cli_debug_mode_t;
+
+static motor_cli_debug_mode_t motor_cli_debug_mode;
+static uint32_t motor_cli_debug_last_us;
+
+static void motor_cli_debug_poll(void)
+{
+  motor_current_control_status_t current_control;
+  motor_open_loop_status_t open_loop;
+  motor_hall_sample_t hall_sample;
+  motor_hall_angle_estimator_t hall_estimator;
+  motor_current_sample_state_t current_sample;
+  motor_adc_fast_sample_t adc_sample;
+  uint32_t now_us;
+  int32_t direct_voltage_mv = 0;
+  int32_t quadrature_voltage_mv = 0;
+  int32_t direct_current_ma = 0;
+  int32_t quadrature_current_ma = 0;
+  uint16_t electrical_angle_u16 = 0U;
+  uint8_t hall_state = 0U;
+  bool voltage_limited = false;
+  bool current_sample_valid;
+  bool adc_sample_valid;
+
+  hall_estimator.phase_step = 0;
+  hall_estimator.edge_error_u16 = 0;
+  hall_estimator.edge_correction_remaining_u16 = 0;
+  hall_estimator.sector_interval_cycles = 0U;
+  hall_estimator.sector_interpolation_active = false;
+  current_sample.phase_a_ma = 0;
+  current_sample.phase_b_ma = 0;
+  current_sample.phase_c_ma = 0;
+  adc_sample.phase_a_raw = 0U;
+  adc_sample.phase_b_raw = 0U;
+
+  current_control.state = MOTOR_CURRENT_CONTROL_STOPPED;
+  current_control.voltage_limited = false;
+
+  if (motor_cli_debug_mode != MOTOR_CLI_DEBUG_STREAM) return;
+  now_us = motor_timebase_us_get();
+  if ((uint32_t)(now_us - motor_cli_debug_last_us) <
+      MOTOR_CLI_DEBUG_PERIOD_US) return;
+  motor_cli_debug_last_us = now_us;
+
+  if (motor_current_control_status_read(&current_control) &&
+      (current_control.state == MOTOR_CURRENT_CONTROL_RUNNING))
+  {
+    direct_voltage_mv = current_control.direct_voltage_mv;
+    quadrature_voltage_mv = current_control.quadrature_voltage_mv;
+    direct_current_ma = current_control.direct_feedback_ma;
+    quadrature_current_ma = current_control.quadrature_feedback_ma;
+    electrical_angle_u16 = current_control.electrical_angle_u16;
+    voltage_limited = current_control.voltage_limited;
+  }
+  else if (motor_open_loop_status_read(&open_loop) &&
+           (open_loop.state == MOTOR_OPEN_LOOP_RUNNING))
+  {
+    direct_voltage_mv = open_loop.applied_direct_voltage_mv;
+    quadrature_voltage_mv = open_loop.applied_quadrature_voltage_mv;
+    electrical_angle_u16 = open_loop.electrical_angle_u16;
+    voltage_limited = open_loop.voltage_limited;
+  }
+  if (motor_hall_decoder_sample_read(&hall_sample) && hall_sample.valid)
+    hall_state = hall_sample.state;
+  (void)motor_hall_angle_estimator_read(&hall_estimator);
+  current_sample_valid = motor_current_sample_state_read(&current_sample);
+  adc_sample_valid = motor_adc_port_fast_sample_read(&adc_sample);
+
+  /* 高频调试通道只输出CSV数据，不增加标签、日志级别或时间戳。 */
+  printf("%ld,%ld,%ld,%ld,%u,%u,%u,%lu,%ld,%u,%ld,%ld,%ld,%u,%u,%u,%ld,%ld\r\n",
+         (long)direct_voltage_mv,
+         (long)quadrature_voltage_mv,
+         (long)direct_current_ma, (long)quadrature_current_ma,
+         (unsigned int)hall_state, (unsigned int)electrical_angle_u16,
+         (unsigned int)voltage_limited,
+         (unsigned long)hall_estimator.sector_interval_cycles,
+         (long)hall_estimator.phase_step,
+         (unsigned int)hall_estimator.sector_interpolation_active,
+         (long)current_sample.phase_a_ma,
+         (long)current_sample.phase_b_ma,
+         (long)current_sample.phase_c_ma,
+         (unsigned int)adc_sample.phase_a_raw,
+         (unsigned int)adc_sample.phase_b_raw,
+         (unsigned int)(current_sample_valid && adc_sample_valid),
+         (long)hall_estimator.edge_error_u16,
+         (long)hall_estimator.edge_correction_remaining_u16);
+}
 
 typedef struct
 {
@@ -51,7 +148,8 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"current_ki_q15", MOTOR_PARAMETER_FIELD_CURRENT_KI_Q15},
   {"speed_kp_q20", MOTOR_PARAMETER_FIELD_SPEED_KP_Q20},
   {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
-  {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16}
+  {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16},
+  {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US}
 };
 
 #define MOTOR_CLI_PARAMETER_FIELD_COUNT \
@@ -97,13 +195,14 @@ static void motor_cli_parameter_print(const char *label,
          (unsigned long)parameter->direct_inductance_uh,
          (unsigned long)parameter->quadrature_inductance_uh,
          (unsigned long)parameter->current_loop_bandwidth_hz);
-  printf("current_pi_q15=%ld/%ld/%ld speed_pi_q20=%ld/%ld hall_offset_u16=%u\r\n",
+  printf("current_pi_q15=%ld/%ld/%ld speed_pi_q20=%ld/%ld hall_offset_u16=%u hall_delay_us=%u\r\n",
          (long)parameter->current_d_kp_q15,
          (long)parameter->current_q_kp_q15,
          (long)parameter->current_ki_q15,
          (long)parameter->speed_kp_q20,
          (long)parameter->speed_ki_q20,
-         (unsigned int)parameter->hall_rotor_offset_u16);
+         (unsigned int)parameter->hall_rotor_offset_u16,
+         (unsigned int)parameter->hall_delay_compensation_us);
   printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
          (unsigned int)parameter->hall_positive_next[1],
          (unsigned int)parameter->hall_positive_next[2],
@@ -274,6 +373,7 @@ static void motor_cli_command_execute(char *line)
   {
     printf("OK commands:\r\n");
     printf("  help | version | status | reset\r\n");
+    printf("  debug <0|1>\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
     printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
@@ -308,6 +408,18 @@ static void motor_cli_command_execute(char *line)
     __DSB();
     NVIC_SystemReset();
     while (1) { }
+  }
+  else if (strcmp(line, "debug 1") == 0)
+  {
+    motor_cli_debug_last_us = motor_timebase_us_get();
+    motor_cli_debug_mode = MOTOR_CLI_DEBUG_STREAM;
+    printf("OK debug 1 period_us=%u format=vd_mv,vq_mv,id_ma,iq_ma,hall_state,electrical_angle_u16,voltage_limited,sector_interval_cycles,phase_step,sector_interpolation_active,ia_ma,ib_ma,ic_ma,adc_a_raw,adc_b_raw,adc_valid,edge_error_u16,edge_correction_remaining_u16\r\n",
+           (unsigned int)MOTOR_CLI_DEBUG_PERIOD_US);
+  }
+  else if (strcmp(line, "debug 0") == 0)
+  {
+    motor_cli_debug_mode = MOTOR_CLI_DEBUG_STOPPED;
+    printf("OK debug 0\r\n");
   }
   else if (strcmp(line, "status") == 0)
   {
@@ -671,6 +783,7 @@ void motor_cli_poll(void)
   uint16_t index;
   char character;
 
+  motor_cli_debug_poll();
   if (!motor_uart_port_frame_read(&frame)) return;
   for (index = 0U; index < frame.length; index++)
   {

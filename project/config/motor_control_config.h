@@ -67,6 +67,8 @@
 #define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         19215U
 /* 由35 Hz闭环平均Vd/Vq=-2910/3333 mV计算，补偿开环标定引入的41.1度超前角。 */
 #define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16           7482U
+#define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US       0U
+#define MOTOR_HALL_DYNAMIC_COMPENSATION_MAXIMUM_U16 5461U /* 30度电角 */
 #define MOTOR_HALL_SIGNAL_TIMEOUT_MS                100U
 
 /* Hall机械转速反馈：1 kHz更新，IIR滤波系数为1/8。 */
@@ -78,14 +80,14 @@
 #define MOTOR_SPEED_PI_KP_Q20                         5243L
 #define MOTOR_SPEED_PI_KI_Q20                           33L
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA          2000L
-#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         3000L
+#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S     300U
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_STALL_MIN_TARGET_RPM               200U
 #define MOTOR_SPEED_STALL_MAX_FEEDBACK_RPM              50U
 #define MOTOR_SPEED_STALL_CURRENT_PERCENT               90U
 #define MOTOR_SPEED_STALL_TIMEOUT_MS                   2000U
-#define MOTOR_SPEED_OVERSPEED_RPM                      3300U
+#define MOTOR_SPEED_OVERSPEED_RPM                      4400U
 
 /* 正式开环控制器默认安全配置。 */
 #define MOTOR_OPEN_LOOP_MAXIMUM_VOLTAGE_MV          4800L
@@ -111,17 +113,17 @@
 #define MOTOR_INDUCTANCE_IDENT_MEASURE_SAMPLES      10000U
 #define MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA     10000L
 
-/* 首版电流PI：200 Hz带宽，参数来自Rs=273 mΩ、Ld=225 µH、Lq=206 µH。 */
+/* 电流PI：888 Hz带宽，参数来自Rs=273 mΩ、Ld=225 µH、Lq=206 µH。 */
 #define MOTOR_PHASE_RESISTANCE_MOHM                   273U
 #define MOTOR_DIRECT_INDUCTANCE_UH                    225U
 #define MOTOR_QUADRATURE_INDUCTANCE_UH                206U
-#define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               200U
-#define MOTOR_CURRENT_PI_D_KP_Q15                    9265L
-#define MOTOR_CURRENT_PI_Q_KP_Q15                    8482L
-#define MOTOR_CURRENT_PI_KI_Q15                      1124L
+#define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               888U
+#define MOTOR_CURRENT_PI_D_KP_Q15                   41136L
+#define MOTOR_CURRENT_PI_Q_KP_Q15                   37663L
+#define MOTOR_CURRENT_PI_KI_Q15                      4991L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
-/* 正常调制度当前取15%；现有线性控制允许最大50%，理论SVPWM边界约57.7%。 */
-#define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    15U
+/* 正式电流环放开到整数百分比下的线性SVPWM上限；理论边界为Vbus/sqrt(3)=57.735%。 */
+#define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    57U
 /* 48 V母线在线性SVPWM理论边界Vbus/sqrt(3)下的dq电压矢量硬上限。 */
 #define MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV 27700L
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
@@ -174,8 +176,8 @@
 #endif
 
 #if ((MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT == 0U) || \
-     (MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT > 50U))
-#error "current control modulation limit must be within 1..50 percent"
+     (MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT > 57U))
+#error "current control modulation limit must be within 1..57 percent"
 #endif
 
 #if ((MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV <= 0L) || \

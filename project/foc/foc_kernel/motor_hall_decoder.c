@@ -137,6 +137,7 @@ bool motor_hall_decoder_init(const uint8_t *positive_next,
                sizeof(motor_hall_decoder_positive_next));
   motor_hall_decoder_core_clock_hz = core_clock_hz;
   motor_hall_decoder_sample.state = initial_state;
+  motor_hall_decoder_sample.previous_state = initial_state;
   motor_hall_decoder_sample.valid =
     ((initial_state != 0U) && (initial_state != 7U));
   motor_hall_decoder_sample.timestamp_cycles = initial_timestamp_cycles;
@@ -175,6 +176,7 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
     motor_hall_decoder_sample.invalid_transition_count++;
     motor_hall_decoder_sample.direction = 0;
     motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
+    motor_hall_decoder_sample.interval_cycles = 0U;
     motor_hall_decoder_last_direction = 0;
     motor_hall_decoder_speed_reset(timestamp_cycles);
     motor_hall_decoder_sequence++;
@@ -195,6 +197,7 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
     motor_hall_decoder_sample.invalid_transition_count++;
     motor_hall_decoder_sample.direction = 0;
     motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
+    motor_hall_decoder_sample.interval_cycles = 0U;
     motor_hall_decoder_last_direction = 0;
     motor_hall_decoder_speed_reset(timestamp_cycles);
     motor_hall_decoder_sequence++;
@@ -202,17 +205,20 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
   }
 
   motor_hall_decoder_sample.direction = direction;
+  motor_hall_decoder_sample.previous_state = previous_state;
   motor_hall_decoder_sample.timestamp_cycles = timestamp_cycles;
   if (direction != motor_hall_decoder_last_direction)
   {
     motor_hall_decoder_last_direction = direction;
     motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
+    motor_hall_decoder_sample.interval_cycles = 0U;
     motor_hall_decoder_speed_reset(timestamp_cycles);
   }
   else
   {
     interval_cycles = timestamp_cycles - motor_hall_decoder_last_edge_cycles;
     motor_hall_decoder_last_edge_cycles = timestamp_cycles;
+    motor_hall_decoder_sample.interval_cycles = interval_cycles;
     motor_hall_decoder_speed_push(interval_cycles);
   }
   motor_hall_decoder_sequence++;

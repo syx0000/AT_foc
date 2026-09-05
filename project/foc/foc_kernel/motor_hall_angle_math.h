@@ -43,4 +43,44 @@ bool motor_hall_phase_step_get(uint32_t electrical_frequency_millihz,
                                int8_t physical_direction,
                                int32_t *phase_step);
 
+bool motor_hall_sector_span_get(const uint8_t positive_next[8],
+                                const uint16_t entry_angle_u16[8],
+                                uint8_t state,
+                                uint16_t *span_u16);
+
+bool motor_hall_sector_phase_step_get(uint16_t sector_span_u16,
+                                      uint32_t sector_interval_cycles,
+                                      uint32_t core_clock_hz,
+                                      uint32_t update_frequency_hz,
+                                      int8_t physical_direction,
+                                      int32_t *phase_step);
+
+bool motor_hall_sector_table_phase_step_get(
+  const uint8_t positive_next[8],
+  const uint16_t entry_angle_u16[8],
+  const uint32_t sector_interval_cycles[8],
+  uint8_t current_state,
+  uint32_t core_clock_hz,
+  uint32_t update_frequency_hz,
+  int8_t physical_direction,
+  uint32_t expected_sector_interval_cycles,
+  uint8_t tolerance_percent,
+  int32_t *phase_step);
+
+/**
+ * @brief 根据有符号电角速度和固定系统延迟计算Hall动态超前补偿角。
+ * @param electrical_frequency_millihz 电角频率绝对值，单位mHz。
+ * @param physical_direction 物理方向，只允许1或-1。
+ * @param delay_us 待补偿的固定系统延迟，单位us；0表示禁用动态补偿。
+ * @param maximum_compensation_u16 最大补偿角绝对值，U16一周制且必须小于半周。
+ * @param compensation_u16 输出有符号动态补偿角，正转为正、反转为负。
+ * @return 参数合法时返回true。
+ */
+bool motor_hall_dynamic_compensation_get(
+  uint32_t electrical_frequency_millihz,
+  int8_t physical_direction,
+  uint32_t delay_us,
+  uint16_t maximum_compensation_u16,
+  int32_t *compensation_u16);
+
 #endif /* MOTOR_HALL_ANGLE_MATH_H */

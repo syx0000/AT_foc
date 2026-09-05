@@ -18,9 +18,11 @@
 typedef struct
 {
   uint8_t state;              /**< Hall组合状态，bit0=HA、bit1=HB、bit2=HC。 */
+  uint8_t previous_state;     /**< 最近一次合法跳变前的Hall状态。 */
   bool valid;                 /**< 状态为1..6时有效；0和7表示非法。 */
   uint32_t edge_count;        /**< 三路Hall任意边沿的累计捕获次数。 */
   uint32_t timestamp_cycles;  /**< 最近一次合法相邻跳变的周期时间戳。 */
+  uint32_t interval_cycles;   /**< 最近完成扇区的持续CPU周期数；方向刚建立时为0。 */
   uint32_t positive_count;    /**< 按活动正向表变化的累计次数。 */
   uint32_t negative_count;    /**< 按活动正向表反向变化的累计次数。 */
   uint32_t invalid_transition_count; /**< 非法电平或非相邻跳变累计次数。 */

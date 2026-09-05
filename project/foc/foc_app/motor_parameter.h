@@ -28,6 +28,7 @@ typedef enum
   MOTOR_PARAMETER_FIELD_SPEED_KP_Q20,
   MOTOR_PARAMETER_FIELD_SPEED_KI_Q20,
   MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16,
+  MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US,
   MOTOR_PARAMETER_FIELD_COUNT
 } motor_parameter_field_t;
 
@@ -35,7 +36,7 @@ typedef struct
 {
   uint8_t pole_pairs;
   uint8_t direction_inverted;
-  uint16_t reserved;
+  uint16_t hall_delay_compensation_us;
   uint32_t phase_resistance_mohm;
   uint32_t direct_inductance_uh;
   uint32_t quadrature_inductance_uh;

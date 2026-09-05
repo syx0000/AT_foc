@@ -13,6 +13,7 @@
 #include "motor_control.h"
 #include "motor_control_config.h"
 #include "motor_current_calibration.h"
+#include "motor_current_control.h"
 #include "motor_current_loop_test.h"
 #include "motor_current_pi_design.h"
 #include "motor_current_sample.h"
@@ -238,7 +239,8 @@ static bool commissioning_hall_decoder_reload(void)
   motor_parameter_t p; motor_hall_port_sample_t raw;
   return motor_parameter_active_read(&p) && motor_hall_port_sample_read(&raw) &&
     motor_hall_decoder_init(p.hall_positive_next,system_core_clock,
-                            raw.state,raw.timestamp_cycles);
+                            raw.state,raw.timestamp_cycles) &&
+    motor_current_control_parameter_reload();
 }
 
 /** @brief 使用候选参数完成低功率验证后无条件恢复原活动参数。 @param d_result Id测试结果。 @param q_result Iq测试结果。 @return 两项测试及恢复均成功时返回true。 */
@@ -429,6 +431,11 @@ static bool commissioning_current_q_run(
   ok = motor_torque_loop_test_run_with_gains(
       result, parameter.current_d_kp_q15, parameter.current_q_kp_q15,
       parameter.current_ki_q15);
+  if (!motor_current_control_parameter_reload())
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 2U);
+    return false;
+  }
   if (!ok)
   {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,

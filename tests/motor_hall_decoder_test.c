@@ -73,6 +73,8 @@ static void positive_rotation_test(void)
     assert(sample.negative_count == 0U);
     assert(sample.electrical_frequency_millihz == 10000U);
     assert(sample.frequency_update_count == 6U);
+    assert(sample.previous_state == initial_state);
+    assert(sample.interval_cycles == 100U);
   }
 }
 

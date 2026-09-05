@@ -54,3 +54,125 @@ bool motor_hall_phase_step_get(uint32_t electrical_frequency_millihz,
     (int32_t)magnitude : -(int32_t)magnitude;
   return true;
 }
+
+bool motor_hall_sector_span_get(const uint8_t positive_next[8],
+                                const uint16_t entry_angle_u16[8],
+                                uint8_t state,
+                                uint16_t *span_u16)
+{
+  uint8_t next_state;
+
+  if ((positive_next == NULL) || (entry_angle_u16 == NULL) ||
+      (span_u16 == NULL) || (state < 1U) || (state > 6U))
+    return false;
+  next_state = positive_next[state];
+  if ((next_state < 1U) || (next_state > 6U)) return false;
+  *span_u16 = (uint16_t)(entry_angle_u16[next_state] -
+                         entry_angle_u16[state]);
+  return (*span_u16 != 0U);
+}
+
+bool motor_hall_sector_phase_step_get(uint16_t sector_span_u16,
+                                      uint32_t sector_interval_cycles,
+                                      uint32_t core_clock_hz,
+                                      uint32_t update_frequency_hz,
+                                      int8_t physical_direction,
+                                      int32_t *phase_step)
+{
+  uint64_t magnitude;
+  uint64_t denominator;
+
+  if ((sector_span_u16 == 0U) || (sector_interval_cycles == 0U) ||
+      (core_clock_hz == 0U) || (update_frequency_hz == 0U) ||
+      (phase_step == NULL) ||
+      ((physical_direction != 1) && (physical_direction != -1)))
+    return false;
+  denominator = (uint64_t)sector_interval_cycles * update_frequency_hz;
+  magnitude = (((uint64_t)sector_span_u16 << 16) * core_clock_hz +
+               (denominator / 2U)) / denominator;
+  if ((magnitude == 0U) || (magnitude > INT32_MAX)) return false;
+  *phase_step = (physical_direction > 0) ?
+    (int32_t)magnitude : -(int32_t)magnitude;
+  return true;
+}
+
+bool motor_hall_sector_table_phase_step_get(
+  const uint8_t positive_next[8],
+  const uint16_t entry_angle_u16[8],
+  const uint32_t sector_interval_cycles[8],
+  uint8_t current_state,
+  uint32_t core_clock_hz,
+  uint32_t update_frequency_hz,
+  int8_t physical_direction,
+  uint32_t expected_sector_interval_cycles,
+  uint8_t tolerance_percent,
+  int32_t *phase_step)
+{
+  int32_t candidate_step[8];
+  uint64_t total_interval_cycles = 0U;
+  uint64_t expected_total_cycles;
+  uint16_t sector_span_u16;
+  uint8_t state;
+
+  if ((positive_next == NULL) || (entry_angle_u16 == NULL) ||
+      (sector_interval_cycles == NULL) || (phase_step == NULL) ||
+      (current_state < 1U) || (current_state > 6U) ||
+      (expected_sector_interval_cycles == 0U) ||
+      (tolerance_percent > 99U) ||
+      ((physical_direction != 1) && (physical_direction != -1)))
+    return false;
+
+  for (state = 1U; state <= 6U; state++)
+  {
+    if ((sector_interval_cycles[state] == 0U) ||
+        (!motor_hall_sector_span_get(positive_next, entry_angle_u16,
+                                     state, &sector_span_u16)) ||
+        (!motor_hall_sector_phase_step_get(
+          sector_span_u16, sector_interval_cycles[state], core_clock_hz,
+          update_frequency_hz, physical_direction, &candidate_step[state])))
+      return false;
+    total_interval_cycles += sector_interval_cycles[state];
+  }
+
+  expected_total_cycles = (uint64_t)expected_sector_interval_cycles * 6U;
+  if ((total_interval_cycles * 100U <
+       expected_total_cycles * (100U - tolerance_percent)) ||
+      (total_interval_cycles * 100U >
+       expected_total_cycles * (100U + tolerance_percent)))
+    return false;
+
+  *phase_step = candidate_step[current_state];
+  return true;
+}
+
+bool motor_hall_dynamic_compensation_get(
+  uint32_t electrical_frequency_millihz,
+  int8_t physical_direction,
+  uint32_t delay_us,
+  uint16_t maximum_compensation_u16,
+  int32_t *compensation_u16)
+{
+  uint64_t magnitude;
+
+  if ((compensation_u16 == NULL) ||
+      ((physical_direction != 1) && (physical_direction != -1)) ||
+      (maximum_compensation_u16 == 0U) ||
+      (maximum_compensation_u16 >= 32768U))
+  {
+    return false;
+  }
+  if ((delay_us == 0U) || (electrical_frequency_millihz == 0U))
+  {
+    *compensation_u16 = 0;
+    return true;
+  }
+
+  /* f[mHz] * delay[us] * 65536 / 1e9 = U16一周制补偿角。 */
+  magnitude = ((uint64_t)electrical_frequency_millihz * delay_us * 65536U +
+               500000000ULL) / 1000000000ULL;
+  if (magnitude > maximum_compensation_u16)
+    magnitude = maximum_compensation_u16;
+  *compensation_u16 = (physical_direction > 0) ?
+    (int32_t)magnitude : -(int32_t)magnitude;
+  return true;
+}

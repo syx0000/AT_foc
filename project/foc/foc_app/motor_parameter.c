@@ -18,6 +18,7 @@
 #define MOTOR_PARAMETER_RESISTANCE_MOHM_MAX     100000U
 #define MOTOR_PARAMETER_INDUCTANCE_UH_MAX      1000000U
 #define MOTOR_PARAMETER_CURRENT_BANDWIDTH_HZ_MAX   2000U
+#define MOTOR_PARAMETER_HALL_DELAY_US_MAX           1000U
 
 static volatile motor_parameter_t motor_parameter_active;
 static motor_parameter_t motor_parameter_candidate;
@@ -55,7 +56,8 @@ static void motor_parameter_default_build(motor_parameter_t *parameter)
 
   parameter->pole_pairs = MOTOR_POLE_PAIRS;
   parameter->direction_inverted = MOTOR_DIRECTION_INVERTED;
-  parameter->reserved = 0U;
+  parameter->hall_delay_compensation_us =
+    MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US;
   parameter->phase_resistance_mohm = MOTOR_PHASE_RESISTANCE_MOHM;
   parameter->direct_inductance_uh = MOTOR_DIRECT_INDUCTANCE_UH;
   parameter->quadrature_inductance_uh = MOTOR_QUADRATURE_INDUCTANCE_UH;
@@ -204,7 +206,8 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->pole_pairs > 0U) &&
     (parameter->pole_pairs <= MOTOR_PARAMETER_POLE_PAIRS_MAX) &&
     (parameter->direction_inverted <= 1U) &&
-    (parameter->reserved == 0U) &&
+    (parameter->hall_delay_compensation_us <=
+     MOTOR_PARAMETER_HALL_DELAY_US_MAX) &&
     (parameter->phase_resistance_mohm > 0U) &&
     (parameter->phase_resistance_mohm <=
      MOTOR_PARAMETER_RESISTANCE_MOHM_MAX) &&
@@ -290,6 +293,11 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
       if ((value < 0) || (value > 65535)) return false;
       updated.hall_rotor_offset_u16 = (uint16_t)value;
       break;
+    case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
+      if ((value < 0) || (value > MOTOR_PARAMETER_HALL_DELAY_US_MAX))
+        return false;
+      updated.hall_delay_compensation_us = (uint16_t)value;
+      break;
     default:
       return false;
   }
@@ -343,6 +351,9 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
       break;
     case MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16:
       *value = parameter->hall_rotor_offset_u16;
+      break;
+    case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
+      *value = parameter->hall_delay_compensation_us;
       break;
     default:
       return false;

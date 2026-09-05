@@ -48,7 +48,7 @@ static bool motor_current_control_config_valid(
   return (config != NULL) && (config->direct_kp_q15 >= 0) &&
     (config->quadrature_kp_q15 >= 0) && (config->integral_gain_q15 >= 0) &&
     (config->voltage_limit_percent > 0U) &&
-    (config->voltage_limit_percent <= 50U) &&
+    (config->voltage_limit_percent <= 57U) &&
     (config->hard_voltage_limit_mv > 0) &&
     (config->command_limit_ma > 0) &&
     (config->abort_current_ma >= config->command_limit_ma) &&
@@ -141,6 +141,11 @@ bool motor_current_control_parameter_reload(void)
   config.direct_kp_q15 = parameter.current_d_kp_q15;
   config.quadrature_kp_q15 = parameter.current_q_kp_q15;
   config.integral_gain_q15 = parameter.current_ki_q15;
+  /* 参数/辨识切换结束后必须恢复正式运行限制，不能沿用低功率测试配置。 */
+  config.voltage_limit_percent = MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT;
+  config.hard_voltage_limit_mv = MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
+  config.command_limit_ma = MOTOR_CURRENT_COMMAND_MAX_MA;
+  config.abort_current_ma = MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA;
   return motor_current_control_config_set(&config);
 }
 
