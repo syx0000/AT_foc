@@ -42,6 +42,18 @@ void motor_current_pi_axis_reset(motor_current_pi_axis_t *controller)
   controller->output_mv = 0;
 }
 
+bool motor_current_pi_axis_output_limit_set(
+  motor_current_pi_axis_t *controller, int32_t output_limit_mv)
+{
+  if ((controller == NULL) || (output_limit_mv <= 0)) return false;
+  controller->output_limit_mv = output_limit_mv;
+  controller->integral_mv = motor_current_pi_limit(
+    controller->integral_mv, output_limit_mv);
+  controller->output_mv = motor_current_pi_limit(
+    controller->output_mv, output_limit_mv);
+  return true;
+}
+
 bool motor_current_pi_axis_output_seed(motor_current_pi_axis_t *controller,
                                        int32_t output_mv)
 {

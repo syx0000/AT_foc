@@ -27,6 +27,38 @@ static motor_current_pi_axis_t motor_current_control_d_pi, motor_current_control
 static uint32_t motor_current_control_bus_mv;
 static int32_t motor_current_control_voltage_limit_mv;
 
+static void motor_current_control_bus_voltage_update(void)
+{
+  motor_slow_sensor_state_t sensor;
+  uint32_t bus_mv;
+  int32_t voltage_limit_mv;
+
+  if ((!motor_slow_sensor_state_read(&sensor)) ||
+      (sensor.bus_voltage_0p1v < MOTOR_BUS_UNDERVOLTAGE_0P1V) ||
+      (sensor.bus_voltage_0p1v > MOTOR_BUS_OVERVOLTAGE_0P1V))
+  {
+    return;
+  }
+  bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
+  voltage_limit_mv = (int32_t)(
+    (bus_mv * motor_current_control_config.voltage_limit_percent) / 100U);
+  if (voltage_limit_mv > motor_current_control_config.hard_voltage_limit_mv)
+  {
+    voltage_limit_mv = motor_current_control_config.hard_voltage_limit_mv;
+  }
+  if ((bus_mv == motor_current_control_bus_mv) &&
+      (voltage_limit_mv == motor_current_control_voltage_limit_mv))
+  {
+    return;
+  }
+  motor_current_control_bus_mv = bus_mv;
+  motor_current_control_voltage_limit_mv = voltage_limit_mv;
+  (void)motor_current_pi_axis_output_limit_set(
+    &motor_current_control_d_pi, voltage_limit_mv);
+  (void)motor_current_pi_axis_output_limit_set(
+    &motor_current_control_q_pi, voltage_limit_mv);
+}
+
 static int32_t motor_current_control_abs(int32_t value)
 {
   return (value < 0) ? -value : value;
@@ -239,6 +271,7 @@ void motor_current_control_fast_process(void)
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_PWM;
   else
   {
+    motor_current_control_bus_voltage_update();
     alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
     dq = motor_foc_park_q15(alpha_beta,
                             rotor_feedback.electrical_angle_u16);

@@ -42,6 +42,15 @@ void motor_current_pi_axis_init(motor_current_pi_axis_t *controller,
 void motor_current_pi_axis_reset(motor_current_pi_axis_t *controller);
 
 /**
+ * @brief Update the output voltage limit without resetting the PI state.
+ * @param controller PI controller state.
+ * @param output_limit_mv New positive absolute voltage limit in mV.
+ * @return true when the controller and limit are valid.
+ */
+bool motor_current_pi_axis_output_limit_set(
+  motor_current_pi_axis_t *controller, int32_t output_limit_mv);
+
+/**
  * @brief 预置PI积分器和输出，用于控制模式无扰切换。
  * @param controller 已初始化的控制器状态，不允许为空。
  * @param output_mv 期望的初始输出电压，单位mV，自动限制到输出范围。
