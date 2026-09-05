@@ -7,14 +7,57 @@
  */
 
 #include <stddef.h>
+#include "at32f45x.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_hall_decoder.h"
 #include "motor_parameter.h"
 #include "motor_rotor_feedback.h"
 
+static volatile motor_rotor_feedback_t motor_rotor_feedback_override;
+static volatile bool motor_rotor_feedback_override_enabled;
+
 void motor_rotor_feedback_init(void)
 {
-  /* 当前仅提供Hall适配器，无独立运行状态需要初始化。 */
+  motor_rotor_feedback_override_enabled = false;
+}
+
+void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
+                                       int32_t electrical_frequency_millihz,
+                                       int8_t direction)
+{
+  uint32_t primask;
+  uint32_t magnitude = (electrical_frequency_millihz < 0) ?
+    (uint32_t)(-electrical_frequency_millihz) :
+    (uint32_t)electrical_frequency_millihz;
+  primask = __get_PRIMASK();
+  __disable_irq();
+  motor_rotor_feedback_override.source =
+    MOTOR_ROTOR_FEEDBACK_SOURCE_CURRENT_STARTUP;
+  motor_rotor_feedback_override.electrical_angle_u16 = electrical_angle_u16;
+  motor_rotor_feedback_override.mechanical_angle_u16 = 0U;
+  motor_rotor_feedback_override.mechanical_speed_millirpm = 0;
+  motor_rotor_feedback_override.electrical_frequency_millihz = magnitude;
+  motor_rotor_feedback_override.timestamp_cycles = 0U;
+  motor_rotor_feedback_override.update_count++;
+  motor_rotor_feedback_override.source_state = 0U;
+  motor_rotor_feedback_override.direction = direction;
+  motor_rotor_feedback_override.mechanical_angle_valid = false;
+  motor_rotor_feedback_override.valid = true;
+  motor_rotor_feedback_override_enabled = true;
+  __set_PRIMASK(primask);
+}
+
+void motor_rotor_feedback_override_clear(void)
+{
+  uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  motor_rotor_feedback_override_enabled = false;
+  __set_PRIMASK(primask);
+}
+
+bool motor_rotor_feedback_override_active(void)
+{
+  return motor_rotor_feedback_override_enabled;
 }
 
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
@@ -24,7 +67,19 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
   uint8_t pole_pairs;
   uint32_t mechanical_speed_millirpm;
 
-  if ((feedback == NULL) ||
+  uint32_t primask;
+
+  if (feedback == NULL) return false;
+  primask = __get_PRIMASK();
+  __disable_irq();
+  if (motor_rotor_feedback_override_enabled)
+  {
+    *feedback = motor_rotor_feedback_override;
+    __set_PRIMASK(primask);
+    return true;
+  }
+  __set_PRIMASK(primask);
+  if (
       (!motor_hall_angle_estimator_read(&estimator)) ||
       (!motor_hall_decoder_sample_read(&hall)))
   {

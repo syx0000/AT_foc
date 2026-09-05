@@ -46,6 +46,7 @@
 #include "motor_inductance_identification.h"
 #include "motor_current_loop_test.h"
 #include "motor_current_control.h"
+#include "motor_current_startup.h"
 #include "motor_torque_loop_test.h"
 #include "motor_uart_port.h"
 #include "motor_control.h"
@@ -239,6 +240,7 @@ void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
   interrupt_monitor_counters.systick++;
+  motor_current_startup_process_1khz();
   motor_speed_feedback_process_1khz();
   motor_speed_control_process_1khz();
 
@@ -303,6 +305,7 @@ void ADC1_2_IRQHandler(void)
     }
     motor_open_loop_fast_process();
     motor_hall_angle_estimator_fast_process();
+    motor_current_startup_fast_process();
     motor_current_transform_fast_process();
     motor_inductance_identification_fast_process();
     motor_current_loop_test_fast_process();
@@ -425,12 +428,17 @@ void EXINT9_5_IRQHandler(void)
     motor_hall_port_edge_capture();
     if (motor_hall_port_sample_read(&hall_port_sample))
     {
-      (void)motor_hall_decoder_edge_process(
-        hall_port_sample.state, hall_port_sample.edge_count,
-        hall_port_sample.timestamp_cycles);
-      motor_commissioning_hall_edge_process();
-      motor_hall_angle_observer_edge_process();
-      motor_hall_angle_estimator_edge_process();
+      /* Only propagate a decoder-confirmed adjacent Hall transition.  A
+       * duplicate, 000/111 glitch, or non-adjacent transition must not be
+       * interpreted as a fresh rotor-angle boundary by downstream users. */
+      if (motor_hall_decoder_edge_process(
+            hall_port_sample.state, hall_port_sample.edge_count,
+            hall_port_sample.timestamp_cycles))
+      {
+        motor_commissioning_hall_edge_process();
+        motor_hall_angle_observer_edge_process();
+        motor_hall_angle_estimator_edge_process();
+      }
     }
   }
 

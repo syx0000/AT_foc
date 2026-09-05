@@ -147,19 +147,22 @@ static void transition_exception_test(void)
 
   assert(!motor_hall_decoder_edge_process(1U, 5U, 410U));
   assert(!motor_hall_decoder_edge_process(0U, 6U, 420U));
-  assert(!motor_hall_decoder_edge_process(5U, 7U, 430U));
-  assert(!motor_hall_decoder_edge_process(2U, 8U, 440U));
   sample = sample_get();
   assert(sample.duplicate_count == 1U);
-  assert(sample.invalid_transition_count == 3U);
-  assert(sample.direction == 0);
-  assert(sample.electrical_frequency_millihz == 0U);
-
-  assert(motor_hall_decoder_edge_process(3U, 9U, 500U));
-  sample = sample_get();
+  assert(sample.invalid_transition_count == 1U);
+  assert(sample.state == 1U);
+  assert(sample.valid);
   assert(sample.direction == 1);
-  assert(sample.electrical_frequency_millihz == 0U);
-  assert(motor_hall_decoder_edge_process(1U, 10U, 600U));
+  assert(sample.electrical_frequency_millihz == 10000U);
+
+  assert(!motor_hall_decoder_edge_process(2U, 7U, 430U));
+  sample = sample_get();
+  assert(sample.invalid_transition_count == 2U);
+  assert(sample.state == 1U);
+  assert(sample.direction == 1);
+  assert(sample.electrical_frequency_millihz == 10000U);
+
+  assert(motor_hall_decoder_edge_process(5U, 8U, 500U));
   sample = sample_get();
   assert(sample.electrical_frequency_millihz == 10000U);
 }

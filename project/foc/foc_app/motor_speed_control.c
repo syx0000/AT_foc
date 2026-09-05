@@ -46,6 +46,20 @@ static int32_t motor_speed_control_abs(int32_t value)
   return (value < 0) ? -value : value;
 }
 
+static int32_t motor_speed_control_current_slew(int32_t target_ma,
+                                                int32_t current_ma)
+{
+  int32_t step_ma = (int32_t)(
+    MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S /
+    MOTOR_SPEED_LOOP_FREQUENCY_HZ);
+  int64_t difference = (int64_t)target_ma - current_ma;
+
+  if (step_ma < 1) step_ma = 1;
+  if (difference > step_ma) return current_ma + step_ma;
+  if (difference < -step_ma) return current_ma - step_ma;
+  return target_ma;
+}
+
 /**
  * @brief 判断有符号milli-rpm指令是否在配置范围内。
  * @param speed_millirpm 待检查机械转速，单位0.001 rpm。
@@ -182,9 +196,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
 bool motor_speed_control_target_set(int32_t target_speed_millirpm)
 {
   if ((motor_speed_control_status.state != MOTOR_SPEED_CONTROL_RUNNING) ||
-      (!motor_speed_control_command_valid(target_speed_millirpm)) ||
-      (((int64_t)target_speed_millirpm *
-        motor_speed_control_status.target_speed_millirpm) <= 0))
+      (!motor_speed_control_command_valid(target_speed_millirpm)))
   {
     return false;
   }
@@ -243,10 +255,14 @@ void motor_speed_control_process_1khz(void)
     return;
   }
 
-  if (((motor_speed_control_status.target_speed_millirpm > 0) &&
-       (speed_feedback.direction < 0)) ||
-      ((motor_speed_control_status.target_speed_millirpm < 0) &&
-       (speed_feedback.direction > 0)))
+  /* 目标跨零时由斜坡完成减速、过零和反向加速；斜坡尚未到达最终
+   * 目标期间，反馈方向与最终目标暂时相反属于正常换向过程。 */
+  if ((motor_speed_ramp.current ==
+       motor_speed_control_status.target_speed_millirpm) &&
+      (((motor_speed_control_status.target_speed_millirpm > 0) &&
+        (speed_feedback.direction < 0)) ||
+       ((motor_speed_control_status.target_speed_millirpm < 0) &&
+        (speed_feedback.direction > 0))))
   {
     motor_speed_control_fault_set(
       MOTOR_SPEED_CONTROL_FAULT_REVERSE_DIRECTION);
@@ -292,6 +308,11 @@ void motor_speed_control_process_1khz(void)
   quadrature_current_ma = motor_speed_pi_process(
     &motor_speed_controller, ramped_speed_millirpm,
     speed_feedback.filtered_speed_millirpm);
+  quadrature_current_ma = motor_speed_control_current_slew(
+    quadrature_current_ma,
+    motor_speed_control_status.quadrature_current_command_ma);
+  motor_speed_pi_output_track(&motor_speed_controller,
+                              quadrature_current_ma);
   current_command.direct_reference_ma = 0;
   if (!motor_direction_transform_s32(
         quadrature_current_ma,

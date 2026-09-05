@@ -87,7 +87,8 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
 /**
  * @brief 更新运行中的目标机械转速。
  * @param target_speed_millirpm 新的有符号逻辑目标机械转速，单位0.001 rpm且不能为0。
- * @return 控制器运行、目标有效且不要求在线跨零反转时返回true，否则返回false。
+ * @return 控制器运行且目标有效时返回true，否则返回false。
+ * @details 允许在线跨零换向；控制器通过现有速度斜坡依次完成减速、过零和反向加速。
  */
 bool motor_speed_control_target_set(int32_t target_speed_millirpm);
 

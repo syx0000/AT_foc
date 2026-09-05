@@ -86,6 +86,12 @@ bool motor_current_control_config_set(
  */
 bool motor_current_control_start(const motor_current_control_command_t *command);
 
+bool motor_current_control_start_seeded(
+  const motor_current_control_command_t *command,
+  int32_t direct_voltage_seed_mv,
+  int32_t quadrature_voltage_seed_mv,
+  uint32_t sample_settle_cycles);
+
 /**
  * @brief 从其他控制模式无扰接管已经开启的PWM。
  * @param command 接管瞬间Id/Iq指令，单位mA，不允许为空。

@@ -59,17 +59,19 @@
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_4             6U
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_5             4U
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_6             2U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         51938U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         30960U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         40216U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16          7705U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16         63928U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         19215U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         58834U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         38600U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         48131U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16         14860U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16          6820U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         27083U
 /* 由35 Hz闭环平均Vd/Vq=-2910/3333 mV计算，补偿开环标定引入的41.1度超前角。 */
-#define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16           7482U
-#define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US       0U
+#define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16            561U
+#define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US      75U
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_MAXIMUM_U16 5461U /* 30度电角 */
-#define MOTOR_HALL_SIGNAL_TIMEOUT_MS                100U
+#define MOTOR_HALL_SIGNAL_TIMEOUT_MS                500U
+/* 10 kHz current loop: tolerate brief Hall input/decoder glitches. */
+#define MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES     100U
 
 /* Hall机械转速反馈：1 kHz更新，IIR滤波系数为1/8。 */
 #define MOTOR_SPEED_FEEDBACK_TIMEOUT_MS              100U
@@ -77,11 +79,13 @@
 
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
-#define MOTOR_SPEED_PI_KP_Q20                         5243L
-#define MOTOR_SPEED_PI_KI_Q20                           33L
-#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA          2000L
+#define MOTOR_SPEED_PI_KP_Q20                         3000L
+#define MOTOR_SPEED_PI_KI_Q20                            8L
+#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         10000L
+/* Limit speed-loop torque steps caused by discrete Hall speed updates. */
+#define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S     6000U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
-#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S     300U
+#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    1000U
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_STALL_MIN_TARGET_RPM               200U
 #define MOTOR_SPEED_STALL_MAX_FEEDBACK_RPM              50U
@@ -114,21 +118,52 @@
 #define MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA     10000L
 
 /* 电流PI：888 Hz带宽，参数来自Rs=273 mΩ、Ld=225 µH、Lq=206 µH。 */
-#define MOTOR_PHASE_RESISTANCE_MOHM                   273U
-#define MOTOR_DIRECT_INDUCTANCE_UH                    225U
+#define MOTOR_PHASE_RESISTANCE_MOHM                   281U
+#define MOTOR_DIRECT_INDUCTANCE_UH                    226U
 #define MOTOR_QUADRATURE_INDUCTANCE_UH                206U
 #define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               888U
-#define MOTOR_CURRENT_PI_D_KP_Q15                   41136L
+#define MOTOR_CURRENT_PI_D_KP_Q15                   41319L
 #define MOTOR_CURRENT_PI_Q_KP_Q15                   37663L
-#define MOTOR_CURRENT_PI_KI_Q15                      4991L
+#define MOTOR_CURRENT_PI_KI_Q15                      5137L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
 /* 正式电流环放开到整数百分比下的线性SVPWM上限；理论边界为Vbus/sqrt(3)=57.735%。 */
 #define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    57U
 /* 48 V母线在线性SVPWM理论边界Vbus/sqrt(3)下的dq电压矢量硬上限。 */
 #define MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV 27700L
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
+
+/* Independent current-mode I/F startup and Hall handover. */
+#define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA    1000L
+#define MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV       0L
+#define MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES       5U
+#define MOTOR_CURRENT_STARTUP_ALIGNMENT_ANGLE_U16        0U
+#define MOTOR_CURRENT_STARTUP_ALIGNMENT_TIME_MS        250U
+/* Begin almost stationary after alignment.  A 2 Hz electrical-frequency
+ * step started rotating the forced field before Iq had built up. */
+#define MOTOR_CURRENT_STARTUP_INITIAL_FREQUENCY_MILLIHZ  200L
+#define MOTOR_CURRENT_STARTUP_HANDOVER_FREQUENCY_MILLIHZ 12000L
+#define MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ 8000U
+#define MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS 20L
+#define MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS     600L
+/* After Hall capture, unload the pull-in torque gently so a low requested
+   current does not decelerate the rotor below the Hall feedback threshold. */
+#define MOTOR_CURRENT_STARTUP_HANDOVER_CURRENT_RAMP_MA_PER_MS 5L
+#define MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA     1600L
+/* I/F startup current is raised only when the measured Hall speed falls
+ * behind the commanded rotating field.  With no Hall edges, increase the
+ * available pull-in torque gradually up to this ceiling. */
+#define MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA    10000L
+#define MOTOR_CURRENT_STARTUP_IF_BOOST_MA_PER_MS          30L
+/* Require two complete six-step electrical revolutions before handover.
+ * Six edges allowed capture while the rotor was still rocking, which made
+ * low-current starts repeatedly accelerate and decelerate. */
+#define MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES        12U
+/* 1000 PWM cycles = about 50 ms at 20 kHz.  Spread the I/F-to-Hall angle
+ * correction over a longer interval to reduce the handover torque step. */
+#define MOTOR_CURRENT_STARTUP_BLEND_CYCLES             1000U
+#define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
-#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA             2000L
+#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
 #define MOTOR_CURRENT_LOOP_TEST_DIRECT_REFERENCE_MA  2000L
 #define MOTOR_CURRENT_LOOP_TEST_DURATION_SAMPLES    10000U
 #define MOTOR_CURRENT_LOOP_TEST_ABORT_CURRENT_MA    10000L
@@ -200,6 +235,46 @@
 
 #if (MOTOR_SPEED_OVERSPEED_RPM <= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)
 #error "overspeed threshold must be above maximum command speed"
+#endif
+
+#if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA > MOTOR_CURRENT_COMMAND_MAX_MA))
+#error "current startup alignment current is outside the current-loop limit"
+#endif
+
+#if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV < 0L) || \
+     (MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV > \
+      MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV) || \
+     (MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES == 0U) || \
+     (MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES >= \
+      MOTOR_SOFTWARE_OVERCURRENT_SAMPLES))
+#error "current startup sampling settle configuration is invalid"
+#endif
+
+#if ((MOTOR_CURRENT_STARTUP_INITIAL_FREQUENCY_MILLIHZ <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_INITIAL_FREQUENCY_MILLIHZ > \
+      MOTOR_CURRENT_STARTUP_HANDOVER_FREQUENCY_MILLIHZ))
+#error "current startup initial frequency must not exceed handover frequency"
+#endif
+
+#if ((MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_HANDOVER_CURRENT_RAMP_MA_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA < \
+      MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA) || \
+     (MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA > \
+      MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA) || \
+     (MOTOR_CURRENT_STARTUP_IF_BOOST_MA_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA > \
+      MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA) || \
+     (MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES < 6U) || \
+     (MOTOR_CURRENT_STARTUP_BLEND_CYCLES == 0U))
+#error "current startup ramp, Hall edge count, and blend length must be valid"
+#endif
+
+#if (MOTOR_CURRENT_STARTUP_TIMEOUT_MS <= MOTOR_CURRENT_STARTUP_ALIGNMENT_TIME_MS)
+#error "current startup timeout must exceed alignment time"
 #endif
 
 #endif /* MOTOR_CONTROL_CONFIG_H */

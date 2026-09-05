@@ -11,10 +11,13 @@
 #include "motor_control.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
+#include "motor_current_startup.h"
 #include "motor_current_sample.h"
 #include "motor_current_transform.h"
 #include "motor_direction.h"
 #include "motor_foc_math.h"
+#include "motor_hall_angle_estimator.h"
+#include "motor_hall_decoder.h"
 #include "motor_rotor_feedback.h"
 #include "motor_log.h"
 #include "motor_parameter.h"
@@ -117,6 +120,7 @@ void motor_control_init(void)
   motor_fault_history_newest = 0U;
   motor_fault_sequence = 0U;
   motor_fault_pending_mask = 0U;
+  motor_current_startup_init();
   for (index = 0U; index < MOTOR_FAULT_HISTORY_DEPTH; index++)
   {
     motor_fault_history[index].first_code = MOTOR_FAULT_NONE;
@@ -165,8 +169,15 @@ bool motor_control_current_control_start(
   bool handover_ok;
 
   (void)motor_slow_sensor_process();
-  if ((!motor_control_current_command_to_physical(command, &physical_command)) ||
-      (motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+  if (!motor_control_current_command_to_physical(command, &physical_command))
+    return false;
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
+  {
+    if (!motor_current_startup_start(&physical_command)) return false;
+    motor_control_status.state = MOTOR_CONTROL_STATE_CURRENT_STARTING;
+    return true;
+  }
+  if ((motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (!motor_open_loop_status_read(&open_loop)) ||
       (open_loop.state != MOTOR_OPEN_LOOP_RUNNING) ||
       (!motor_rotor_feedback_read(&rotor_feedback)) ||
@@ -201,8 +212,11 @@ bool motor_control_current_control_command_set(
   const motor_current_control_command_t *command)
 {
   motor_current_control_command_t physical_command;
+  if (!motor_control_current_command_to_physical(command, &physical_command))
+    return false;
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING)
+    return motor_current_startup_command_set(&physical_command);
   return (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) &&
-         motor_control_current_command_to_physical(command, &physical_command) &&
          motor_current_control_command_set(&physical_command);
 }
 bool motor_control_speed_control_start(int32_t target_speed_rpm)
@@ -276,9 +290,11 @@ void motor_control_stop(void)
 {
   motor_control_state_t previous_state = motor_control_status.state;
   motor_speed_control_stop();
+  motor_current_startup_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
-  if ((previous_state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+  if ((previous_state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
+      (previous_state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (previous_state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
       (previous_state == MOTOR_CONTROL_STATE_SPEED_CONTROL))
     motor_control_status.state = MOTOR_CONTROL_STATE_READY;
@@ -381,6 +397,7 @@ motor_fault_clear_result_t motor_control_fault_clear_ex(void)
       (motor_control_status.fault_code == MOTOR_FAULT_DRIVER_NOT_READY))
     return MOTOR_FAULT_CLEAR_RESET_REQUIRED;
   motor_speed_control_stop();
+  motor_current_startup_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
   if (!motor_current_sample_fault_clear())
@@ -404,6 +421,11 @@ void motor_control_poll(void)
   uint32_t fault_index;
   uint32_t primask;
   motor_current_sample_state_t current;
+  motor_current_startup_status_t current_startup;
+  motor_hall_sample_t hall;
+  motor_hall_angle_estimator_t estimator;
+  bool hall_read_ok;
+  bool estimator_read_ok;
 
   primask = __get_PRIMASK();
   __disable_irq();
@@ -431,9 +453,29 @@ void motor_control_poll(void)
     }
   }
 
+  /* A pending ISR fault is authoritative.  Do not inspect stale subsystem
+     states in the same poll and append a secondary handover fault. */
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_FAULT) return;
+
   (void)motor_open_loop_status_read(&open_loop);
   (void)motor_current_control_status_read(&current_control);
   (void)motor_speed_control_status_read(&speed_control);
+  (void)motor_current_startup_status_read(&current_startup);
+  if ((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) &&
+      (current_startup.state == MOTOR_CURRENT_STARTUP_COMPLETE))
+  {
+    motor_control_status.state = MOTOR_CONTROL_STATE_CURRENT_CONTROL;
+  }
+  else if ((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) &&
+           (current_startup.state == MOTOR_CURRENT_STARTUP_FAULT))
+  {
+    LOGE("Current startup fault: reason=%u elapsed_ms=%lu edges=%u\r\n",
+      (unsigned int)current_startup.fault,
+      (unsigned long)current_startup.elapsed_ms,
+      (unsigned int)current_startup.qualified_edges);
+    motor_control_fault_set(MOTOR_FAULT_CURRENT_HANDOVER);
+    return;
+  }
   if (open_loop.state == MOTOR_OPEN_LOOP_FAULT)
     motor_control_fault_set(MOTOR_FAULT_OPEN_LOOP);
   if (current_control.state == MOTOR_CURRENT_CONTROL_FAULT)
@@ -441,13 +483,34 @@ void motor_control_poll(void)
     if (current_control.fault == MOTOR_CURRENT_CONTROL_FAULT_SAMPLE)
       motor_control_fault_set(MOTOR_FAULT_CURRENT_SAMPLE);
     else if (current_control.fault == MOTOR_CURRENT_CONTROL_FAULT_HALL)
+    {
+      hall_read_ok = motor_hall_decoder_sample_read(&hall);
+      estimator_read_ok = motor_hall_angle_estimator_read(&estimator);
+      LOGE("Hall fault diag: read=%u/%u valid=%u/%u state=%u/%u dir=%d/%d freq_mhz=%lu/%lu edges=%lu invalid=%lu duplicate=%lu iq=%ld/%ld\r\n",
+        hall_read_ok ? 1U : 0U, estimator_read_ok ? 1U : 0U,
+        (hall_read_ok && hall.valid) ? 1U : 0U,
+        (estimator_read_ok && estimator.valid) ? 1U : 0U,
+        hall_read_ok ? (unsigned int)hall.state : 0U,
+        estimator_read_ok ? (unsigned int)estimator.hall_state : 0U,
+        hall_read_ok ? (int)hall.direction : 0,
+        estimator_read_ok ? (int)estimator.direction : 0,
+        hall_read_ok ? (unsigned long)hall.electrical_frequency_millihz : 0UL,
+        estimator_read_ok ?
+          (unsigned long)estimator.electrical_frequency_millihz : 0UL,
+        hall_read_ok ? (unsigned long)hall.edge_count : 0UL,
+        hall_read_ok ? (unsigned long)hall.invalid_transition_count : 0UL,
+        hall_read_ok ? (unsigned long)hall.duplicate_count : 0UL,
+        (long)current_control.quadrature_feedback_ma,
+        (long)current_control.command.quadrature_reference_ma);
       motor_control_fault_set(MOTOR_FAULT_HALL);
+    }
     else if (current_control.fault == MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT)
       motor_control_fault_set(MOTOR_FAULT_OVERCURRENT);
     else if (current_control.fault == MOTOR_CURRENT_CONTROL_FAULT_PWM)
       motor_control_fault_set(MOTOR_FAULT_PWM);
     else
       motor_control_fault_set(MOTOR_FAULT_CONTROL_SUBSYSTEM);
+    return;
   }
   if (speed_control.state == MOTOR_SPEED_CONTROL_FAULT)
   {

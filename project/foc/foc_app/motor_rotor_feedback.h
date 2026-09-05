@@ -15,7 +15,8 @@
 typedef enum
 {
   MOTOR_ROTOR_FEEDBACK_SOURCE_HALL = 0,
-  MOTOR_ROTOR_FEEDBACK_SOURCE_ABSOLUTE_ENCODER
+  MOTOR_ROTOR_FEEDBACK_SOURCE_ABSOLUTE_ENCODER,
+  MOTOR_ROTOR_FEEDBACK_SOURCE_CURRENT_STARTUP
 } motor_rotor_feedback_source_t;
 
 typedef struct
@@ -49,5 +50,11 @@ void motor_rotor_feedback_init(void);
  *          因此mechanical_angle_valid为false。后续SPI编码器实现应保持相同输出语义。
  */
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback);
+
+void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
+                                       int32_t electrical_frequency_millihz,
+                                       int8_t direction);
+void motor_rotor_feedback_override_clear(void);
+bool motor_rotor_feedback_override_active(void);
 
 #endif /* MOTOR_ROTOR_FEEDBACK_H */

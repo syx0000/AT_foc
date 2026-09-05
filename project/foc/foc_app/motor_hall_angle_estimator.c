@@ -180,9 +180,16 @@ void motor_hall_angle_estimator_edge_process(void)
   bool estimator_was_valid;
   int8_t previous_direction;
 
-  if ((!motor_hall_decoder_sample_read(&hall_sample)) ||
-      (!motor_parameter_active_read(&parameter)) ||
-      (!hall_sample.valid) ||
+  /* Both snapshots use sequence counters.  An edge interrupt can collide
+   * with a lower-priority update and make a read return false temporarily.
+   * Keep the last valid estimate and retry at the next edge; a snapshot
+   * collision is not evidence that the physical Hall signal disappeared. */
+  if (!motor_hall_decoder_sample_read(&hall_sample))
+    return;
+  if (!motor_parameter_active_read(&parameter))
+    return;
+
+  if ((!hall_sample.valid) ||
       (hall_sample.direction == 0) ||
       (hall_sample.electrical_frequency_millihz == 0U))
   {

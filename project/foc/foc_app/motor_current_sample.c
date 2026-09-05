@@ -9,6 +9,7 @@
 #include "at32f45x.h"
 #include "motor_current_sample.h"
 #include "motor_control_config.h"
+#include "motor_pwm_port.h"
 
 static volatile bool motor_current_offsets_ready;
 static volatile uint16_t motor_current_phase_a_offset_raw;
@@ -182,7 +183,14 @@ bool motor_current_sample_process(const motor_adc_fast_sample_t *sample)
       motor_current_state.phase_c_ma);
   }
 
-  if (max_absolute_current >= (uint32_t)MOTOR_SOFTWARE_OVERCURRENT_MA)
+  /* EN_GATE is dropped after any fault, at which point the current-sense
+     outputs collapse toward zero ADC codes.  Those samples are not physical
+     phase currents and must not create a secondary software-overcurrent. */
+  if (!motor_pwm_port_output_is_enabled())
+  {
+    motor_current_state.overcurrent_count = 0U;
+  }
+  else if (max_absolute_current >= (uint32_t)MOTOR_SOFTWARE_OVERCURRENT_MA)
   {
     if (motor_current_state.overcurrent_count <
         MOTOR_SOFTWARE_OVERCURRENT_SAMPLES)

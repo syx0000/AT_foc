@@ -393,7 +393,7 @@
         "down": true,
         "subCmds": [
           {
-            "name": "current start Id=0 Iq=1A",
+            "name": "current start自动I/F Id=0 Iq=1A",
             "intro_on": true,
             "intro": "",
             "hex_on": false,

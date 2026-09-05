@@ -26,6 +26,10 @@ static motor_current_control_config_t motor_current_control_config;
 static motor_current_pi_axis_t motor_current_control_d_pi, motor_current_control_q_pi;
 static uint32_t motor_current_control_bus_mv;
 static int32_t motor_current_control_voltage_limit_mv;
+static uint32_t motor_current_control_sample_settle_cycles;
+static uint32_t motor_current_control_hall_invalid_cycles;
+static int32_t motor_current_control_start_direct_mv;
+static int32_t motor_current_control_start_quadrature_mv;
 
 static void motor_current_control_bus_voltage_update(void)
 {
@@ -139,9 +143,10 @@ static bool motor_current_control_prepare(
   (void)motor_current_pi_axis_output_seed(&motor_current_control_d_pi, direct_seed_mv);
   (void)motor_current_pi_axis_output_seed(&motor_current_control_q_pi, quadrature_seed_mv);
   motor_current_control_command = *command;
-  motor_current_control_status.state = MOTOR_CURRENT_CONTROL_RUNNING;
   motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_NONE;
   motor_current_control_status.sample_count = 0U;
+  motor_current_control_sample_settle_cycles = 0U;
+  motor_current_control_hall_invalid_cycles = 0U;
   return true;
 }
 
@@ -162,6 +167,7 @@ void motor_current_control_init(void)
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;
   motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_NONE;
   motor_current_control_status.sample_count = 0U;
+  motor_current_control_hall_invalid_cycles = 0U;
 }
 
 bool motor_current_control_parameter_reload(void)
@@ -194,21 +200,40 @@ bool motor_current_control_config_set(const motor_current_control_config_t *conf
 
 bool motor_current_control_start(const motor_current_control_command_t *command)
 {
+  return motor_current_control_start_seeded(command, 0, 0, 0U);
+}
+
+bool motor_current_control_start_seeded(
+  const motor_current_control_command_t *command,
+  int32_t direct_voltage_seed_mv,
+  int32_t quadrature_voltage_seed_mv,
+  uint32_t sample_settle_cycles)
+{
   motor_rotor_feedback_t rotor_feedback;
   if (motor_pwm_port_output_is_enabled() ||
-      (!motor_current_control_prepare(command, 0, 0)) ||
+      (!motor_current_control_prepare(command, direct_voltage_seed_mv,
+                                      quadrature_voltage_seed_mv)) ||
       (!motor_rotor_feedback_read(&rotor_feedback)))
   {
     return false;
   }
   motor_current_control_voltage_apply(
-    0, 0, rotor_feedback.electrical_angle_u16);
+    direct_voltage_seed_mv, quadrature_voltage_seed_mv,
+    rotor_feedback.electrical_angle_u16);
+  motor_current_control_start_direct_mv = direct_voltage_seed_mv;
+  motor_current_control_start_quadrature_mv = quadrature_voltage_seed_mv;
+  motor_current_control_sample_settle_cycles = sample_settle_cycles;
   if (!motor_pwm_port_output_enable())
   {
+    motor_current_control_sample_settle_cycles = 0U;
     motor_current_control_status.state = MOTOR_CURRENT_CONTROL_FAULT;
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_PWM;
     return false;
   }
+  /* Publish RUNNING only after the initial vector, settle guard and MOE are
+     all live; otherwise the ADC ISR can execute the controller in the
+     prepare-to-enable window and immediately fault on MOE=0. */
+  motor_current_control_status.state = MOTOR_CURRENT_CONTROL_RUNNING;
   return true;
 }
 
@@ -216,9 +241,14 @@ bool motor_current_control_handover(
   const motor_current_control_command_t *command,
   int32_t direct_voltage_seed_mv, int32_t quadrature_voltage_seed_mv)
 {
-  return motor_pwm_port_output_is_enabled() &&
-    motor_current_control_prepare(command, direct_voltage_seed_mv,
-                                  quadrature_voltage_seed_mv);
+  if ((!motor_pwm_port_output_is_enabled()) ||
+      (!motor_current_control_prepare(command, direct_voltage_seed_mv,
+                                      quadrature_voltage_seed_mv)))
+  {
+    return false;
+  }
+  motor_current_control_status.state = MOTOR_CURRENT_CONTROL_RUNNING;
+  return true;
 }
 
 bool motor_current_control_command_set(
@@ -239,6 +269,8 @@ bool motor_current_control_command_set(
 
 void motor_current_control_stop(void)
 {
+  motor_current_control_sample_settle_cycles = 0U;
+  motor_current_control_hall_invalid_cycles = 0U;
   motor_pwm_port_output_disable();
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;
 }
@@ -253,6 +285,23 @@ void motor_current_control_fast_process(void)
   bool limited;
 
   if (motor_current_control_status.state != MOTOR_CURRENT_CONTROL_RUNNING) return;
+  if (motor_current_control_sample_settle_cycles != 0U)
+  {
+    if ((!motor_rotor_feedback_read(&rotor_feedback)) ||
+        (!rotor_feedback.valid))
+    {
+      motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_HALL;
+      motor_current_control_status.state = MOTOR_CURRENT_CONTROL_FAULT;
+      motor_pwm_port_emergency_stop();
+      return;
+    }
+    motor_current_control_sample_settle_cycles--;
+    motor_current_control_voltage_apply(
+      motor_current_control_start_direct_mv,
+      motor_current_control_start_quadrature_mv,
+      rotor_feedback.electrical_angle_u16);
+    return;
+  }
   if (!motor_current_sample_state_read(&current))
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_SAMPLE;
   else if (!motor_rotor_feedback_read(&rotor_feedback))
@@ -261,47 +310,63 @@ void motor_current_control_fast_process(void)
     return;
   }
   else if (!rotor_feedback.valid)
+  {
+    if (motor_current_control_hall_invalid_cycles <
+        MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES)
+    {
+      motor_current_control_hall_invalid_cycles++;
+    }
+    if (motor_current_control_hall_invalid_cycles <
+        MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES)
+    {
+      return;
+    }
     motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_HALL;
-  else if (current.overcurrent_fault ||
-           (motor_current_control_abs(current.phase_a_ma) >= motor_current_control_config.abort_current_ma) ||
-           (motor_current_control_abs(current.phase_b_ma) >= motor_current_control_config.abort_current_ma) ||
-           (motor_current_control_abs(current.phase_c_ma) >= motor_current_control_config.abort_current_ma))
-    motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT;
-  else if (MOTOR_PWM_TIMER->brk_bit.oen == 0U)
-    motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_PWM;
+  }
   else
   {
-    motor_current_control_bus_voltage_update();
-    alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
-    dq = motor_foc_park_q15(alpha_beta,
-                            rotor_feedback.electrical_angle_u16);
-    direct_ma = (int32_t)(((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
-    quadrature_ma = (int32_t)(((int64_t)dq.quadrature_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
-    direct_mv = motor_current_pi_axis_process(&motor_current_control_d_pi,
-      motor_current_control_command.direct_reference_ma, direct_ma);
-    quadrature_mv = motor_current_pi_axis_process(&motor_current_control_q_pi,
-      motor_current_control_command.quadrature_reference_ma, quadrature_ma);
-    limited = motor_voltage_limit_apply(&direct_mv, &quadrature_mv,
-                                         motor_current_control_voltage_limit_mv);
-    if (limited)
+    motor_current_control_hall_invalid_cycles = 0U;
+    if (current.overcurrent_fault ||
+        (motor_current_control_abs(current.phase_a_ma) >= motor_current_control_config.abort_current_ma) ||
+        (motor_current_control_abs(current.phase_b_ma) >= motor_current_control_config.abort_current_ma) ||
+        (motor_current_control_abs(current.phase_c_ma) >= motor_current_control_config.abort_current_ma))
+      motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT;
+    else if (MOTOR_PWM_TIMER->brk_bit.oen == 0U)
+      motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_PWM;
+    else
     {
-      motor_current_pi_axis_output_track(&motor_current_control_d_pi, direct_mv);
-      motor_current_pi_axis_output_track(&motor_current_control_q_pi, quadrature_mv);
+      motor_current_control_bus_voltage_update();
+      alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
+      dq = motor_foc_park_q15(alpha_beta,
+                              rotor_feedback.electrical_angle_u16);
+      direct_ma = (int32_t)(((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
+      quadrature_ma = (int32_t)(((int64_t)dq.quadrature_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
+      direct_mv = motor_current_pi_axis_process(&motor_current_control_d_pi,
+        motor_current_control_command.direct_reference_ma, direct_ma);
+      quadrature_mv = motor_current_pi_axis_process(&motor_current_control_q_pi,
+        motor_current_control_command.quadrature_reference_ma, quadrature_ma);
+      limited = motor_voltage_limit_apply(&direct_mv, &quadrature_mv,
+                                           motor_current_control_voltage_limit_mv);
+      if (limited)
+      {
+        motor_current_pi_axis_output_track(&motor_current_control_d_pi, direct_mv);
+        motor_current_pi_axis_output_track(&motor_current_control_q_pi, quadrature_mv);
+      }
+      motor_current_control_voltage_apply(direct_mv, quadrature_mv,
+                                          rotor_feedback.electrical_angle_u16);
+      motor_current_control_status.command = motor_current_control_command;
+      motor_current_control_status.direct_feedback_ma = direct_ma;
+      motor_current_control_status.quadrature_feedback_ma = quadrature_ma;
+      motor_current_control_status.direct_voltage_mv = direct_mv;
+      motor_current_control_status.quadrature_voltage_mv = quadrature_mv;
+      motor_current_control_status.electrical_angle_u16 =
+        rotor_feedback.electrical_angle_u16;
+      motor_current_control_status.electrical_frequency_millihz =
+        rotor_feedback.electrical_frequency_millihz;
+      motor_current_control_status.voltage_limited = limited;
+      motor_current_control_status.sample_count++;
+      return;
     }
-    motor_current_control_voltage_apply(direct_mv, quadrature_mv,
-                                        rotor_feedback.electrical_angle_u16);
-    motor_current_control_status.command = motor_current_control_command;
-    motor_current_control_status.direct_feedback_ma = direct_ma;
-    motor_current_control_status.quadrature_feedback_ma = quadrature_ma;
-    motor_current_control_status.direct_voltage_mv = direct_mv;
-    motor_current_control_status.quadrature_voltage_mv = quadrature_mv;
-    motor_current_control_status.electrical_angle_u16 =
-      rotor_feedback.electrical_angle_u16;
-    motor_current_control_status.electrical_frequency_millihz =
-      rotor_feedback.electrical_frequency_millihz;
-    motor_current_control_status.voltage_limited = limited;
-    motor_current_control_status.sample_count++;
-    return;
   }
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_FAULT;
   motor_pwm_port_emergency_stop();

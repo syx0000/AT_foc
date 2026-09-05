@@ -17,6 +17,7 @@
 #include "motor_hall_angle_estimator.h"
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
+#include "motor_current_startup.h"
 #include "motor_current_sample.h"
 #include "motor_control.h"
 #include "motor_direction.h"
@@ -354,6 +355,7 @@ static void motor_cli_command_execute(char *line)
   motor_open_loop_status_t open_loop;
   motor_current_control_status_t current_control;
   motor_current_control_command_t current_command;
+  motor_current_startup_status_t current_startup;
   motor_control_status_t motor;
   motor_speed_feedback_t speed_feedback;
   motor_speed_control_status_t speed_control;
@@ -396,7 +398,8 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "reset") == 0)
   {
     (void)motor_control_status_read(&motor);
-    if ((motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
+    if ((motor.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
+        (motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
         (motor.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
         (motor.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
         motor_pwm_port_output_is_enabled())
@@ -428,6 +431,7 @@ static void motor_cli_command_execute(char *line)
     (void)motor_control_status_read(&motor);
     (void)motor_speed_feedback_read(&speed_feedback);
     (void)motor_speed_control_status_read(&speed_control);
+    (void)motor_current_startup_status_read(&current_startup);
     (void)motor_direction_transform_s32(
       open_loop.actual_frequency_millihz,
       motor_parameter_direction_inverted_get(), &logical_open_actual_millihz);
@@ -440,11 +444,14 @@ static void motor_cli_command_execute(char *line)
     (void)motor_direction_transform_s32(
       current_control.command.quadrature_reference_ma,
       motor_parameter_direction_inverted_get(), &logical_current_reference_ma);
-    printf("OK motor=%u motor_fault=%s(%u) direction=%s open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
+    printf("OK motor=%u motor_fault=%s(%u) direction=%s startup=%u/%u edges=%u open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
       (unsigned int)motor.state,
       motor_control_fault_name_get(motor.fault_code),
       (unsigned int)motor.fault_code,
       motor_parameter_direction_inverted_get() ? "reverse" : "normal",
+      (unsigned int)current_startup.state,
+      (unsigned int)current_startup.fault,
+      (unsigned int)current_startup.qualified_edges,
       (unsigned int)open_loop.state,
       (long)logical_open_actual_millihz,
       (long)logical_open_target_millihz,

@@ -161,9 +161,6 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
   previous_state = motor_hall_decoder_sample.state;
   state_valid = ((state != 0U) && (state != 7U));
   previous_valid = ((previous_state != 0U) && (previous_state != 7U));
-  motor_hall_decoder_sample.state = state;
-  motor_hall_decoder_sample.valid = state_valid;
-  motor_hall_decoder_sample.edge_count = edge_count;
 
   if (state == previous_state)
   {
@@ -171,9 +168,21 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
     motor_hall_decoder_sequence++;
     return false;
   }
-  if ((!state_valid) || (!previous_valid))
+  if (!state_valid)
   {
+    /* Reject a transient 000/111 sample without destroying the last valid
+       sector, direction, or speed window.  A real disconnected/stalled Hall
+       input is still caught by the estimator's edge timeout. */
     motor_hall_decoder_sample.invalid_transition_count++;
+    motor_hall_decoder_sequence++;
+    return false;
+  }
+  if (!previous_valid)
+  {
+    /* Establish a valid baseline when initialization happened on 000/111. */
+    motor_hall_decoder_sample.state = state;
+    motor_hall_decoder_sample.valid = true;
+    motor_hall_decoder_sample.edge_count = edge_count;
     motor_hall_decoder_sample.direction = 0;
     motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
     motor_hall_decoder_sample.interval_cycles = 0U;
@@ -194,16 +203,17 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
   }
   else
   {
+    /* Reject a skipped/non-adjacent transition and continue from the last
+       accepted sector.  This prevents one noisy edge from forcing a complete
+       Hall speed re-acquisition. */
     motor_hall_decoder_sample.invalid_transition_count++;
-    motor_hall_decoder_sample.direction = 0;
-    motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
-    motor_hall_decoder_sample.interval_cycles = 0U;
-    motor_hall_decoder_last_direction = 0;
-    motor_hall_decoder_speed_reset(timestamp_cycles);
     motor_hall_decoder_sequence++;
     return false;
   }
 
+  motor_hall_decoder_sample.state = state;
+  motor_hall_decoder_sample.valid = true;
+  motor_hall_decoder_sample.edge_count = edge_count;
   motor_hall_decoder_sample.direction = direction;
   motor_hall_decoder_sample.previous_state = previous_state;
   motor_hall_decoder_sample.timestamp_cycles = timestamp_cycles;
