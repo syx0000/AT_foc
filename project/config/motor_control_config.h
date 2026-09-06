@@ -162,6 +162,9 @@
  * correction over a longer interval to reduce the handover torque step. */
 #define MOTOR_CURRENT_STARTUP_BLEND_CYCLES             1000U
 #define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
+#define MOTOR_SPEED_REVERSE_ENTRY_RPM                    150U
+#define MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA         2000L
+#define MOTOR_SPEED_REVERSE_CURRENT_RAMP_MA_PER_MS        10L
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
 #define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
 #define MOTOR_CURRENT_LOOP_TEST_DIRECT_REFERENCE_MA  2000L

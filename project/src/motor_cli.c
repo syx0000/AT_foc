@@ -399,6 +399,8 @@ static void motor_cli_command_execute(char *line)
   {
     (void)motor_control_status_read(&motor);
     if ((motor.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
+        (motor.state == MOTOR_CONTROL_STATE_SPEED_STARTING) ||
+        (motor.state == MOTOR_CONTROL_STATE_SPEED_REVERSING) ||
         (motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
         (motor.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
         (motor.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
@@ -714,7 +716,7 @@ static void motor_cli_command_execute(char *line)
     if (motor_control_speed_control_start((int32_t)speed_rpm))
       printf("OK speed started target=%ld rpm\r\n", speed_rpm);
     else
-      printf("ERR 10 open_not_running_or_speed_feedback_invalid\r\n");
+      printf("ERR 10 motor_not_ready_or_speed_start_failed\r\n");
   }
   else if (sscanf(line, "speed set %ld", &speed_rpm) == 1)
   {
@@ -728,7 +730,7 @@ static void motor_cli_command_execute(char *line)
     if (motor_control_speed_control_target_set((int32_t)speed_rpm))
       printf("OK speed updated target=%ld rpm\r\n", speed_rpm);
     else
-      printf("ERR 11 speed_not_running_or_invalid_command\r\n");
+      printf("ERR 11 speed_not_running_invalid_or_direction_change\r\n");
   }
   else if (sscanf(line, "current start %ld %ld", &direct_current_ma,
                   &quadrature_current_ma) == 2)

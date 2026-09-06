@@ -40,6 +40,8 @@ typedef struct
 void motor_current_startup_init(void);
 bool motor_current_startup_start(
   const motor_current_control_command_t *physical_command);
+bool motor_current_startup_reverse_start(
+  const motor_current_control_command_t *physical_command);
 bool motor_current_startup_command_set(
   const motor_current_control_command_t *physical_command);
 void motor_current_startup_stop(void);
