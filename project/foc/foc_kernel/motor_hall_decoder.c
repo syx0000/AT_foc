@@ -257,3 +257,18 @@ bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample)
 
   return true;
 }
+
+void motor_hall_decoder_motion_reset(uint32_t timestamp_cycles)
+{
+  if (!motor_hall_decoder_initialized) return;
+
+  motor_hall_decoder_sequence++;
+  motor_hall_decoder_sample.previous_state = motor_hall_decoder_sample.state;
+  motor_hall_decoder_sample.timestamp_cycles = timestamp_cycles;
+  motor_hall_decoder_sample.interval_cycles = 0U;
+  motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
+  motor_hall_decoder_sample.direction = 0;
+  motor_hall_decoder_last_direction = 0;
+  motor_hall_decoder_speed_reset(timestamp_cycles);
+  motor_hall_decoder_sequence++;
+}

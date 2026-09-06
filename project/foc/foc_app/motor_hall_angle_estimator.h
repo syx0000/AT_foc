@@ -36,6 +36,13 @@ typedef struct
 void motor_hall_angle_estimator_init(void);
 
 /**
+ * @brief Clear direction, frequency and interpolation state after standstill.
+ * @details Retains the learned per-sector timing tables.  This prevents the
+ *          previous run direction from leaking into the next stationary start.
+ */
+void motor_hall_angle_estimator_motion_reset(void);
+
+/**
  * @brief 在Hall边沿采样完成后校正估算角度和插值步长。
  * @param 无。
  * @return 无。

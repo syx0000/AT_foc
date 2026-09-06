@@ -143,6 +143,10 @@ static bool motor_current_control_prepare(
   (void)motor_current_pi_axis_output_seed(&motor_current_control_d_pi, direct_seed_mv);
   (void)motor_current_pi_axis_output_seed(&motor_current_control_q_pi, quadrature_seed_mv);
   motor_current_control_command = *command;
+  /* The startup state machine reads the published command before the first
+     settled ADC frame.  Publish the new seed command here so a restart cannot
+     ramp from the previous run's quadrature-current reference. */
+  motor_current_control_status.command = *command;
   motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_NONE;
   motor_current_control_status.sample_count = 0U;
   motor_current_control_sample_settle_cycles = 0U;
@@ -263,16 +267,24 @@ bool motor_current_control_command_set(
   primask = __get_PRIMASK();
   __disable_irq();
   motor_current_control_command = *command;
+  motor_current_control_status.command = *command;
   if (primask == 0U) __enable_irq();
   return true;
 }
 
 void motor_current_control_stop(void)
 {
+  uint32_t primask;
+  motor_current_control_command_t zero_command = {0, 0};
   motor_current_control_sample_settle_cycles = 0U;
   motor_current_control_hall_invalid_cycles = 0U;
   motor_pwm_port_output_disable();
+  primask = __get_PRIMASK();
+  __disable_irq();
+  motor_current_control_command = zero_command;
+  motor_current_control_status.command = zero_command;
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;
+  if (primask == 0U) __enable_irq();
 }
 
 void motor_current_control_fast_process(void)

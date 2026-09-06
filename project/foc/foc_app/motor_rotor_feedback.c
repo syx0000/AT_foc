@@ -12,6 +12,7 @@
 #include "motor_hall_decoder.h"
 #include "motor_parameter.h"
 #include "motor_rotor_feedback.h"
+#include "motor_timebase.h"
 
 static volatile motor_rotor_feedback_t motor_rotor_feedback_override;
 static volatile bool motor_rotor_feedback_override_enabled;
@@ -29,15 +30,20 @@ void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
   uint32_t magnitude = (electrical_frequency_millihz < 0) ?
     (uint32_t)(-electrical_frequency_millihz) :
     (uint32_t)electrical_frequency_millihz;
+  uint8_t pole_pairs = motor_parameter_pole_pairs_get();
+  uint32_t mechanical_speed_millirpm = (pole_pairs == 0U) ? 0U :
+    (uint32_t)(((uint64_t)magnitude * 60U) / pole_pairs);
   primask = __get_PRIMASK();
   __disable_irq();
   motor_rotor_feedback_override.source =
     MOTOR_ROTOR_FEEDBACK_SOURCE_CURRENT_STARTUP;
   motor_rotor_feedback_override.electrical_angle_u16 = electrical_angle_u16;
   motor_rotor_feedback_override.mechanical_angle_u16 = 0U;
-  motor_rotor_feedback_override.mechanical_speed_millirpm = 0;
+  motor_rotor_feedback_override.mechanical_speed_millirpm =
+    (direction < 0) ? -(int32_t)mechanical_speed_millirpm :
+                      (int32_t)mechanical_speed_millirpm;
   motor_rotor_feedback_override.electrical_frequency_millihz = magnitude;
-  motor_rotor_feedback_override.timestamp_cycles = 0U;
+  motor_rotor_feedback_override.timestamp_cycles = motor_timebase_cycles_get();
   motor_rotor_feedback_override.update_count++;
   motor_rotor_feedback_override.source_state = 0U;
   motor_rotor_feedback_override.direction = direction;

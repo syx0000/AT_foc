@@ -65,4 +65,13 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
  */
 bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample);
 
+/**
+ * @brief Clear the retained direction and speed history at a confirmed stop.
+ * @param timestamp_cycles Timestamp used as the baseline for the next edge.
+ * @details Keeps the current Hall sector, transition counters and calibrated
+ *          positive sequence.  The next edge establishes a fresh direction;
+ *          the following same-direction edge establishes speed.
+ */
+void motor_hall_decoder_motion_reset(uint32_t timestamp_cycles);
+
 #endif /* MOTOR_HALL_DECODER_H */

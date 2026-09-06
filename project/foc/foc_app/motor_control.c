@@ -238,14 +238,14 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
   {
-    /* Use the proven current-mode I/F startup from standstill.  The sign of
-       this logical Iq selects the requested speed direction; the startup
-       controller adapts the actual pull-in current from Hall speed lag. */
     current_command.direct_reference_ma = 0;
     current_command.quadrature_reference_ma =
-      (target_speed_rpm > 0) ? MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA :
-                               -MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA;
-    if (!motor_control_current_control_start(&current_command)) return false;
+      (target_speed_rpm > 0) ? MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA :
+                              -MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA;
+    if ((!motor_control_current_command_to_physical(
+           &current_command, &current_command)) ||
+        (!motor_current_startup_speed_start(&current_command)))
+      return false;
     motor_speed_start_target_rpm = target_speed_rpm;
     motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_STARTING;
     return true;
@@ -509,6 +509,23 @@ void motor_control_poll(void)
   (void)motor_current_control_status_read(&current_control);
   (void)motor_speed_control_status_read(&speed_control);
   (void)motor_current_startup_status_read(&current_startup);
+  if ((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_STARTING) &&
+      current_startup.hall_direct &&
+      current_startup.speed_control_ready &&
+      (speed_control.state == MOTOR_SPEED_CONTROL_STOPPED))
+  {
+    if ((!motor_current_control_status_read(&current_control)) ||
+        (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
+        (!motor_speed_control_start(
+          motor_speed_start_target_rpm * 1000L,
+          current_control.command.quadrature_reference_ma)) ||
+        (!motor_current_startup_current_command_release()))
+    {
+      motor_control_fault_set(MOTOR_FAULT_SPEED_START);
+      return;
+    }
+    (void)motor_speed_control_status_read(&speed_control);
+  }
   if ((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_REVERSING) &&
       (!motor_speed_reverse_if_active))
   {
@@ -540,14 +557,31 @@ void motor_control_poll(void)
         motor_speed_reverse_if_active)) &&
       (current_startup.state == MOTOR_CURRENT_STARTUP_COMPLETE))
   {
-    if ((!motor_current_control_status_read(&current_control)) ||
-        (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
-        (!motor_speed_control_start(
-          motor_speed_start_target_rpm * 1000L,
-          current_control.command.quadrature_reference_ma)))
+    if (speed_control.state != MOTOR_SPEED_CONTROL_RUNNING)
     {
-      motor_control_fault_set(MOTOR_FAULT_SPEED_START);
-      return;
+      if ((!motor_current_control_status_read(&current_control)) ||
+          (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING))
+      {
+        motor_control_fault_set(MOTOR_FAULT_SPEED_START);
+        return;
+      }
+      /* Releasing the startup angle override and publishing the corresponding
+       * speed feedback happen in different periodic tasks.  On their boundary
+       * there can be one transient frame with invalid or stale-sign feedback.
+       * Wait for the first coherent sample instead of turning that scheduler
+       * race into an intermittent speed-start fault. */
+      if ((!motor_speed_feedback_read(&speed_feedback)) ||
+          (!speed_feedback.valid) ||
+          (((int64_t)motor_speed_start_target_rpm *
+            speed_feedback.filtered_speed_millirpm) <= 0))
+        return;
+      if (!motor_speed_control_start(
+            motor_speed_start_target_rpm * 1000L,
+            current_control.command.quadrature_reference_ma))
+      {
+        motor_control_fault_set(MOTOR_FAULT_SPEED_START);
+        return;
+      }
     }
     motor_speed_start_target_rpm = 0;
     motor_speed_reverse_if_active = false;

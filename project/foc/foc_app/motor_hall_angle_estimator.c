@@ -164,6 +164,24 @@ void motor_hall_angle_estimator_init(void)
   motor_hall_last_edge_cycles = motor_timebase_cycles_get();
 }
 
+void motor_hall_angle_estimator_motion_reset(void)
+{
+  motor_hall_angle_estimator.electrical_frequency_millihz = 0U;
+  motor_hall_angle_estimator.direction = 0;
+  motor_hall_angle_estimator.valid = false;
+  motor_hall_angle_estimator.phase_step = 0;
+  motor_hall_angle_estimator.dynamic_compensation_u16 = 0;
+  motor_hall_angle_estimator.edge_error_u16 = 0;
+  motor_hall_angle_estimator.edge_correction_remaining_u16 = 0;
+  motor_hall_angle_estimator.sector_interval_cycles = 0U;
+  motor_hall_angle_estimator.sector_interpolation_active = false;
+  motor_hall_phase_step = 0;
+  motor_hall_dynamic_compensation_u16 = 0;
+  motor_hall_edge_correction_q16 = 0;
+  motor_hall_edge_correction_cycles = 0U;
+  motor_hall_last_edge_cycles = motor_timebase_cycles_get();
+}
+
 void motor_hall_angle_estimator_edge_process(void)
 {
   motor_hall_sample_t hall_sample;

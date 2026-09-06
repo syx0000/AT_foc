@@ -84,6 +84,12 @@
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         10000L
 /* Limit speed-loop torque steps caused by discrete Hall speed updates. */
 #define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S     6000U
+#define MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA       500L
+#define MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA      3000L
+#define MOTOR_SPEED_HALL_START_BOOST_DELAY_MS           150U
+#define MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS           10L
+#define MOTOR_SPEED_HALL_START_READY_EDGES                 2U
+#define MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ 2000U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    1000U
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
@@ -133,6 +139,7 @@
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
 
 /* Independent current-mode I/F startup and Hall handover. */
+#define MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE           1U
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA    1000L
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV       0L
 #define MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES       5U
@@ -148,6 +155,8 @@
 /* After Hall capture, unload the pull-in torque gently so a low requested
    current does not decelerate the rotor below the Hall feedback threshold. */
 #define MOTOR_CURRENT_STARTUP_HANDOVER_CURRENT_RAMP_MA_PER_MS 5L
+#define MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS 10L
+#define MOTOR_CURRENT_STARTUP_HALL_DIRECT_REQUIRED_EDGES          6U
 #define MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA     1600L
 /* I/F startup current is raised only when the measured Hall speed falls
  * behind the commanded rotating field.  With no Hall edges, increase the
@@ -165,6 +174,11 @@
 #define MOTOR_SPEED_REVERSE_ENTRY_RPM                    150U
 #define MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA         2000L
 #define MOTOR_SPEED_REVERSE_CURRENT_RAMP_MA_PER_MS        10L
+/* Opposite-direction stationary starts already require consecutive Hall
+ * edges with the requested sign.  Begin the existing 50 ms angle blend
+ * early, before the free-running I/F phase accumulates a large displacement
+ * from the measured rotor angle. */
+#define MOTOR_SPEED_REVERSE_HALL_REQUIRED_EDGES             2U
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
 #define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
 #define MOTOR_CURRENT_LOOP_TEST_DIRECT_REFERENCE_MA  2000L
@@ -228,6 +242,23 @@
 #error "speed control current limit exceeds current-loop command limit"
 #endif
 
+#if ((MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA <= 0L) || \
+     (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA < \
+      MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA) || \
+     (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA > \
+      MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) || \
+     (MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS <= 0L) || \
+     (MOTOR_SPEED_HALL_START_BOOST_DELAY_MS >= \
+      MOTOR_CURRENT_STARTUP_TIMEOUT_MS) || \
+     (MOTOR_SPEED_HALL_START_READY_EDGES == 0U) || \
+     (MOTOR_SPEED_HALL_START_READY_EDGES > \
+      MOTOR_CURRENT_STARTUP_HALL_DIRECT_REQUIRED_EDGES) || \
+     (MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ == 0U) || \
+     (MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ > \
+      MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ))
+#error "Hall speed-start current configuration is invalid"
+#endif
+
 #if (MOTOR_SPEED_STALL_CURRENT_PERCENT > 100U)
 #error "stall current percentage must not exceed 100 percent"
 #endif
@@ -243,6 +274,10 @@
 #if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA <= 0L) || \
      (MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA > MOTOR_CURRENT_COMMAND_MAX_MA))
 #error "current startup alignment current is outside the current-loop limit"
+#endif
+
+#if (MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE > 1U)
+#error "Hall-direct startup enable must be 0 or 1"
 #endif
 
 #if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV < 0L) || \
@@ -263,6 +298,8 @@
 #if ((MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS <= 0L) || \
      (MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS <= 0L) || \
      (MOTOR_CURRENT_STARTUP_HANDOVER_CURRENT_RAMP_MA_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS <= 0L) || \
+     (MOTOR_CURRENT_STARTUP_HALL_DIRECT_REQUIRED_EDGES == 0U) || \
      (MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA <= 0L) || \
      (MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA < \
       MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA) || \
