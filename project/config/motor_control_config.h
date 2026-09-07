@@ -84,10 +84,20 @@
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         10000L
 /* Limit speed-loop torque steps caused by discrete Hall speed updates. */
 #define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S     6000U
+/* Release excess startup torque faster than normal torque build-up. */
+#define MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S 30000U
+/* Ignore the Hall speed staircase when deciding whether torque may be
+ * released quickly during an acceleration ramp. */
+#define MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM 100U
+/* Disable fast torque release while consecutive Hall samples show decel. */
+#define MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM      50U
 #define MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA       500L
 #define MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA      3000L
 #define MOTOR_SPEED_HALL_START_BOOST_DELAY_MS           150U
 #define MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS           10L
+/* Once motion is confirmed by the first Hall edge, promptly remove the
+ * breakaway-current boost before speed-loop handover. */
+#define MOTOR_SPEED_HALL_START_RELEASE_MA_PER_MS         30L
 #define MOTOR_SPEED_HALL_START_READY_EDGES                 2U
 #define MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ 2000U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
@@ -242,12 +252,20 @@
 #error "speed control current limit exceeds current-loop command limit"
 #endif
 
+#if ((MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S < \
+      MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S) || \
+     (MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM == 0U) || \
+     (MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM == 0U))
+#error "speed control current release configuration is invalid"
+#endif
+
 #if ((MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA <= 0L) || \
      (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA < \
       MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA) || \
      (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA > \
       MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) || \
      (MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS <= 0L) || \
+     (MOTOR_SPEED_HALL_START_RELEASE_MA_PER_MS <= 0L) || \
      (MOTOR_SPEED_HALL_START_BOOST_DELAY_MS >= \
       MOTOR_CURRENT_STARTUP_TIMEOUT_MS) || \
      (MOTOR_SPEED_HALL_START_READY_EDGES == 0U) || \

@@ -21,6 +21,9 @@ static motor_speed_control_config_t motor_speed_control_config;
 static motor_speed_pi_t motor_speed_controller;
 static motor_ramp_t motor_speed_ramp;
 static volatile motor_speed_control_status_t motor_speed_control_status;
+static uint32_t motor_speed_control_last_feedback_sample_count;
+static int32_t motor_speed_control_last_raw_speed_millirpm;
+static bool motor_speed_control_feedback_decelerating;
 
 /**
  * @brief 锁存速度控制故障并安全停止底层电流环。
@@ -47,13 +50,25 @@ static int32_t motor_speed_control_abs(int32_t value)
 }
 
 static int32_t motor_speed_control_current_slew(int32_t target_ma,
-                                                int32_t current_ma)
+                                                int32_t current_ma,
+                                                bool fast_release_allowed)
 {
-  int32_t step_ma = (int32_t)(
-    MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S /
-    MOTOR_SPEED_LOOP_FREQUENCY_HZ);
+  uint32_t slew_ma_per_s = MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S;
+  int32_t step_ma;
   int64_t difference = (int64_t)target_ma - current_ma;
 
+  /* Startup handover seeds the PI with the torque already being applied.
+   * On a lightly loaded motor that torque can accelerate the rotor faster
+   * than the speed ramp.  Permit torque magnitude reduction (or reversal)
+   * to happen faster, while retaining the normal gentle torque build-up. */
+  if ((fast_release_allowed &&
+       (motor_speed_control_abs(target_ma) <
+        motor_speed_control_abs(current_ma))) ||
+      (((int64_t)target_ma * current_ma) <= 0))
+  {
+    slew_ma_per_s = MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S;
+  }
+  step_ma = (int32_t)(slew_ma_per_s / MOTOR_SPEED_LOOP_FREQUENCY_HZ);
   if (step_ma < 1) step_ma = 1;
   if (difference > step_ma) return current_ma + step_ma;
   if (difference < -step_ma) return current_ma - step_ma;
@@ -102,6 +117,9 @@ void motor_speed_control_init(void)
   motor_speed_control_status.quadrature_current_command_ma = 0;
   motor_speed_control_status.stall_time_ms = 0U;
   motor_speed_control_status.update_count = 0U;
+  motor_speed_control_last_feedback_sample_count = 0U;
+  motor_speed_control_last_raw_speed_millirpm = 0;
+  motor_speed_control_feedback_decelerating = false;
 }
 
 bool motor_speed_control_parameter_reload(void)
@@ -190,6 +208,10 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
     logical_initial_current_ma;
   motor_speed_control_status.stall_time_ms = 0U;
   motor_speed_control_status.update_count = 0U;
+  motor_speed_control_last_feedback_sample_count = speed_feedback.sample_count;
+  motor_speed_control_last_raw_speed_millirpm =
+    speed_feedback.raw_speed_millirpm;
+  motor_speed_control_feedback_decelerating = false;
   return true;
 }
 
@@ -224,6 +246,9 @@ void motor_speed_control_stop(void)
   motor_speed_control_status.feedback_speed_millirpm = 0;
   motor_speed_control_status.quadrature_current_command_ma = 0;
   motor_speed_control_status.stall_time_ms = 0U;
+  motor_speed_control_last_feedback_sample_count = 0U;
+  motor_speed_control_last_raw_speed_millirpm = 0;
+  motor_speed_control_feedback_decelerating = false;
 }
 
 void motor_speed_control_process_1khz(void)
@@ -235,6 +260,7 @@ void motor_speed_control_process_1khz(void)
   int32_t quadrature_current_ma;
   int32_t physical_quadrature_current_ma;
   int32_t stall_current_threshold_ma;
+  bool fast_release_allowed;
 
   if (motor_speed_control_status.state != MOTOR_SPEED_CONTROL_RUNNING)
   {
@@ -308,9 +334,33 @@ void motor_speed_control_process_1khz(void)
   quadrature_current_ma = motor_speed_pi_process(
     &motor_speed_controller, ramped_speed_millirpm,
     speed_feedback.filtered_speed_millirpm);
+
+  if (speed_feedback.sample_count !=
+      motor_speed_control_last_feedback_sample_count)
+  {
+    motor_speed_control_feedback_decelerating =
+      (motor_speed_control_abs(speed_feedback.raw_speed_millirpm) +
+       (int32_t)(MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM * 1000U) <
+       motor_speed_control_abs(motor_speed_control_last_raw_speed_millirpm));
+    motor_speed_control_last_feedback_sample_count =
+      speed_feedback.sample_count;
+    motor_speed_control_last_raw_speed_millirpm =
+      speed_feedback.raw_speed_millirpm;
+  }
+
+  /* Hall speed changes in sector-sized steps.  During acceleration, a new
+   * edge can briefly put feedback just ahead of the 1 rpm/ms reference and
+   * make the PI request less torque.  Do not apply the aggressive release
+   * rate for that quantisation error; reserve it for real overspeed. */
+  fast_release_allowed =
+    (!motor_speed_control_feedback_decelerating) &&
+    (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) >
+     (motor_speed_control_abs(ramped_speed_millirpm) +
+      (int32_t)(MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM * 1000U)));
   quadrature_current_ma = motor_speed_control_current_slew(
     quadrature_current_ma,
-    motor_speed_control_status.quadrature_current_command_ma);
+    motor_speed_control_status.quadrature_current_command_ma,
+    fast_release_allowed);
   motor_speed_pi_output_track(&motor_speed_controller,
                               quadrature_current_ma);
   current_command.direct_reference_ma = 0;

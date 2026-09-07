@@ -26,7 +26,7 @@ static int16_t motor_current_startup_blend_initial_error;
 static int8_t motor_current_startup_direction;
 static uint32_t motor_current_startup_feedback_invalid_cycles;
 static uint32_t motor_current_startup_direction_invalid_cycles;
-static bool motor_current_startup_reversing;
+static bool motor_current_startup_limited_if;
 static bool motor_current_startup_hall_direct;
 static uint16_t motor_current_startup_hall_direct_angle_u16;
 static bool motor_current_startup_speed_start_requested;
@@ -127,7 +127,7 @@ void motor_current_startup_init(void)
   motor_current_startup_blend_initial_error = 0;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_reversing = false;
+  motor_current_startup_limited_if = false;
   motor_current_startup_hall_direct = false;
   motor_current_startup_hall_direct_angle_u16 = 0U;
   motor_current_startup_speed_start_requested = false;
@@ -150,7 +150,7 @@ static bool motor_current_startup_start_internal(
       (motor_current_startup_status.state != MOTOR_CURRENT_STARTUP_STOPPED))
     return false;
   motor_current_startup_target = *physical_command;
-  motor_current_startup_reversing = false;
+  motor_current_startup_limited_if = false;
   motor_current_startup_direction =
     (physical_command->quadrature_reference_ma < 0) ? -1 : 1;
   motor_current_startup_status.requested_direction =
@@ -169,9 +169,11 @@ static bool motor_current_startup_start_internal(
     (motor_current_startup_last_stop_direction != 0) &&
     (motor_current_startup_last_stop_direction !=
      motor_current_startup_direction);
-  /* Reuse the proven reverse-I/F current limiter: 10 mA/ms slew and 2 A
-   * ceiling until Hall confirms capture in the requested direction. */
-  motor_current_startup_reversing = opposite_direction_start;
+  /* Stationary speed starts use the proven limited I/F pull-in path in both
+   * directions.  This avoids making same-direction restarts depend on the
+   * first two coarse Hall speed samples. */
+  motor_current_startup_limited_if =
+    opposite_direction_start || speed_start_requested;
 
   /* A stopped decoder still contains the previous run direction and its
    * six-edge speed window.  Starting in the opposite direction must not expose
@@ -192,7 +194,7 @@ static bool motor_current_startup_start_internal(
    * motor to accelerate in the old direction before reversing. */
   motor_current_startup_hall_direct =
     (MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE != 0U) &&
-    (!opposite_direction_start) && hall_center_valid;
+    (!motor_current_startup_limited_if) && hall_center_valid;
   if (motor_current_startup_hall_direct)
   {
     motor_current_startup_last_hall_update = hall.frequency_update_count;
@@ -203,7 +205,7 @@ static bool motor_current_startup_start_internal(
     motor_current_startup_last_hall_update = 0U;
     motor_current_startup_last_invalid_count = 0U;
   }
-  if (opposite_direction_start && hall_center_valid)
+  if (motor_current_startup_limited_if && hall_center_valid)
   {
     motor_current_startup_phase_accumulator =
       (uint32_t)motor_current_startup_hall_direct_angle_u16 << 16;
@@ -241,7 +243,7 @@ static bool motor_current_startup_start_internal(
   }
   motor_current_startup_status.state = motor_current_startup_hall_direct ?
     MOTOR_CURRENT_STARTUP_HALL_DIRECT :
-    ((opposite_direction_start && hall_center_valid) ?
+    ((motor_current_startup_limited_if && hall_center_valid) ?
       MOTOR_CURRENT_STARTUP_IF_RAMP : MOTOR_CURRENT_STARTUP_ALIGNING);
   motor_current_startup_status.hall_direct = motor_current_startup_hall_direct;
   motor_current_startup_status.speed_control_ready = false;
@@ -304,7 +306,7 @@ bool motor_current_startup_reverse_start(
   motor_current_startup_blend_cycles = 0U;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_reversing = true;
+  motor_current_startup_limited_if = true;
   motor_current_startup_hall_direct = false;
   motor_current_startup_speed_start_requested = false;
   motor_current_startup_current_command_released = false;
@@ -356,7 +358,7 @@ void motor_current_startup_stop(void)
   motor_current_startup_status.requested_direction = 0;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_reversing = false;
+  motor_current_startup_limited_if = false;
   motor_current_startup_hall_direct = false;
   motor_current_startup_speed_start_requested = false;
   motor_current_startup_current_command_released = false;
@@ -379,6 +381,7 @@ void motor_current_startup_process_1khz(void)
   int64_t startup_current_boost_ma;
   int32_t hall_direct_quadrature_target;
   int32_t hall_direct_current_magnitude;
+  int32_t hall_direct_current_ramp_ma_per_ms;
   uint32_t hall_direct_boost_elapsed_ms;
 
   if ((motor_current_startup_status.state == MOTOR_CURRENT_STARTUP_STOPPED) ||
@@ -401,14 +404,17 @@ void motor_current_startup_process_1khz(void)
   {
     hall_direct_quadrature_target =
       motor_current_startup_target.quadrature_reference_ma;
+    hall_direct_current_ramp_ma_per_ms =
+      MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS;
     if (motor_current_startup_speed_start_requested &&
         (!motor_current_startup_status.speed_control_ready))
     {
       hall_direct_current_magnitude =
         (hall_direct_quadrature_target < 0) ?
           -hall_direct_quadrature_target : hall_direct_quadrature_target;
-      if (motor_current_startup_status.elapsed_ms >
-          MOTOR_SPEED_HALL_START_BOOST_DELAY_MS)
+      if ((motor_current_startup_status.qualified_edges == 0U) &&
+          (motor_current_startup_status.elapsed_ms >
+           MOTOR_SPEED_HALL_START_BOOST_DELAY_MS))
       {
         hall_direct_boost_elapsed_ms =
           motor_current_startup_status.elapsed_ms -
@@ -425,6 +431,14 @@ void motor_current_startup_process_1khz(void)
         hall_direct_current_magnitude +=
           (int32_t)startup_current_boost_ma;
       }
+      else if (motor_current_startup_status.qualified_edges != 0U)
+      {
+        /* The boost is only needed to overcome static friction.  Keeping it
+         * until the full handover qualification accelerates a lightly loaded
+         * motor past a low speed target. */
+        hall_direct_current_ramp_ma_per_ms =
+          MOTOR_SPEED_HALL_START_RELEASE_MA_PER_MS;
+      }
       hall_direct_quadrature_target = motor_current_startup_direction *
                                       hall_direct_current_magnitude;
     }
@@ -437,7 +451,7 @@ void motor_current_startup_process_1khz(void)
       command.quadrature_reference_ma = motor_current_startup_ramp(
         command.quadrature_reference_ma,
         hall_direct_quadrature_target,
-        MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS);
+        hall_direct_current_ramp_ma_per_ms);
       if (!motor_current_control_command_set(&command))
       {
         motor_current_startup_fault_set(
@@ -550,7 +564,7 @@ void motor_current_startup_process_1khz(void)
       /* The torque transient is over; the live Hall estimator is already
          being mirrored by the override, so removing it is angle-continuous. */
       motor_rotor_feedback_override_clear();
-      motor_current_startup_reversing = false;
+      motor_current_startup_limited_if = false;
       motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_COMPLETE;
     }
     return;
@@ -603,7 +617,7 @@ void motor_current_startup_process_1khz(void)
     (motor_current_startup_frequency_millihz < 0) ?
       (uint32_t)(-motor_current_startup_frequency_millihz) :
       (uint32_t)motor_current_startup_frequency_millihz;
-  if (motor_current_startup_reversing)
+  if (motor_current_startup_limited_if)
   {
     startup_current_boost_ma = 0;
     if (startup_current_magnitude > MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA)
@@ -642,7 +656,7 @@ void motor_current_startup_process_1khz(void)
   command.quadrature_reference_ma = motor_current_startup_ramp(
     command.quadrature_reference_ma,
     startup_quadrature_target,
-    motor_current_startup_reversing ?
+    motor_current_startup_limited_if ?
       MOTOR_SPEED_REVERSE_CURRENT_RAMP_MA_PER_MS :
       MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS);
   if (!motor_current_control_command_set(&command))
@@ -679,7 +693,7 @@ void motor_current_startup_process_1khz(void)
   if ((motor_current_startup_status.state ==
        MOTOR_CURRENT_STARTUP_HANDOVER_WAIT) &&
       (motor_current_startup_status.qualified_edges >=
-       (motor_current_startup_reversing ?
+       (motor_current_startup_limited_if ?
           MOTOR_SPEED_REVERSE_HALL_REQUIRED_EDGES :
           MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES)) && estimator.valid &&
       (estimator.direction == motor_current_startup_direction) &&
