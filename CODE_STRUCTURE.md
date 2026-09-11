@@ -21,7 +21,6 @@ AT_foc_hall/
 ├── libraries/                       AT32 CMSIS 与标准外设驱动
 ├── tests/                           纯算法和存储单元测试
 ├── tools/motor_host/                Python 串口上位机及打包程序
-├── SNR8503M_BLDC_Hall_LIB_V24/      原始或参考 BLDC Hall 工程
 ├── sch截图/                          原理图截图
 ├── *.md                             设计、验证和错误码文档
 └── *.pdf / *.ATWP / *.json          电机资料与工程配置
@@ -182,7 +181,6 @@ motor_control 进入 READY 状态
 
 ## 9. 参考工程和文档
 
-- `SNR8503M_BLDC_Hall_LIB_V24`：SNR8503M BLDC Hall 原始或参考工程，包含驱动、控制算法、Keil 工程及历史编译产物。
 - `FOC_REFACTOR_DESIGN.md`：FOC 重构设计说明。
 - `FOC_DEVELOPMENT_VERIFICATION_PLAN.md`：开发和验证计划。
 - `MOTOR_AUTO_COMMISSIONING_DESIGN.md`：电机自动辨识设计。

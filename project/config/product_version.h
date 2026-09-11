@@ -2,7 +2,7 @@
  * @file    product_version.h
  * @brief   固件版本、目标硬件版本及兼容性信息
  * @author  随永祥
- * @date    2026-09-07
+ * @date    2026-09-11
  * @version 1.0
  */
 
@@ -11,9 +11,9 @@
 
 #define FIRMWARE_VERSION_YEAR       2026U
 #define FIRMWARE_VERSION_MONTH         9U
-#define FIRMWARE_VERSION_DAY           7U
+#define FIRMWARE_VERSION_DAY          11U
 #define FIRMWARE_VERSION_REVISION      0U
-#define FIRMWARE_VERSION_STRING       "2026.09.07.0"
+#define FIRMWARE_VERSION_STRING       "2026.09.11.0"
 
 /* 待硬件正式版本确认后替换，禁止根据工程文件名猜测。 */
 #define HARDWARE_VERSION_STRING       "at_foc_hall_v1.0"
