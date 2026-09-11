@@ -244,7 +244,10 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
                               -MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA;
     if ((!motor_control_current_command_to_physical(
            &current_command, &current_command)) ||
-        (!motor_current_startup_speed_start(&current_command)))
+        (!motor_current_startup_speed_start(
+           &current_command,
+           (uint32_t)((target_speed_rpm < 0) ?
+             -target_speed_rpm : target_speed_rpm))))
       return false;
     motor_speed_start_target_rpm = target_speed_rpm;
     motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_STARTING;
@@ -642,16 +645,10 @@ void motor_control_poll(void)
   }
   if (speed_control.state == MOTOR_SPEED_CONTROL_FAULT)
   {
-    if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_FEEDBACK)
-      motor_control_fault_set(MOTOR_FAULT_SPEED_FEEDBACK);
-    else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_CURRENT_CONTROL)
+    if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_CURRENT_CONTROL)
       motor_control_fault_set(MOTOR_FAULT_SPEED_CURRENT_CONTROL);
     else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_COMMAND)
       motor_control_fault_set(MOTOR_FAULT_SPEED_COMMAND);
-    else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_REVERSE_DIRECTION)
-      motor_control_fault_set(MOTOR_FAULT_REVERSE_DIRECTION);
-    else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_STALL)
-      motor_control_fault_set(MOTOR_FAULT_STALL);
     else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_OVERSPEED)
       motor_control_fault_set(MOTOR_FAULT_OVERSPEED);
     else

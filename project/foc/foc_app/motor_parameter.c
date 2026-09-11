@@ -17,6 +17,7 @@
 #define MOTOR_PARAMETER_POLE_PAIRS_MAX             64U
 #define MOTOR_PARAMETER_RESISTANCE_MOHM_MAX     100000U
 #define MOTOR_PARAMETER_INDUCTANCE_UH_MAX      1000000U
+#define MOTOR_PARAMETER_FLUX_LINKAGE_UWB_MAX    1000000U
 #define MOTOR_PARAMETER_CURRENT_BANDWIDTH_HZ_MAX   2000U
 #define MOTOR_PARAMETER_HALL_DELAY_US_MAX           1000U
 
@@ -61,6 +62,7 @@ static void motor_parameter_default_build(motor_parameter_t *parameter)
   parameter->phase_resistance_mohm = MOTOR_PHASE_RESISTANCE_MOHM;
   parameter->direct_inductance_uh = MOTOR_DIRECT_INDUCTANCE_UH;
   parameter->quadrature_inductance_uh = MOTOR_QUADRATURE_INDUCTANCE_UH;
+  parameter->flux_linkage_uwb = MOTOR_FLUX_LINKAGE_UWB;
   parameter->current_loop_bandwidth_hz = MOTOR_CURRENT_LOOP_BANDWIDTH_HZ;
   parameter->current_d_kp_q15 = MOTOR_CURRENT_PI_D_KP_Q15;
   parameter->current_q_kp_q15 = MOTOR_CURRENT_PI_Q_KP_Q15;
@@ -217,6 +219,8 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->quadrature_inductance_uh > 0U) &&
     (parameter->quadrature_inductance_uh <=
      MOTOR_PARAMETER_INDUCTANCE_UH_MAX) &&
+    (parameter->flux_linkage_uwb > 0U) &&
+    (parameter->flux_linkage_uwb <= MOTOR_PARAMETER_FLUX_LINKAGE_UWB_MAX) &&
     (parameter->current_loop_bandwidth_hz > 0U) &&
     (parameter->current_loop_bandwidth_hz <=
      MOTOR_PARAMETER_CURRENT_BANDWIDTH_HZ_MAX) &&
@@ -298,6 +302,11 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
         return false;
       updated.hall_delay_compensation_us = (uint16_t)value;
       break;
+    case MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB:
+      if ((value <= 0) || ((uint32_t)value > MOTOR_PARAMETER_FLUX_LINKAGE_UWB_MAX))
+        return false;
+      updated.flux_linkage_uwb = (uint32_t)value;
+      break;
     default:
       return false;
   }
@@ -354,6 +363,9 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
       break;
     case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
       *value = parameter->hall_delay_compensation_us;
+      break;
+    case MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB:
+      *value = (int32_t)parameter->flux_linkage_uwb;
       break;
     default:
       return false;

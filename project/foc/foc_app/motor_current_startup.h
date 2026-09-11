@@ -45,7 +45,8 @@ void motor_current_startup_init(void);
 bool motor_current_startup_start(
   const motor_current_control_command_t *physical_command);
 bool motor_current_startup_speed_start(
-  const motor_current_control_command_t *physical_command);
+  const motor_current_control_command_t *physical_command,
+  uint32_t target_speed_rpm);
 bool motor_current_startup_current_command_release(void);
 bool motor_current_startup_reverse_start(
   const motor_current_control_command_t *physical_command);

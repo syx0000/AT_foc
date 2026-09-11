@@ -23,7 +23,6 @@
 #define MOTOR_CURRENT_OFFSET_DIFFERENCE_MAX      80U
 
 /* 电机能力、控制限幅与保护参数，单位均为mA。 */
-#define MOTOR_RATED_CONTINUOUS_CURRENT_MA      30000L
 #define MOTOR_CURRENT_COMMAND_MAX_MA           50000L
 #define MOTOR_SOFTWARE_OVERCURRENT_MA          55000L
 #define MOTOR_SOFTWARE_OVERCURRENT_SAMPLES       500U
@@ -42,16 +41,6 @@
 #define MOTOR_BUS_UNDERVOLTAGE_0P1V               240U
 #define MOTOR_BUS_OVERVOLTAGE_0P1V                600U
 
-/* 温度传感器与保护参数，温度单位为摄氏度。 */
-#define MOTOR_MOS_NTC_R25_OHM                   10000U
-#define MOTOR_MOS_NTC_B_K                        3950U
-#define MOTOR_WINDING_NTC_R25_OHM               10000U
-#define MOTOR_WINDING_NTC_B_K                    3435U
-#define MOTOR_TEMPERATURE_WARNING_C                90
-#define MOTOR_TEMPERATURE_SHUTDOWN_C              100
-#define MOTOR_MOS_TEMPERATURE_WARNING_C             90
-#define MOTOR_MOS_TEMPERATURE_SHUTDOWN_C           100
-
 /* 10 Hz空载正向开环实测Hall状态进入边沿角度，U16一周制。 */
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_1             5U
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_2             3U
@@ -59,54 +48,66 @@
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_4             6U
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_5             4U
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_6             2U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         58834U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         38600U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         48131U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16         14860U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16          6820U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         27083U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         58890U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         38627U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         48251U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16         14958U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16          6537U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         26968U
 /* 由35 Hz闭环平均Vd/Vq=-2910/3333 mV计算，补偿开环标定引入的41.1度超前角。 */
-#define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16            561U
+#define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16            448U
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US      75U
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_MAXIMUM_U16 5461U /* 30度电角 */
-#define MOTOR_HALL_SIGNAL_TIMEOUT_MS                500U
+#define MOTOR_HALL_SIGNAL_TIMEOUT_MS               1000U
+/* Hall PLL scheduling: retain strong period filtering at low speed, then
+ * continuously increase phase-loop bandwidth and shorten edge correction. */
+#define MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ        13333U
+#define MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ       40000U
+#define MOTOR_HALL_PLL_LOW_SPEED_FILTER_SHIFT           3U
+#define MOTOR_HALL_PLL_MID_SPEED_FILTER_SHIFT           2U
+#define MOTOR_HALL_PLL_HIGH_SPEED_FILTER_SHIFT          1U
+#define MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ                  3U
+#define MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ                20U
+#define MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES           200U
+#define MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES           30U
+#define MOTOR_HALL_PLL_MINIMUM_TIMEOUT_MS             100U
+#define MOTOR_HALL_PLL_TIMEOUT_SECTORS                   3U
 /* 10 kHz current loop: tolerate brief Hall input/decoder glitches. */
 #define MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES     100U
 
 /* Hall机械转速反馈：1 kHz更新，IIR滤波系数为1/8。 */
-#define MOTOR_SPEED_FEEDBACK_TIMEOUT_MS              100U
-#define MOTOR_SPEED_FEEDBACK_FILTER_SHIFT              3U
+#define MOTOR_SPEED_FEEDBACK_TIMEOUT_MS             1000U
 
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
-#define MOTOR_SPEED_PI_KP_Q20                         3000L
-#define MOTOR_SPEED_PI_KI_Q20                            8L
-#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         10000L
+#define MOTOR_SPEED_PI_KP_Q20                         4500L
+#define MOTOR_SPEED_PI_KI_Q20                           45L
+#define MOTOR_SPEED_PI_LOW_GAIN_END_RPM                200U
+#define MOTOR_SPEED_PI_FULL_GAIN_START_RPM             600U
+#define MOTOR_SPEED_PI_LOW_KP_PERCENT                    75U
+#define MOTOR_SPEED_PI_LOW_KI_PERCENT                    25U
+#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         15000L
 /* Limit speed-loop torque steps caused by discrete Hall speed updates. */
-#define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S     6000U
+#define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S    20000U
 /* Release excess startup torque faster than normal torque build-up. */
-#define MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S 30000U
+#define MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S 40000U
 /* Ignore the Hall speed staircase when deciding whether torque may be
  * released quickly during an acceleration ramp. */
 #define MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM 100U
 /* Disable fast torque release while consecutive Hall samples show decel. */
 #define MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM      50U
 #define MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA       500L
-#define MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA      3000L
+#define MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA \
+  MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA
 #define MOTOR_SPEED_HALL_START_BOOST_DELAY_MS           150U
-#define MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS           10L
-/* Once motion is confirmed by the first Hall edge, promptly remove the
- * breakaway-current boost before speed-loop handover. */
-#define MOTOR_SPEED_HALL_START_RELEASE_MA_PER_MS         30L
-#define MOTOR_SPEED_HALL_START_READY_EDGES                 2U
-#define MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ 2000U
+#define MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS           15L
+#define MOTOR_SPEED_HALL_START_SPEED_MATCH_RELEASE_MA_PER_MS 200L
+/* After six qualified Hall edges and angle blending, keep Hall control active
+ * before the speed PI takes over so its feedback filter can settle. */
+#define MOTOR_SPEED_HALL_START_SETTLE_MS                   10U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    1000U
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
-#define MOTOR_SPEED_STALL_MIN_TARGET_RPM               200U
-#define MOTOR_SPEED_STALL_MAX_FEEDBACK_RPM              50U
-#define MOTOR_SPEED_STALL_CURRENT_PERCENT               90U
-#define MOTOR_SPEED_STALL_TIMEOUT_MS                   2000U
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
 
 /* 正式开环控制器默认安全配置。 */
@@ -133,20 +134,33 @@
 #define MOTOR_INDUCTANCE_IDENT_MEASURE_SAMPLES      10000U
 #define MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA     10000L
 
-/* 电流PI：888 Hz带宽，参数来自Rs=273 mΩ、Ld=225 µH、Lq=206 µH。 */
-#define MOTOR_PHASE_RESISTANCE_MOHM                   281U
-#define MOTOR_DIRECT_INDUCTANCE_UH                    226U
+/* 电流PI：888 Hz带宽，参数来自Rs=268 mΩ、Ld=222 µH、Lq=206 µH。 */
+#define MOTOR_PHASE_RESISTANCE_MOHM                   268U
+#define MOTOR_DIRECT_INDUCTANCE_UH                    222U
 #define MOTOR_QUADRATURE_INDUCTANCE_UH                206U
+#define MOTOR_FLUX_LINKAGE_UWB                      19494U
 #define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               888U
-#define MOTOR_CURRENT_PI_D_KP_Q15                   41319L
+#define MOTOR_CURRENT_PI_D_KP_Q15                   40588L
 #define MOTOR_CURRENT_PI_Q_KP_Q15                   37663L
-#define MOTOR_CURRENT_PI_KI_Q15                      5137L
+#define MOTOR_CURRENT_PI_KI_Q15                      4900L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
 /* 正式电流环放开到整数百分比下的线性SVPWM上限；理论边界为Vbus/sqrt(3)=57.735%。 */
 #define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    57U
 /* 48 V母线在线性SVPWM理论边界Vbus/sqrt(3)下的dq电压矢量硬上限。 */
 #define MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV 27700L
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
+
+/* Shadow sensorless observer: diagnostic-only 10 kHz back-EMF/PLL path. */
+#define MOTOR_SENSORLESS_OBSERVER_SAMPLE_FREQUENCY_HZ 10000U
+#define MOTOR_SENSORLESS_OBSERVER_SAMPLE_PERIOD_US     100U
+#define MOTOR_SENSORLESS_OBSERVER_CURRENT_FILTER_SHIFT   2U
+#define MOTOR_SENSORLESS_OBSERVER_BEMF_FILTER_SHIFT      3U
+#define MOTOR_SENSORLESS_OBSERVER_PLL_FILTER_SHIFT       3U
+#define MOTOR_SENSORLESS_OBSERVER_PLL_PHASE_SHIFT        3U
+#define MOTOR_SENSORLESS_OBSERVER_MIN_BEMF_MV          250U
+#define MOTOR_SENSORLESS_OBSERVER_MIN_FREQUENCY_MILLIHZ 2000L
+#define MOTOR_SENSORLESS_OBSERVER_MAX_FREQUENCY_MILLIHZ 200000L
+#define MOTOR_SENSORLESS_OBSERVER_VALID_SAMPLES           20U
 
 /* Independent current-mode I/F startup and Hall handover. */
 #define MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE           1U
@@ -159,7 +173,9 @@
  * step started rotating the forced field before Iq had built up. */
 #define MOTOR_CURRENT_STARTUP_INITIAL_FREQUENCY_MILLIHZ  200L
 #define MOTOR_CURRENT_STARTUP_HANDOVER_FREQUENCY_MILLIHZ 12000L
-#define MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ 8000U
+/* Four electrical hertz is 60 mechanical rpm with four pole pairs.  This
+ * permits low-speed commands to hand over without first overshooting 120 rpm. */
+#define MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ 4000U
 #define MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS 20L
 #define MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS     600L
 /* After Hall capture, unload the pull-in torque gently so a low requested
@@ -179,7 +195,7 @@
 #define MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES        12U
 /* 1000 PWM cycles = about 50 ms at 20 kHz.  Spread the I/F-to-Hall angle
  * correction over a longer interval to reduce the handover torque step. */
-#define MOTOR_CURRENT_STARTUP_BLEND_CYCLES             1000U
+#define MOTOR_CURRENT_STARTUP_BLEND_CYCLES              400U
 #define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
 #define MOTOR_SPEED_REVERSE_ENTRY_RPM                    150U
 #define MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA         2000L
@@ -233,6 +249,32 @@
 #error "Hall offset correction limit must be within 0..90 electrical degrees"
 #endif
 
+#if ((MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ == 0U) || \
+     (MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ >= \
+      MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ) || \
+     (MOTOR_HALL_PLL_LOW_SPEED_FILTER_SHIFT > 8U) || \
+     (MOTOR_HALL_PLL_MID_SPEED_FILTER_SHIFT > 8U) || \
+     (MOTOR_HALL_PLL_HIGH_SPEED_FILTER_SHIFT > 8U) || \
+     (MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ == 0U) || \
+     (MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ > \
+      MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ) || \
+     (MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ > 1000U) || \
+     (MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES > 255U) || \
+     (MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES == 0U) || \
+     (MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES < \
+      MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES))
+#error "Hall PLL scheduling configuration is invalid"
+#endif
+
+#if ((MOTOR_SPEED_PI_LOW_GAIN_END_RPM >= \
+      MOTOR_SPEED_PI_FULL_GAIN_START_RPM) || \
+     (MOTOR_SPEED_PI_LOW_KP_PERCENT == 0U) || \
+     (MOTOR_SPEED_PI_LOW_KP_PERCENT > 100U) || \
+     (MOTOR_SPEED_PI_LOW_KI_PERCENT == 0U) || \
+     (MOTOR_SPEED_PI_LOW_KI_PERCENT > 100U))
+#error "speed PI gain scheduling configuration is invalid"
+#endif
+
 #if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)
 #error "motor_speed_control is designed for a 1 kHz update rate"
 #endif
@@ -245,6 +287,25 @@
 #if ((MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV <= 0L) || \
      (MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV > 27700L))
 #error "48 V linear SVPWM hard voltage limit must not exceed 27700 mV"
+#endif
+
+#if ((MOTOR_FLUX_LINKAGE_UWB == 0U) || \
+     (MOTOR_FLUX_LINKAGE_UWB > 1000000U))
+#error "MOTOR_FLUX_LINKAGE_UWB is outside the supported range"
+#endif
+
+#if ((MOTOR_SENSORLESS_OBSERVER_SAMPLE_FREQUENCY_HZ != 10000U) || \
+     (MOTOR_SENSORLESS_OBSERVER_SAMPLE_PERIOD_US != 100U) || \
+     (MOTOR_SENSORLESS_OBSERVER_CURRENT_FILTER_SHIFT > 8U) || \
+     (MOTOR_SENSORLESS_OBSERVER_BEMF_FILTER_SHIFT > 8U) || \
+     (MOTOR_SENSORLESS_OBSERVER_PLL_FILTER_SHIFT > 8U) || \
+     (MOTOR_SENSORLESS_OBSERVER_PLL_PHASE_SHIFT > 8U) || \
+     (MOTOR_SENSORLESS_OBSERVER_MIN_BEMF_MV == 0U) || \
+     (MOTOR_SENSORLESS_OBSERVER_MIN_FREQUENCY_MILLIHZ <= 0L) || \
+     (MOTOR_SENSORLESS_OBSERVER_MAX_FREQUENCY_MILLIHZ <= \
+      MOTOR_SENSORLESS_OBSERVER_MIN_FREQUENCY_MILLIHZ) || \
+     (MOTOR_SENSORLESS_OBSERVER_VALID_SAMPLES == 0U))
+#error "sensorless observer configuration is invalid"
 #endif
 
 #if ((MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA <= 0L) || \
@@ -265,24 +326,12 @@
      (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA > \
       MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) || \
      (MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS <= 0L) || \
-     (MOTOR_SPEED_HALL_START_RELEASE_MA_PER_MS <= 0L) || \
      (MOTOR_SPEED_HALL_START_BOOST_DELAY_MS >= \
       MOTOR_CURRENT_STARTUP_TIMEOUT_MS) || \
-     (MOTOR_SPEED_HALL_START_READY_EDGES == 0U) || \
-     (MOTOR_SPEED_HALL_START_READY_EDGES > \
-      MOTOR_CURRENT_STARTUP_HALL_DIRECT_REQUIRED_EDGES) || \
-     (MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ == 0U) || \
-     (MOTOR_SPEED_HALL_START_MINIMUM_FREQUENCY_MILLIHZ > \
-      MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ))
+     (MOTOR_SPEED_HALL_START_SETTLE_MS == 0U) || \
+     (MOTOR_SPEED_HALL_START_SETTLE_MS >= \
+      MOTOR_CURRENT_STARTUP_TIMEOUT_MS))
 #error "Hall speed-start current configuration is invalid"
-#endif
-
-#if (MOTOR_SPEED_STALL_CURRENT_PERCENT > 100U)
-#error "stall current percentage must not exceed 100 percent"
-#endif
-
-#if (MOTOR_SPEED_STALL_MIN_TARGET_RPM >= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)
-#error "stall target threshold must be below maximum command speed"
 #endif
 
 #if (MOTOR_SPEED_OVERSPEED_RPM <= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)

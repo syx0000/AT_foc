@@ -1,6 +1,6 @@
 # AT_foc_hall 错误码与故障诊断表
 
-更新日期：2026-09-04
+更新日期：2026-09-11
 
 ## 1. 使用约定
 
@@ -69,6 +69,7 @@
 | 9 | `MOTOR_COMMISSIONING_ERROR_CURRENT_Q` | `current_q` | `motor_torque_loop_test_status_t` |
 | 10 | `MOTOR_COMMISSIONING_ERROR_PARAMETER` | `parameter` | `1=candidate_update_failed`，`2=trial_or_restore_failed` |
 | 11 | `MOTOR_COMMISSIONING_ERROR_STANDSTILL` | `standstill` | `1=timeout`，`2=current_unsafe`，`3=motor_fault` |
+| 12 | `MOTOR_COMMISSIONING_ERROR_FLUX` | `flux` | 见4.6 |
 
 ### 4.1 ADC零偏 detail
 
@@ -137,6 +138,18 @@
 | 4 | `quadrature_voltage_too_low` | Vq幅值不足，结果不可信 |
 | 5 | `correction_exceeded` | 计算修正角超过允许上限 |
 | 6 | `candidate_update_failed` | 补偿结果无法写入候选参数 |
+
+### 4.6 磁链辨识 detail
+
+| detail | 名称 | 含义 |
+|---:|---|---|
+| 0 | `ok` | 成功 |
+| 1 | `measurement_failed` | 反电势测量或低功率测试失败 |
+| 2 | `candidate_read_failed` | 无法读取候选电机参数 |
+| 3 | `frequency_too_low` | 电频率低于磁链辨识门槛 |
+| 4 | `back_emf_invalid` | 反电势结果无效或为零 |
+| 5 | `flux_out_of_range` | 计算磁链超出允许范围 |
+| 6 | `candidate_update_failed` | 无法写入候选 `flux_linkage_uwb` |
 
 ## 5. 底层运行控制故障
 
@@ -212,6 +225,15 @@
 
 未编号文本目前不属于稳定协议码；后续协议化时应分配独立编号，不能仅靠自然语言解析。
 
+### 6.3 影子无感观测器诊断（非故障）
+
+影子无感观测器诊断命令不产生 `motor_fault_code_t`：
+
+- `observer status` 输出 `electrical_angle_u16`、`electrical_frequency_millihz`、`bemf_alpha_beta_mv`、`phase_error_u16`、`confidence`、`valid` 和 `samples`。
+- `observer debug 1` 启用 2 ms 周期（约 500 Hz）的 `OBS,angle,frequency,bemf_alpha,bemf_beta,phase_error,confidence,valid` CSV 输出；`observer debug 0` 停止输出。
+- `ERR observer_unavailable` 只表示诊断快照读取失败，不会自动触发统一故障、速度反馈切换或保护动作。
+- `confidence` 范围为 0..1000，`valid` 由反电势幅值、频率、PLL 相位误差和磁链幅值合理性共同计算；两者目前仅供观测，不是安全资格判据。
+
 ## 7. 参数存储状态
 
 `motor params storage`中的`source`不是故障码，但`3`表示扫描/存储异常。
@@ -224,6 +246,8 @@
 | 3 | `MOTOR_PARAMETER_STORAGE_ERROR` | Flash读取、记录校验或参数应用异常 |
 
 `slot_a=0 slot_b=0`本身不一定是故障，空Flash首次启动时属于正常默认状态。
+
+当前记录格式版本为 `2`，完整参数记录新增持久化 `flux_linkage_uwb`（默认 `19494`）。格式版本为 `1` 的旧记录不会被兼容加载，会按无有效槽处理并回退编译期默认参数；需要在确认候选参数后重新执行 `accept` 和 `save`。
 
 ## 8. OTA可观察错误
 
@@ -262,7 +286,11 @@ OTA状态：`0=OTA_IDLE`、`1=OTA_ERASING`、`2=OTA_RECEIVING`、`3=OTA_DONE`、
 fault
 fault clear
 motor commissioning status
+identify flux
 motor params storage
+observer status
+observer debug 1
+observer debug 0
 status
 ```
 

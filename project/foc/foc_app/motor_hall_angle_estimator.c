@@ -31,9 +31,48 @@ static uint8_t motor_hall_edge_correction_cycles;
 #define MOTOR_HALL_SECTOR_TOTAL_TOLERANCE_PERCENT       10U
 #define MOTOR_HALL_SECTOR_STABILITY_TOLERANCE_PERCENT   15U
 #define MOTOR_HALL_SECTOR_STABILITY_REQUIRED_COUNT       3U
-#define MOTOR_HALL_EDGE_BLEND_CYCLES                     32U
 #define MOTOR_HALL_EDGE_MAXIMUM_CORRECTION_U16         2731U
 #define MOTOR_HALL_SECTOR_STEP_MAXIMUM_CHANGE_PERCENT     5U
+
+static uint8_t motor_hall_pll_speed_filter_shift_get(uint32_t frequency_millihz)
+{
+  if (frequency_millihz <= MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ)
+    return MOTOR_HALL_PLL_LOW_SPEED_FILTER_SHIFT;
+  if (frequency_millihz >= MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ)
+    return MOTOR_HALL_PLL_HIGH_SPEED_FILTER_SHIFT;
+  return MOTOR_HALL_PLL_MID_SPEED_FILTER_SHIFT;
+}
+
+static uint32_t motor_hall_pll_schedule_interpolate(uint32_t frequency_millihz,
+  uint32_t low_value, uint32_t high_value)
+{
+  if (frequency_millihz <= MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ)
+    return low_value;
+  if (frequency_millihz >= MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ)
+    return high_value;
+  return low_value + (uint32_t)(
+    ((uint64_t)(high_value - low_value) *
+     (frequency_millihz - MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ)) /
+    (MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ -
+     MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ));
+}
+
+static uint32_t motor_hall_pll_bandwidth_get(uint32_t frequency_millihz)
+{
+  return motor_hall_pll_schedule_interpolate(frequency_millihz,
+    MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ,
+    MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ);
+}
+
+static uint8_t motor_hall_pll_edge_blend_cycles_get(uint32_t frequency_millihz)
+{
+  uint32_t inverse_value = motor_hall_pll_schedule_interpolate(
+    frequency_millihz,
+    0U,
+    MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES -
+      MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES);
+  return (uint8_t)(MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES - inverse_value);
+}
 
 static uint8_t motor_hall_direction_index_get(int8_t direction)
 {
@@ -191,9 +230,13 @@ void motor_hall_angle_estimator_edge_process(void)
   uint32_t expected_sector_interval_cycles;
   uint8_t direction_index;
   int32_t base_phase_step;
+  int32_t measured_phase_step;
+  int32_t phase_error_step;
   int32_t sector_phase_step;
   int32_t edge_error_u16;
   int64_t correction_total_q16;
+  uint32_t pll_bandwidth_hz;
+  uint8_t pll_filter_shift;
   uint16_t predicted_angle_u16;
   bool estimator_was_valid;
   int8_t previous_direction;
@@ -266,7 +309,7 @@ void motor_hall_angle_estimator_edge_process(void)
     motor_hall_edge_correction_cycles = 0U;
     return;
   }
-  motor_hall_phase_step = base_phase_step;
+  measured_phase_step = base_phase_step;
   motor_hall_angle_estimator.sector_interpolation_active = false;
   if (motor_hall_sector_table_stable(direction_index) &&
       motor_hall_sector_table_phase_step_get(
@@ -276,16 +319,16 @@ void motor_hall_angle_estimator_edge_process(void)
         hall_sample.direction, expected_sector_interval_cycles,
         MOTOR_HALL_SECTOR_TOTAL_TOLERANCE_PERCENT, &sector_phase_step))
   {
-    motor_hall_phase_step = motor_hall_sector_phase_step_limit(
+    measured_phase_step = motor_hall_sector_phase_step_limit(
       direction_index, hall_sample.state, sector_phase_step);
     motor_hall_angle_estimator.sector_interpolation_active = true;
   }
-  motor_hall_angle_estimator.phase_step = motor_hall_phase_step;
   motor_hall_angle_estimator.sector_interval_cycles = sector_interval_cycles;
   predicted_angle_u16 = (uint16_t)(motor_hall_phase_accumulator >> 16);
   if ((!estimator_was_valid) || (previous_direction != hall_sample.direction))
   {
     motor_hall_phase_accumulator = (uint32_t)boundary_angle_u16 << 16;
+    motor_hall_phase_step = measured_phase_step;
     motor_hall_edge_correction_q16 = 0;
     motor_hall_edge_correction_cycles = 0U;
     predicted_angle_u16 = boundary_angle_u16;
@@ -293,6 +336,21 @@ void motor_hall_angle_estimator_edge_process(void)
   else
   {
     edge_error_u16 = (int16_t)(boundary_angle_u16 - predicted_angle_u16);
+    pll_filter_shift = motor_hall_pll_speed_filter_shift_get(
+      hall_sample.electrical_frequency_millihz);
+    pll_bandwidth_hz = motor_hall_pll_bandwidth_get(
+      hall_sample.electrical_frequency_millihz);
+    /* Second-order Hall PLL.  The measured Hall period is feed-forward and
+     * is low-pass blended into phase_step.  Edge phase error supplies the
+     * integral speed correction, so timing jitter does not appear directly
+     * as a speed step. */
+    motor_hall_phase_step +=
+      (measured_phase_step - motor_hall_phase_step) /
+      (1L << pll_filter_shift);
+    phase_error_step = (int32_t)(
+      ((int64_t)edge_error_u16 * 65536L *
+       pll_bandwidth_hz) / MOTOR_PWM_FREQUENCY_HZ);
+    motor_hall_phase_step += phase_error_step;
     correction_total_q16 = (int64_t)motor_hall_edge_correction_q16 +
                            (int64_t)edge_error_u16 * 65536L;
     if (correction_total_q16 >
@@ -304,18 +362,23 @@ void motor_hall_angle_estimator_edge_process(void)
       correction_total_q16 =
         -(int64_t)MOTOR_HALL_EDGE_MAXIMUM_CORRECTION_U16 * 65536L;
     motor_hall_edge_correction_q16 = (int32_t)correction_total_q16;
-    motor_hall_edge_correction_cycles = MOTOR_HALL_EDGE_BLEND_CYCLES;
+    motor_hall_edge_correction_cycles =
+      motor_hall_pll_edge_blend_cycles_get(
+        hall_sample.electrical_frequency_millihz);
     motor_hall_angle_estimator.edge_error_u16 = edge_error_u16;
     motor_hall_angle_estimator.edge_correction_remaining_u16 =
       motor_hall_edge_correction_q16 / 65536L;
   }
+  motor_hall_angle_estimator.phase_step = motor_hall_phase_step;
   motor_hall_last_edge_cycles = hall_sample.timestamp_cycles;
   motor_hall_angle_estimator.electrical_angle_u16 = (uint16_t)(
     (int32_t)predicted_angle_u16 + motor_hall_dynamic_compensation_u16);
   motor_hall_angle_estimator.dynamic_compensation_u16 =
     motor_hall_dynamic_compensation_u16;
-  motor_hall_angle_estimator.electrical_frequency_millihz =
-    hall_sample.electrical_frequency_millihz;
+  motor_hall_angle_estimator.electrical_frequency_millihz = (uint32_t)(
+    ((uint64_t)((motor_hall_phase_step < 0) ?
+      -(int64_t)motor_hall_phase_step : motor_hall_phase_step) *
+      MOTOR_PWM_FREQUENCY_HZ * 1000U) >> 32);
   motor_hall_angle_estimator.hall_state = hall_sample.state;
   motor_hall_angle_estimator.direction = hall_sample.direction;
   motor_hall_angle_estimator.valid = true;
@@ -326,10 +389,26 @@ void motor_hall_angle_estimator_fast_process(void)
   int32_t correction_step_q16;
   uint32_t timeout_cycles =
     (system_core_clock / 1000U) * MOTOR_HALL_SIGNAL_TIMEOUT_MS;
+  uint32_t adaptive_timeout_cycles;
 
   if (!motor_hall_angle_estimator.valid)
   {
     return;
+  }
+
+  if (motor_hall_angle_estimator.sector_interval_cycles != 0U)
+  {
+    adaptive_timeout_cycles =
+      motor_hall_angle_estimator.sector_interval_cycles *
+      MOTOR_HALL_PLL_TIMEOUT_SECTORS;
+    if (adaptive_timeout_cycles <
+        ((system_core_clock / 1000U) *
+         MOTOR_HALL_PLL_MINIMUM_TIMEOUT_MS))
+      adaptive_timeout_cycles =
+        (system_core_clock / 1000U) *
+        MOTOR_HALL_PLL_MINIMUM_TIMEOUT_MS;
+    if (adaptive_timeout_cycles < timeout_cycles)
+      timeout_cycles = adaptive_timeout_cycles;
   }
 
   if (motor_timebase_cycles_elapsed(motor_hall_last_edge_cycles) > timeout_cycles)

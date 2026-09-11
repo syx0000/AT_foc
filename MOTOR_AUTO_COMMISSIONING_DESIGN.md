@@ -1,5 +1,7 @@
 # 电机自动辨识、接线适配与标定设计
 
+> 当前实现快照（2026-09-11）：运行时参数、辨识编排、Hall 标定、Flash A/B 双槽和 `flux_linkage_uwb` 已接入；影子无感观测器已实现但只用于诊断，不能由自动辨识流程自动接管。当前电机基线为 4 对极、`Rs=268 mΩ`、`Ld=222 µH`、`Lq=206 µH`、`flux_linkage_uwb=19494`，电流 PI Q15 为 `40588/37663/4900`。
+
 ## 1. 目标
 
 建立一套完整的新电机适配流程，在用户提供额定能力和必要机械信息后，自动完成可安全辨识的电气参数、Hall接线关系和角度参数，并分阶段验证电流环与速度环。允许用户在满足电气安全的前提下任意排列连接三根电机相线U/V/W和三根Hall信号HA/HB/HC，软件通过一次低功率调试流程学习当前接线关系。
@@ -9,6 +11,7 @@
 - ADC电流零偏校准；
 - 相电阻Rs辨识；
 - D/Q轴电感Ld/Lq辨识；
+- 反电势/磁链辨识（结果写入候选 `flux_linkage_uwb`）；
 - 任意相线与Hall信号排列适配；
 - Hall六步顺序与六个物理边界角度标定；
 - Hall转子坐标补偿标定；
@@ -663,6 +666,7 @@ typedef struct
     uint32_t phase_resistance_mohm;
     uint32_t direct_inductance_uh;
     uint32_t quadrature_inductance_uh;
+    uint32_t flux_linkage_uwb;
 
     int32_t current_d_kp_q15;
     int32_t current_q_kp_q15;
@@ -702,7 +706,7 @@ project/foc/foc_app/motor_parameter.h
 
 ```text
 pole_pairs、direction_inverted
-Rs、Ld、Lq
+Rs、Ld、Lq、flux_linkage_uwb
 电流PI Kp_d/Kp_q/Ki
 速度PI Kp/Ki
 Hall正向跳转表和边界角度表
@@ -914,7 +918,8 @@ IDLE → USER_PARAMETER_CHECK → ADC_OFFSET_CALIBRATION
 → RESISTANCE_IDENTIFICATION → INDUCTANCE_IDENTIFICATION
 → HALL_PRECHECK → HALL_ALIGN → HALL_FORWARD_SCAN
 → HALL_REVERSE_SCAN → BUILD_PARAMETER
-→ HALL_OFFSET_IDENTIFICATION → WAIT_STANDSTILL
+→ CURRENT_PI_CALCULATION → HALL_OFFSET_IDENTIFICATION
+→ FLUX_IDENTIFICATION → WAIT_STANDSTILL
 → CURRENT_D_AXIS_TEST → CURRENT_Q_AXIS_TEST
 → CURRENT_HANDOVER_TEST → WAIT_ACCEPT → COMPLETE
 
@@ -933,6 +938,7 @@ motor commissioning start/status/abort/diff/accept/discard
 calibrate current_offset
 identify resistance
 identify inductance
+identify flux
 calibrate hall sequence
 calibrate hall angle
 calibrate hall offset
@@ -962,13 +968,14 @@ Rs特殊门槛：因现有结果与万用表线间测量曾有明显差异，第
 
 实施状态（2026.09.04）：阶段5首版代码完成，待上板验证。
 
-- 新增`motor_commissioning`统一管理完整流程和单项任务，同一时刻只允许一个任务运行；完整流程依次执行ADC零偏、Rs、Ld/Lq、双向Hall扫描、电流PI计算、Id验证和Iq/Hall接管验证。
+- 新增`motor_commissioning`统一管理完整流程和单项任务，同一时刻只允许一个任务运行；完整流程依次执行ADC零偏、Rs、Ld/Lq、双向Hall扫描、电流PI计算、Hall补偿、磁链辨识、停转确认、Id验证和Iq/Hall接管验证。
 - Rs、Ld/Lq、Hall表和电流PI只写入候选参数；低功率测试前临时应用候选Hall与PI，退出路径无条件停止PWM并恢复原活动参数，用户仍需通过`diff/accept/discard`确认。
 - 新增`motor_current_pi_design`纯算法，按候选Rs、Ld/Lq、带宽和10 kHz采样频率生成Q15增益；原测试接口保持兼容，新增指定PI增益的测试入口用于候选参数验证。
 - 串口已加入`motor commissioning start/status/abort`以及ADC零偏、Rs、Ld/Lq、Hall、PI、Id、Iq和接管单项命令；每个单项结束自动打印结果。
 - 自动辨识错误采用两级诊断：`error`表示失败阶段，`detail`保留对应模块的原始状态码。当前覆盖ADC零偏、Rs、Ld/Lq、Hall双向扫描、Hall补偿、PI设计、Id/Iq验证和候选参数操作；`status`与失败即时日志同时打印数字码及可读名称。
 - 当前编排复用既有阻塞式辨识/测试接口，因此主循环在任务执行期间不能继续解析同一串口的`status/abort`；中止接口可供外部安全路径调用，后续如需在线交互再把各硬件步骤拆成非阻塞子状态。
 - `calibrate hall offset`已接入正Iq低功率测量和定点相角求解，自动生成`hall_rotor_offset_u16`候选值；当前仍需完成算法断言运行和实物验证，不自动accept或写Flash。
+- `identify flux`及完整流程中的磁链步骤根据反电势、电频率和极对数计算 `flux_linkage_uwb`，当前辨识结果为 `19494`（19.494 mWb）并只写入候选区，仍需 `diff/accept/save`。
 - 代码已完成53个工程及测试源文件ARMCC编译和Keil工程XML检查；Hall双向扫描、候选参数低功率试运行及故障回滚仍需实物验证，不记录为PASS。
 
 ### 16.6 提交6：新增参数Flash双槽保存
@@ -1006,14 +1013,24 @@ motor params defaults
 实施状态（2026.09.04）：阶段6代码完成，待Flash掉电上板验证。
 
 - 参数区扩展为末尾两个独立2 KB擦除扇区：槽A=`0x0807F000`，槽B=`0x0807F800`；Staging上限同步由254 KB调整为252 KB，仍大于238 KB的App最大尺寸。
-- 每槽记录包含magic、格式版本、参数长度、递增序号、完整`motor_parameter_t`、CRC32和提交标记；提交标记最后单独写入。
+- 每槽记录包含magic、格式版本（当前为v2）、参数长度、递增序号、完整`motor_parameter_t`（含`flux_linkage_uwb`）、CRC32和提交标记；提交标记最后单独写入。
 - 启动扫描两个槽，验证格式、长度、CRC、参数范围和提交标记，使用带回绕处理的序号比较选择最新有效记录；无有效记录时保留编译期默认参数。
 - 保存时选择非活动槽，依次执行擦除、写记录主体、回读校验、写提交标记和最终复核；任一步失败均不会破坏原活动槽。
 - 串口新增`motor commissioning save`、`motor params load/defaults/storage`；只保存已经生效的活动参数，候选参数不能直接写Flash，运行时操作要求READY且PWM关闭。
 - 正式电流环和速度环初始化改为读取活动PI；参数加载、恢复默认值或接受候选值后同步重载Hall解码器及两个控制器；`defaults`只改变RAM，必须显式执行`save`才会持久化。
 - 新增双槽模拟源码覆盖空Flash、A/B轮换、未提交新槽和CRC损坏回退；当前环境无主机C测试执行器，仅完成ARMCC编译，断言运行和真实掉电测试待后续执行。
 
-### 16.7 每个提交的共同门槛
+### 16.7 提交7：影子无感观测器与诊断输出
+
+当前已实现 `motor_sensorless_observer`，但不改变自动辨识的安全边界：
+
+- 观测器运行在 10 kHz 电流环，使用电压限幅后实际送入 SVPWM 的 `Vα/Vβ` 和采样 `Iα/Iβ`；通过 `Rs/Ld/Lq` 估算反电势并运行固定点 PLL。
+- `flux_linkage_uwb`（当前默认 `19494`）用于反电势幅值合理性和 `confidence` 计算，辨识结果只先写候选参数，仍需 `diff/accept/save` 才能持久化。
+- 输出电角度、电频率、α/β 反电势、相位误差、置信度、有效标志及样本计数；`observer status` 和 `observer debug 1/0` 只读诊断快照。
+- 观测器结果不得用于 FOC 角度、速度反馈、接管资格或保护；目标电机上的 Hall 对比、低速有效性和噪声验证完成前，不能宣称无感闭环可用。
+- 代码已加入 Keil 工程并通过主应用全量构建（`0 Error(s), 0 Warning(s)`），后续验收以 `FOC_DEVELOPMENT_VERIFICATION_PLAN.md` 第20节为准。
+
+### 16.8 每个提交的共同门槛
 
 每个提交前必须完成：
 
@@ -1028,7 +1045,7 @@ README修改记录
 
 纯算法提交必须执行模拟测试。涉及实物但本阶段未验证的能力，在README中明确标记“代码已实现，待上板验证”，不得记录为PASS。
 
-### 16.8 实施顺序
+### 16.9 实施顺序
 
 ```text
 提交1：参数基础

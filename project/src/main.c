@@ -58,6 +58,7 @@
 #include "motor_speed_control.h"
 #include "motor_current_transform.h"
 #include "motor_current_control.h"
+#include "motor_sensorless_observer.h"
 #include "motor_uart_port.h"
 #include "motor_cli.h"
 #include "motor_control.h"
@@ -160,6 +161,7 @@ int main(void)
   motor_timebase_init();
   motor_parameter_init();
   (void)motor_parameter_storage_init();
+  motor_sensorless_observer_init();
   motor_commissioning_init();
   motor_adc_port_init();
   motor_current_sample_init();

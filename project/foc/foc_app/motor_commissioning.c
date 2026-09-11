@@ -42,12 +42,87 @@
 #define MOTOR_COMMISSIONING_STANDSTILL_STABLE_MS 500U
 #define MOTOR_COMMISSIONING_STANDSTILL_FREQUENCY_MILLIHZ 1000U
 #define MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA 500L
+#define MOTOR_COMMISSIONING_FLUX_MINIMUM_FREQUENCY_MILLIHZ 10000UL
+#define MOTOR_COMMISSIONING_FLUX_MINIMUM_UWB 1000L
+#define MOTOR_COMMISSIONING_FLUX_MAXIMUM_UWB 200000L
+#define MOTOR_COMMISSIONING_TWO_PI_X1000000 6283185LL
 
 static volatile motor_commissioning_status_t commissioning_status;
 static volatile bool commissioning_abort_requested;
 static volatile bool commissioning_hall_collecting;
 static volatile uint8_t commissioning_hall_previous_state;
 static motor_hall_calibration_t commissioning_hall;
+
+static void commissioning_error_set(motor_commissioning_error_t error,
+                                    uint32_t detail);
+static bool commissioning_flux_result_print(
+  const motor_torque_loop_test_result_t *measurement)
+{
+  motor_parameter_t candidate;
+  int64_t resistive_drop_uv;
+  int64_t inductive_drop_uv;
+  int64_t back_emf_uv;
+  int64_t flux_uwb;
+  int64_t torque_constant_mnm_per_a;
+
+  if (measurement == NULL)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 1U);
+    return false;
+  }
+  if (!motor_parameter_candidate_read(&candidate))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 2U);
+    return false;
+  }
+  if (measurement->final_frequency_millihz <
+      MOTOR_COMMISSIONING_FLUX_MINIMUM_FREQUENCY_MILLIHZ)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 3U);
+    return false;
+  }
+
+  resistive_drop_uv = (int64_t)candidate.phase_resistance_mohm *
+                       measurement->quadrature_average_ma;
+  inductive_drop_uv = MOTOR_COMMISSIONING_TWO_PI_X1000000 *
+    (int64_t)measurement->final_frequency_millihz *
+    (int64_t)candidate.direct_inductance_uh *
+    measurement->direct_average_ma / 1000000000000LL;
+  back_emf_uv = (int64_t)measurement->quadrature_voltage_average_mv *
+                1000LL - resistive_drop_uv - inductive_drop_uv;
+  if (back_emf_uv <= 0LL)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 4U);
+    return false;
+  }
+
+  flux_uwb = back_emf_uv * 1000000000LL /
+    (MOTOR_COMMISSIONING_TWO_PI_X1000000 *
+     (int64_t)measurement->final_frequency_millihz);
+  if ((flux_uwb < MOTOR_COMMISSIONING_FLUX_MINIMUM_UWB) ||
+      (flux_uwb > MOTOR_COMMISSIONING_FLUX_MAXIMUM_UWB))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 5U);
+    return false;
+  }
+
+  torque_constant_mnm_per_a =
+    (3LL * (int64_t)candidate.pole_pairs * flux_uwb + 1000LL) / 2000LL;
+  candidate.flux_linkage_uwb = (uint32_t)flux_uwb;
+  if (!motor_parameter_candidate_set(&candidate))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 6U);
+    return false;
+  }
+  LOGI("Commissioning flux: PASS flux=%ld.%03ld mWb kt=%ld mNm/A bemf=%ld mV frequency=%lu mHz id/iq=%ld/%ld mA vd/vq=%ld/%ld mV\r\n",
+    (long)(flux_uwb / 1000LL), (long)(flux_uwb % 1000LL),
+    (long)torque_constant_mnm_per_a, (long)(back_emf_uv / 1000LL),
+    (unsigned long)measurement->final_frequency_millihz,
+    measurement->direct_average_ma, measurement->quadrature_average_ma,
+    measurement->direct_voltage_average_mv,
+    measurement->quadrature_voltage_average_mv);
+  return true;
+}
 
 static void commissioning_current_d_result_print(
   const motor_current_loop_test_result_t *result);
@@ -79,6 +154,7 @@ const char *motor_commissioning_error_name_get(
     case MOTOR_COMMISSIONING_ERROR_CURRENT_Q: return "current_q";
     case MOTOR_COMMISSIONING_ERROR_PARAMETER: return "parameter";
     case MOTOR_COMMISSIONING_ERROR_STANDSTILL: return "standstill";
+    case MOTOR_COMMISSIONING_ERROR_FLUX: return "flux";
     default: return "unknown";
   }
 }
@@ -147,6 +223,13 @@ const char *motor_commissioning_error_detail_name_get(
     return (detail == 1U) ? "timeout" :
            ((detail == 2U) ? "current_unsafe" :
            ((detail == 3U) ? "motor_fault" : "unknown"));
+  if (error == MOTOR_COMMISSIONING_ERROR_FLUX)
+  {
+    static const char *const names[] = {"ok", "measurement_failed",
+      "candidate_read_failed", "frequency_too_low", "back_emf_invalid",
+      "flux_out_of_range", "candidate_update_failed"};
+    return (detail < (sizeof(names) / sizeof(names[0]))) ? names[detail] : "unknown";
+  }
   return (detail == 1U) ? "test_failed" : "unknown";
 }
 
@@ -776,6 +859,20 @@ static bool commissioning_hall_run(void)
   LOGI("Commissioning Hall: PASS max_dev=%u reverse_residual=%u candidate=1\r\n",
     result.maximum_edge_deviation_u16,
     result.maximum_forward_reverse_residual_u16);
+  LOGI("Commissioning Hall next: %u/%u/%u/%u/%u/%u\r\n",
+    (unsigned int)result.positive_next[1],
+    (unsigned int)result.positive_next[2],
+    (unsigned int)result.positive_next[3],
+    (unsigned int)result.positive_next[4],
+    (unsigned int)result.positive_next[5],
+    (unsigned int)result.positive_next[6]);
+  LOGI("Commissioning Hall angle: %u/%u/%u/%u/%u/%u\r\n",
+    (unsigned int)result.entry_angle_u16[1],
+    (unsigned int)result.entry_angle_u16[2],
+    (unsigned int)result.entry_angle_u16[3],
+    (unsigned int)result.entry_angle_u16[4],
+    (unsigned int)result.entry_angle_u16[5],
+    (unsigned int)result.entry_angle_u16[6]);
   return true;
 }
 
@@ -800,6 +897,12 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     ok=commissioning_hall_offset_run(&q_result);
   }
   else if(task==MOTOR_COMMISSIONING_TASK_CURRENT_PI) ok=commissioning_pi_run();
+  else if(task==MOTOR_COMMISSIONING_TASK_FLUX)
+  {
+    ok=commissioning_offset_measurement_run(&q_result);
+    if(ok) ok=commissioning_flux_result_print(&q_result);
+    else commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 1U);
+  }
   else if(task==MOTOR_COMMISSIONING_TASK_CURRENT_D)
   {
     ok=commissioning_current_d_run(&d_result);
@@ -821,6 +924,7 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     {
       commissioning_step_set(6U);
       ok=commissioning_hall_offset_run(&q_result);
+      if(ok) ok=commissioning_flux_result_print(&q_result);
     }
     if (ok)
     {

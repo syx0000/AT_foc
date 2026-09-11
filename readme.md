@@ -1,5 +1,21 @@
 # 修改记录
 
+## 当前工程快照（2026.09.11）
+
+- 当前电机基线：4 对极，`Rs=268 mΩ`，`Ld=222 µH`，`Lq=206 µH`，已辨识磁链 `19.494 mWb`（持久化字段 `flux_linkage_uwb=19494`）。当前电流 PI 为 `current_pi_q15=40588/37663/4900`，电流环带宽为 888 Hz。
+- 已加入 `project/foc/foc_app/motor_sensorless_observer.c/.h` 影子无感观测器。观测器在 10 kHz 电流环内使用限幅后的实际 `Vα/Vβ` 和采样 `Iα/Iβ` 计算反电势与 PLL 角度，只更新诊断快照，不接管 FOC、不参与速度反馈、不参与保护。
+- 当前正式速度反馈仍使用已优化的 Hall-PLL 全速域路径；影子无感观测器与该反馈并行计算，不能替代 Hall-PLL。
+- 速度环活动电流上限当前为 15 A；首轮安全回归仍按 `±2 A、±1000 rpm` 低能量范围执行，速度启动达到 Hall 接管条件后才由速度 PI 无扰接管。
+- 观测器输出 `electrical_angle_u16`、`electrical_frequency_millihz`、`bemf_alpha_mv`、`bemf_beta_mv`、`phase_error_u16`、`confidence`、`valid` 及样本计数；CLI 支持 `observer status`、`observer debug 1`、`observer debug 0`，CSV 行格式为 `OBS,angle,frequency,bemf_alpha,bemf_beta,phase_error,confidence,valid`。
+- `flux_linkage_uwb` 已进入默认/活动/候选参数、CLI 参数设置和 Flash 记录；参数存储格式升级为 v2。旧格式记录不作为有效槽加载，设备回退到编译期默认参数，需重新 `accept`/`save`。
+- Keil 主应用全量构建通过：`0 Error(s), 0 Warning(s)`；产物规模为 `Code=64926, RO-data=7010, RW-data=544, ZI-data=8688`。影子观测器尚未完成目标电机上的波形和有效性实测，当前仍保持诊断专用。
+
+以下修改记录保留各阶段的历史事实；历史参数不代表当前活动参数。
+
+2026.09.11.0  影子无感观测器与参数持久化：在10 kHz电流环接入只计算的反电势/PLL观测器，输入为限幅后的实际Vα/Vβ与采样Iα/Iβ，输出电角度、电频率、反电势、相位误差、置信度和有效标志；
+              新增`flux_linkage_uwb`运行时参数并将Flash参数格式升级为v2，增加`observer status`及`observer debug 1/0`诊断命令；
+              观测器不改变FOC、速度反馈或保护路径，Keil全量构建通过，0 Error、0 Warning；目标电机上的观测器波形、Hall对比和低速有效性验证待后续完成。
+
 2026.09.07.0  优化有感速度启动：静止状态下的速度启动统一使用已验证的限流I/F启动路径，不再因目标方向与当前Hall状态的关系选择不同启动流程；
               启动转矩电流采用10 mA/ms斜坡并限制在2 A，等待Hall边沿和方向达到接管条件后再切入闭环，改善重复启动和正反向启动时的加速度波动、短时降速及启动一致性；
               保留Hall直接启动供普通电流控制使用；Keil全量构建通过，0 Error、0 Warning，并完成实物正反向启动验证。

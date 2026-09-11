@@ -22,11 +22,8 @@ typedef enum
 typedef enum
 {
   MOTOR_SPEED_CONTROL_FAULT_NONE = 0,
-  MOTOR_SPEED_CONTROL_FAULT_FEEDBACK,
   MOTOR_SPEED_CONTROL_FAULT_CURRENT_CONTROL,
   MOTOR_SPEED_CONTROL_FAULT_COMMAND,
-  MOTOR_SPEED_CONTROL_FAULT_REVERSE_DIRECTION,
-  MOTOR_SPEED_CONTROL_FAULT_STALL,
   MOTOR_SPEED_CONTROL_FAULT_OVERSPEED
 } motor_speed_control_fault_t;
 
@@ -47,7 +44,6 @@ typedef struct
   int32_t ramped_speed_millirpm;
   int32_t feedback_speed_millirpm;
   int32_t quadrature_current_command_ma; /**< 速度PI输出的逻辑Iq指令，单位mA。 */
-  uint32_t stall_time_ms;
   uint32_t update_count;
 } motor_speed_control_status_t;
 

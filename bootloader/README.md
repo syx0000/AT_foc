@@ -6,9 +6,11 @@
 Flash (512KB total):
 0x08000000 - 0x08003800   Bootloader Code      (0-14KB)
 0x08003800 - 0x08004000   Upgrade Flag         (14-16KB, 2KB)
-0x08004000 - 0x08070000   App Execute Area     (16-448KB, 432KB)
-0x08070000 - 0x0807F800   App Backup Area      (448-510KB, 62KB)
-0x0807F000 - 0x08080000   User Data A/B (Flash) (508-512KB, 4KB, FOC params)
+0x08004000 - 0x0803F800   App Execute Area     (16-254KB, max 238KB)
+0x0803F800 - 0x08040000   Staging Header       (254-256KB, 2KB)
+0x08040000 - 0x0807F000   OTA Staging Data     (256-508KB, max 252KB)
+0x0807F000 - 0x0807F800   User Data Slot A     (508-510KB, 2KB)
+0x0807F800 - 0x08080000   User Data Slot B     (510-512KB, 2KB)
 
 SRAM (128KB):
 0x20000000 - 0x20020000   128KB
@@ -62,20 +64,24 @@ SRAM (128KB):
 - Code Size: <14KB
 - Output: bootloader.hex, bootloader.bin
 
-## App工程修改（待完成）
+## App工程现状
 
-需要修改FOC主工程：
-1. 调整链接脚本起始地址: 0x08004000
-2. 添加向量表重定位代码: `SCB->VTOR = 0x08004000;`
-3. 重新编译生成App固件
+主应用已使用 `0x08004000` 作为执行基址，并在启动阶段完成向量表重定位；App 与 Bootloader 共享 `ota_config.h` 的 238KB/252KB/4KB 边界。参数双槽由 App 负责读写，Bootloader 不解析参数内容，升级擦除和复制不得覆盖 `0x0807F000-0x08080000`。
+
+当前 App 参数记录格式为 v2，包含可持久化的 `flux_linkage_uwb`；旧 v1 记录由 App 判为无效并回退默认参数。
 
 ## 测试步骤
 
 1. 编译Bootloader → 烧录到0x08000000
-2. 修改App工程 → 编译App
+2. 编译 App 工程（链接基址 `0x08004000`）
 3. 烧录App到0x08004000 (或通过IAP升级)
 4. 上电测试跳转
 
 ## 参考工程
 - iflytek_joint_module (AT32F456平台IAP实现)
 - cubemx_yxsui (STM32H743 OTA架构)
+
+## 当前联调状态（2026-09-11）
+
+- 主应用已接入 10 kHz 影子无感观测器和 `observer status/debug` 诊断，但这些运行时输出不改变 Bootloader 升级协议。
+- 主应用最近一次 Keil 全量构建为 `0 Error(s), 0 Warning(s)`；Bootloader 仍需在目标板上单独验证升级、掉电和参数区不覆盖。

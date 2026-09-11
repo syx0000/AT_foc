@@ -17,6 +17,7 @@
 #include "motor_hall_angle_estimator.h"
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
+#include "motor_sensorless_observer.h"
 #include "motor_current_startup.h"
 #include "motor_current_sample.h"
 #include "motor_control.h"
@@ -46,6 +47,15 @@ typedef enum
 
 static motor_cli_debug_mode_t motor_cli_debug_mode;
 static uint32_t motor_cli_debug_last_us;
+
+typedef enum
+{
+  MOTOR_CLI_OBSERVER_DEBUG_STOPPED = 0,
+  MOTOR_CLI_OBSERVER_DEBUG_STREAM
+} motor_cli_observer_debug_mode_t;
+
+static motor_cli_observer_debug_mode_t motor_cli_observer_debug_mode;
+static uint32_t motor_cli_observer_debug_last_us;
 
 static void motor_cli_debug_poll(void)
 {
@@ -143,6 +153,50 @@ static void motor_cli_debug_poll(void)
          (int)hall_estimator.direction);
 }
 
+static void motor_cli_observer_print(const char *label)
+{
+  motor_sensorless_observer_state_t observer;
+
+  if (!motor_sensorless_observer_read(&observer))
+  {
+    printf("ERR observer_unavailable\r\n");
+    return;
+  }
+  printf("OK observer %s electrical_angle_u16=%u electrical_frequency_millihz=%ld bemf_alpha_beta_mv=%ld/%ld phase_error_u16=%d confidence=%u valid=%u samples=%lu\r\n",
+         label,
+         (unsigned int)observer.electrical_angle_u16,
+         (long)observer.electrical_frequency_millihz,
+         (long)observer.bemf_alpha_mv,
+         (long)observer.bemf_beta_mv,
+         (int)observer.phase_error_u16,
+         (unsigned int)observer.confidence,
+         (unsigned int)observer.valid,
+         (unsigned long)observer.sample_count);
+}
+
+static void motor_cli_observer_debug_poll(void)
+{
+  motor_sensorless_observer_state_t observer;
+  uint32_t now_us;
+
+  if (motor_cli_observer_debug_mode != MOTOR_CLI_OBSERVER_DEBUG_STREAM)
+    return;
+  now_us = motor_timebase_us_get();
+  if ((uint32_t)(now_us - motor_cli_observer_debug_last_us) <
+      MOTOR_CLI_DEBUG_PERIOD_US)
+    return;
+  motor_cli_observer_debug_last_us = now_us;
+  if (!motor_sensorless_observer_read(&observer)) return;
+  printf("OBS,%u,%ld,%ld,%ld,%d,%u,%u\r\n",
+         (unsigned int)observer.electrical_angle_u16,
+         (long)observer.electrical_frequency_millihz,
+         (long)observer.bemf_alpha_mv,
+         (long)observer.bemf_beta_mv,
+         (int)observer.phase_error_u16,
+         (unsigned int)observer.confidence,
+         (unsigned int)observer.valid);
+}
+
 typedef struct
 {
   const char *name;
@@ -163,7 +217,8 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"speed_kp_q20", MOTOR_PARAMETER_FIELD_SPEED_KP_Q20},
   {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
   {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16},
-  {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US}
+  {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US},
+  {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB}
 };
 
 #define MOTOR_CLI_PARAMETER_FIELD_COUNT \
@@ -209,14 +264,15 @@ static void motor_cli_parameter_print(const char *label,
          (unsigned long)parameter->direct_inductance_uh,
          (unsigned long)parameter->quadrature_inductance_uh,
          (unsigned long)parameter->current_loop_bandwidth_hz);
-  printf("current_pi_q15=%ld/%ld/%ld speed_pi_q20=%ld/%ld hall_offset_u16=%u hall_delay_us=%u\r\n",
+  printf("current_pi_q15=%ld/%ld/%ld speed_pi_q20=%ld/%ld hall_offset_u16=%u hall_delay_us=%u flux_linkage_uwb=%lu\r\n",
          (long)parameter->current_d_kp_q15,
          (long)parameter->current_q_kp_q15,
          (long)parameter->current_ki_q15,
          (long)parameter->speed_kp_q20,
          (long)parameter->speed_ki_q20,
          (unsigned int)parameter->hall_rotor_offset_u16,
-         (unsigned int)parameter->hall_delay_compensation_us);
+         (unsigned int)parameter->hall_delay_compensation_us,
+         (unsigned long)parameter->flux_linkage_uwb);
   printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
          (unsigned int)parameter->hall_positive_next[1],
          (unsigned int)parameter->hall_positive_next[2],
@@ -271,9 +327,37 @@ static void motor_cli_parameter_diff_print(void)
     }
   }
   if (diff.hall_sequence_changed)
-    printf("hall_sequence: changed\r\n");
+  {
+    printf("hall_sequence: active=%u/%u/%u/%u/%u/%u candidate=%u/%u/%u/%u/%u/%u\r\n",
+           (unsigned int)active.hall_positive_next[1],
+           (unsigned int)active.hall_positive_next[2],
+           (unsigned int)active.hall_positive_next[3],
+           (unsigned int)active.hall_positive_next[4],
+           (unsigned int)active.hall_positive_next[5],
+           (unsigned int)active.hall_positive_next[6],
+           (unsigned int)candidate.hall_positive_next[1],
+           (unsigned int)candidate.hall_positive_next[2],
+           (unsigned int)candidate.hall_positive_next[3],
+           (unsigned int)candidate.hall_positive_next[4],
+           (unsigned int)candidate.hall_positive_next[5],
+           (unsigned int)candidate.hall_positive_next[6]);
+  }
   if (diff.hall_angle_changed)
-    printf("hall_angle: changed\r\n");
+  {
+    printf("hall_angle: active=%u/%u/%u/%u/%u/%u candidate=%u/%u/%u/%u/%u/%u\r\n",
+           (unsigned int)active.hall_entry_angle_u16[1],
+           (unsigned int)active.hall_entry_angle_u16[2],
+           (unsigned int)active.hall_entry_angle_u16[3],
+           (unsigned int)active.hall_entry_angle_u16[4],
+           (unsigned int)active.hall_entry_angle_u16[5],
+           (unsigned int)active.hall_entry_angle_u16[6],
+           (unsigned int)candidate.hall_entry_angle_u16[1],
+           (unsigned int)candidate.hall_entry_angle_u16[2],
+           (unsigned int)candidate.hall_entry_angle_u16[3],
+           (unsigned int)candidate.hall_entry_angle_u16[4],
+           (unsigned int)candidate.hall_entry_angle_u16[5],
+           (unsigned int)candidate.hall_entry_angle_u16[6]);
+  }
 }
 
 /**
@@ -317,8 +401,9 @@ static bool motor_cli_parameter_runtime_reload(void)
     motor_hall_port_sample_read(&hall) &&
     motor_hall_decoder_init(parameter.hall_positive_next, system_core_clock,
                             hall.state, hall.timestamp_cycles) &&
-    motor_current_control_parameter_reload() &&
-    motor_speed_control_parameter_reload();
+     motor_current_control_parameter_reload() &&
+     motor_speed_control_parameter_reload() &&
+     motor_sensorless_observer_parameter_reload();
 }
 
 /**
@@ -389,6 +474,7 @@ static void motor_cli_command_execute(char *line)
     printf("OK commands:\r\n");
     printf("  help | version | status | reset\r\n");
     printf("  debug <0|1>\r\n");
+    printf("  observer status | observer debug <0|1>\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
     printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
@@ -438,6 +524,22 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_debug_mode = MOTOR_CLI_DEBUG_STOPPED;
     printf("OK debug 0\r\n");
+  }
+  else if (strcmp(line, "observer status") == 0)
+  {
+    motor_cli_observer_print("status");
+  }
+  else if (strcmp(line, "observer debug 1") == 0)
+  {
+    motor_cli_observer_debug_last_us = motor_timebase_us_get();
+    motor_cli_observer_debug_mode = MOTOR_CLI_OBSERVER_DEBUG_STREAM;
+    printf("OK observer debug 1 period_us=%u format=electrical_angle_u16,electrical_frequency_millihz,bemf_alpha_mv,bemf_beta_mv,phase_error_u16,confidence,valid\r\n",
+           (unsigned int)MOTOR_CLI_DEBUG_PERIOD_US);
+  }
+  else if (strcmp(line, "observer debug 0") == 0)
+  {
+    motor_cli_observer_debug_mode = MOTOR_CLI_OBSERVER_DEBUG_STOPPED;
+    printf("OK observer debug 0\r\n");
   }
   else if (strcmp(line, "status") == 0)
   {
@@ -588,6 +690,10 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "identify inductance") == 0)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_INDUCTANCE);
+  }
+  else if (strcmp(line, "identify flux") == 0)
+  {
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_FLUX);
   }
   else if (strcmp(line, "calculate current_pi") == 0)
   {
@@ -806,6 +912,7 @@ void motor_cli_poll(void)
   char character;
 
   motor_cli_debug_poll();
+  motor_cli_observer_debug_poll();
   if (!motor_uart_port_frame_read(&frame)) return;
   for (index = 0U; index < frame.length; index++)
   {

@@ -33,7 +33,6 @@ void motor_speed_feedback_process_1khz(void)
 {
   motor_rotor_feedback_t rotor_feedback;
   int32_t raw_speed_millirpm;
-  int64_t filter_error;
   bool direction_inverted;
   int8_t logical_direction;
 
@@ -69,10 +68,8 @@ void motor_speed_feedback_process_1khz(void)
   else if (rotor_feedback.update_count !=
            motor_speed_feedback_last_update_count)
   {
-    filter_error = (int64_t)raw_speed_millirpm -
-                   motor_speed_feedback.filtered_speed_millirpm;
-    motor_speed_feedback.filtered_speed_millirpm +=
-      (int32_t)(filter_error / (1L << MOTOR_SPEED_FEEDBACK_FILTER_SHIFT));
+    /* Rotor feedback is already the continuous Hall-PLL estimate. */
+    motor_speed_feedback.filtered_speed_millirpm = raw_speed_millirpm;
   }
 
   motor_speed_feedback.raw_speed_millirpm = raw_speed_millirpm;

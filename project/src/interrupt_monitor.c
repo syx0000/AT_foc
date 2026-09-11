@@ -225,14 +225,13 @@ void interrupt_monitor_poll(void)
   }
   if (speed_control_valid)
   {
-    LOGI("Speed control: state=%u fault=%u target=%ld ramp=%ld feedback=%ld mRPM logical_iq=%ld mA stall=%lu ms updates=%lu\r\n",
+    LOGI("Speed control: state=%u fault=%u target=%ld ramp=%ld feedback=%ld mRPM logical_iq=%ld mA updates=%lu\r\n",
          (unsigned int)speed_control.state,
          (unsigned int)speed_control.fault,
          (long)speed_control.target_speed_millirpm,
          (long)speed_control.ramped_speed_millirpm,
          (long)speed_control.feedback_speed_millirpm,
          (long)speed_control.quadrature_current_command_ma,
-         (unsigned long)speed_control.stall_time_ms,
          (unsigned long)speed_control.update_count);
   }
   if (current_transform_valid && current_transform.valid)

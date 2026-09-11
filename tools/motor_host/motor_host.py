@@ -30,6 +30,7 @@ PARAMETER_NAMES = [
     "speed_ki_q20",
     "hall_rotor_offset_u16",
     "hall_delay_us",
+    "flux_linkage_uwb",
 ]
 
 

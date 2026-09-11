@@ -7,8 +7,10 @@
  */
 
 #include <stddef.h>
+#include <motor_control_config.h>
 #include "at32f45x.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_hall_angle_math.h"
 #include "motor_hall_decoder.h"
 #include "motor_parameter.h"
 #include "motor_rotor_feedback.h"
@@ -70,6 +72,9 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
 {
   motor_hall_angle_estimator_t estimator;
   motor_hall_sample_t hall;
+  motor_parameter_t parameter;
+  uint16_t sector_span_u16;
+  uint16_t standstill_angle_u16;
   uint8_t pole_pairs;
   uint32_t mechanical_speed_millirpm;
 
@@ -96,6 +101,36 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
   if (pole_pairs == 0U)
   {
     return false;
+  }
+  /* A missing Hall edge means zero speed at a commanded-current stall, not
+   * necessarily a lost position sensor.  The interpolating estimator times
+   * out because it cannot extrapolate indefinitely, while the discrete Hall
+   * state still identifies a bounded 60-degree electrical sector.  Fall back
+   * to that sector's calibrated centre so the current loop can keep producing
+   * limited holding torque.  Keep the old Hall timestamp and zero direction;
+   * the speed-feedback layer will therefore still reject this as a valid
+   * moving-speed sample, preserving speed-loop stall/timeout protection. */
+  if ((!estimator.valid) && hall.valid &&
+      motor_parameter_active_read(&parameter) &&
+      motor_hall_sector_span_get(parameter.hall_positive_next,
+                                 parameter.hall_entry_angle_u16,
+                                 hall.state, &sector_span_u16))
+  {
+    standstill_angle_u16 = (uint16_t)(
+      parameter.hall_entry_angle_u16[hall.state] + sector_span_u16 / 2U +
+      parameter.hall_rotor_offset_u16);
+    feedback->source = MOTOR_ROTOR_FEEDBACK_SOURCE_HALL;
+    feedback->electrical_angle_u16 = standstill_angle_u16;
+    feedback->mechanical_angle_u16 = 0U;
+    feedback->mechanical_speed_millirpm = 0;
+    feedback->electrical_frequency_millihz = 0U;
+    feedback->timestamp_cycles = motor_timebase_cycles_get();
+    feedback->update_count = hall.frequency_update_count;
+    feedback->source_state = hall.state;
+    feedback->direction = 0;
+    feedback->mechanical_angle_valid = false;
+    feedback->valid = true;
+    return true;
   }
   mechanical_speed_millirpm = (uint32_t)(
     ((uint64_t)estimator.electrical_frequency_millihz * 60U) / pole_pairs);

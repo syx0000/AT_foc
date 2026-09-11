@@ -1,6 +1,6 @@
 # iflytek — 项目信息记录
 
-> 本文档汇总本仓库 FOC 电机控制项目的基础信息与最新进展，作为快速入口。内容以 **代码实际状态为准**（2026-09-01 核对）。
+> 本文档汇总本仓库 FOC 电机控制项目的基础信息与最新进展，作为快速入口。内容以 **代码实际状态为准**（2026-09-11 核对）；历史记录不替代源码和实物验证。
 
 ## 核心原则 ⚠️
 
@@ -20,7 +20,7 @@
 - **MCU**: AT32F456CEU7（雅特力 Cortex-M4，实测 192MHz，**支持 CAN-FD**，库头文件 `SUPPORT_CAN_FD`）
 - **开发工具**: Artery WorkBench（代码生成）+ Keil MDK5
 - **固件库**: AT32F45x_Firmware_Library_V2.0.1
-- **构建产物**: `project/MDK_V5/objects/AT32F456CEU7_foc.axf/.bin`（2026-09-01 11:51 编译）
+- **构建产物**: `project/MDK_V5/objects/AT32F456CEU7_foc.axf/.bin`（2026-09-11 主应用全量构建，0 Error、0 Warning）
 - **App 地址**：0x08004000 起（VTOR 重定位，常驻 Bootloader IAP）
 
 ## 工程结构（重构中）
@@ -58,7 +58,11 @@
 | TP_TEST | PB11 | 测试点（示波器） |
 | CAN_RES / CAN_STB | PH3 / PH2 | CAN 终端电阻 / STB |
 
-## 应用层模块（重构中）
+## 应用层模块（当前实现）
+
+- `motor_sensorless_observer.c/.h`：10 kHz 影子反电势/PLL 观测器，输入限幅后的实际 `Vα/Vβ` 和采样 `Iα/Iβ`，输出电角度、电频率、`bemf_alpha/beta`、相位误差、`confidence`、`valid`、样本计数。
+- 观测器只更新诊断快照，不接管 FOC、Hall-PLL 速度反馈或保护；目标电机上的 Hall 对比和低速有效性仍待实测。
+- `motor_parameter` 增加可持久化 `flux_linkage_uwb`，当前默认 `19494`；当前电机基线为4对极、`Rs=268 mΩ`、`Ld=222 µH`、`Lq=206 µH`，电流PI Q15为`40588/37663/4900`。
 
 ## 关键外设配置（代码实际）
 
@@ -95,13 +99,18 @@ EXINT9_5_IRQn(0)   // 新增：霍尔编码器双沿
 SysTick(15)
 ```
 
-## 通信（重构中）
+## 通信（当前 CLI）
+
+- USART1 使用 `921600, 8N1`，DMA 空闲分帧接收，CLI 在主循环执行。
+- 影子无感诊断：`observer status` 查询快照；`observer debug 1` 开启约500 Hz的 `OBS,...` CSV；`observer debug 0` 停止输出。
+- 观测器诊断不等同于故障，也不会改变当前 Hall-PLL 反馈、FOC 电流环或保护路径。
 
 ## OTA / Bootloader（代码现状：**已实现**）
 
 - App 常驻 **0x08004000**（主工程 VTOR 重定位），Bootloader 0x08000000~0x08004000
-- **Flash 布局**（ota_config.h / bootloader README）：
-  - 0x08000000 Bootloader(14KB) → 0x08003800 App Header(2KB, app_header_t+回滚计数) → 0x08004000 App 执行区(238KB) → 0x0803F800 Staging Header(2KB) → 0x08040000 Staging 暂存区(254KB) → 0x0807F800 User Data(FOC 参数,2KB)
+- **Flash 布局**（`project/config/ota_config.h` / Bootloader 共享配置）：
+  - 0x08000000 Bootloader(14KB) → 0x08003800 App Header(2KB) → 0x08004000 App 执行区（最大238KB，至0x0803F800）→ 0x0803F800 Staging Header(2KB) → 0x08040000 Staging 暂存区（最大252KB，至0x0807F000）→ 0x0807F000 User Data A/B（4KB，两个2KB FOC参数槽）。
+  - 参数记录格式当前为 v2，包含 `flux_linkage_uwb`；旧 v1 记录不加载并回退编译期默认参数。
 - **升级协议**：上位机 UART 0x5A 0x01 启动 / 0x31+addr+data+checksum 数据帧 / 0x5A 0x02 结束 / 0x5A 0xA5 跳转；应答 0xCC 0xDD 成功 / 0xEE 0xFF 失败；升级标志 'BWSC' 写入 0x08003800
 - App 侧 `ota_init()/ota_process()/ota_mark_self_stable()` 支持回滚保护
 - **状态**：OTA 代码已就绪（`ota_app.c` 完整，含 4B 对齐写入）；CAN OTA 命令已接入
@@ -117,12 +126,11 @@ SysTick(15)
 "C:/Keil_v5/UV4/UV4.exe" -f <工程>.uvprojx -o flash_log.txt
 ```
 
-- App 产物：`objects/AT32F456CEU7_foc.axf` + `.bin`（最近编译 2026-09-01，bin ≈104KB）
-- 阶段9 编译规模参考：Code=101502 RO-data=13510 RW-data=264 ZI-data=14144
+- App 产物：`objects/AT32F456CEU7_foc.axf` + `.bin`（2026-09-11 全量构建）
+- 最近主应用编译规模：Code=64926、RO-data=7010、RW-data=544、ZI-data=8688；Keil 全量构建 `0 Error(s), 0 Warning(s)`。
 
 ## 提交
 根据修改更新相关md
 按照规则，更新版本号
 更新readme
 提交，commit中文简洁写清楚修改点
-
