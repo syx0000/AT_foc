@@ -14,6 +14,7 @@
 static bool motor_pwm_gate_driver_enabled;
 static bool motor_pwm_command_valid;
 static bool motor_pwm_output_enabled;
+static motor_pwm_compare_t motor_pwm_last_compare;
 
 /**
  * @brief 将单相PWM原始比较值限制在定时器有效范围内。
@@ -39,6 +40,9 @@ void motor_pwm_port_init(void)
   motor_pwm_gate_driver_enabled = false;
   motor_pwm_command_valid = false;
   motor_pwm_output_enabled = false;
+  motor_pwm_last_compare.phase_a = 0U;
+  motor_pwm_last_compare.phase_b = 0U;
+  motor_pwm_last_compare.phase_c = 0U;
   tmr_interrupt_enable(MOTOR_PWM_TIMER, TMR_BRK_INT, TRUE);
   nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
 }
@@ -116,20 +120,30 @@ void motor_pwm_port_emergency_stop(void)
   motor_pwm_gate_driver_enabled = false;
   motor_pwm_command_valid = false;
   motor_pwm_output_enabled = false;
+  motor_pwm_last_compare.phase_a = 0U;
+  motor_pwm_last_compare.phase_b = 0U;
+  motor_pwm_last_compare.phase_c = 0U;
 }
 
 void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare)
 {
+  uint16_t clamped_a;
+  uint16_t clamped_b;
+  uint16_t clamped_c;
+
   if (compare == NULL)
   {
     return;
   }
-  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1,
-                        motor_pwm_compare_clamp(compare->phase_a));
-  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2,
-                        motor_pwm_compare_clamp(compare->phase_b));
-  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3,
-                        motor_pwm_compare_clamp(compare->phase_c));
+  clamped_a = motor_pwm_compare_clamp(compare->phase_a);
+  clamped_b = motor_pwm_compare_clamp(compare->phase_b);
+  clamped_c = motor_pwm_compare_clamp(compare->phase_c);
+  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1, clamped_a);
+  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2, clamped_b);
+  tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3, clamped_c);
+  motor_pwm_last_compare.phase_a = clamped_a;
+  motor_pwm_last_compare.phase_b = clamped_b;
+  motor_pwm_last_compare.phase_c = clamped_c;
   motor_pwm_command_valid = true;
 }
 
@@ -154,5 +168,25 @@ bool motor_pwm_port_status_read(motor_pwm_port_status_t *status)
   status->nfault_high =
     (gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT,
                               MOTOR_PWM_BREAK_PIN) != RESET);
+  return true;
+}
+
+bool motor_pwm_port_compare_read(motor_pwm_compare_t *compare)
+{
+  uint32_t primask;
+
+  if (compare == NULL)
+  {
+    return false;
+  }
+  primask = __get_PRIMASK();
+  __disable_irq();
+  if (!motor_pwm_command_valid)
+  {
+    __set_PRIMASK(primask);
+    return false;
+  }
+  *compare = motor_pwm_last_compare;
+  __set_PRIMASK(primask);
   return true;
 }

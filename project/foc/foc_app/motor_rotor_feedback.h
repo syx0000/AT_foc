@@ -43,11 +43,25 @@ typedef struct
 void motor_rotor_feedback_init(void);
 
 /**
+ * @brief 1 kHz 累加转子电角度得到连续单圈机械角。
+ * @param 无。
+ * @return 无。
+ * @details 每毫秒采样一次估算电角度，按极对数换算并累加到 U16 机械角；反馈失效或
+ *          override 生效时冻结追踪起点，恢复后再重新起算，mechanical_angle_u16
+ *          在失效期间保持最后有效值。
+ * @note 仅供 SysTick 1 kHz 中断调用，且必须在 motor_hall_angle_estimator 更新之后。
+ */
+void motor_rotor_feedback_process_1khz(void);
+
+/**
  * @brief 读取当前统一转子反馈快照。
  * @param feedback 输出电角度、机械速度、方向、时效和反馈源，不允许为空。
  * @return 参数有效且底层反馈快照可读取时返回true；不代表feedback->valid一定为true。
- * @details 当前Hall适配器保持原Hall角度和测速行为；Hall不能提供连续单圈机械绝对角，
- *          因此mechanical_angle_valid为false。后续SPI编码器实现应保持相同输出语义。
+ * @details 当前Hall适配器保持原Hall角度和测速行为；单圈机械角由
+ *          motor_rotor_feedback_process_1khz 通过累加电角度增量得到，因此
+ *          mechanical_angle_valid 反映累加器是否已建立追踪起点；上电或反馈失效
+ *          期间可能为 false，但一旦建立便保持连续。后续 SPI 编码器实现应保持
+ *          相同输出语义。
  */
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback);
 

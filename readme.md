@@ -12,6 +12,16 @@
 
 以下修改记录保留各阶段的历史事实；历史参数不代表当前活动参数。
 
+2026.09.11.1  重构高频调试通道并加固电流环安全：
+              裁剪备份文件与SNR8503M参考工程，同步删除CODE_STRUCTURE.md中对该工程的引用；
+              新增`motor_pwm_port_compare_read`软件缓存三相PWM比较值，`emergency_stop`/`init`同步清零，`compare_set`在时钟内更新缓存；
+              新增`motor_rotor_feedback_process_1khz`累加电角度得连续单圈机械角，保留除法残差精度，反馈失效或override期间冻结追踪起点，read接口输出`mechanical_angle_u16`并置`mechanical_angle_valid`；
+              SysTick按hall_estimator→rotor_feedback→speed_feedback→speed_control顺序挂载新1kHz任务；
+              CLI高频调试通道`debug 1`重写为16字段CSV：duty_a/b/c、ia/ib/ic mA、vd/vq mV、id/iq mA、iq_ref mA、hall_state、mech_angle_u16、elec_angle_u16、speed_mrpm（滤波）、speed_ref_mrpm（斜坡后），`OK debug 1`应答的format字符串同步更新；
+              `motor_current_control_voltage_apply`入口新增`bus_mv==0`兜底，返回零向量并跳过PWM写入，防止prepare未跑时的除零UB；
+              `motor_current_loop_test`与`motor_torque_loop_test`的自旋等待挂死风险加TODO标注，问题仅在自动辨识流程中触发，产品运行不涉及；
+              版本号递增至2026.09.11.1，本机无ARMCC/Keil工具链未执行全量编译，静态检查确认跨文件符号声明↔定义↔调用一致，上板前需在Keil中回归。
+
 2026.09.11.0  影子无感观测器与参数持久化：在10 kHz电流环接入只计算的反电势/PLL观测器，输入为限幅后的实际Vα/Vβ与采样Iα/Iβ，输出电角度、电频率、反电势、相位误差、置信度和有效标志；
               新增`flux_linkage_uwb`运行时参数并将Flash参数格式升级为v2，增加`observer status`及`observer debug 1/0`诊断命令；
               观测器不改变FOC、速度反馈或保护路径，Keil全量构建通过，0 Error、0 Warning；目标电机上的观测器波形、Hall对比和低速有效性验证待后续完成。

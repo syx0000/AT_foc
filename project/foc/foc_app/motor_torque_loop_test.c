@@ -308,6 +308,8 @@ bool motor_torque_loop_test_run_with_gains(
   motor_torque_loop_test_done = false;
   motor_torque_loop_test_fault = false;
   motor_torque_loop_test_active = true;
+  /* TODO: 硬件Break或emergency_stop走独立路径不会清active，此处会挂死。
+   *       仅在自动辨识流程内触发，产品运行不涉及；后续应加最大等待tick超时。 */
   while (motor_torque_loop_test_active) wk_delay_ms(1U);
 
   (void)motor_current_control_status_read(&control);

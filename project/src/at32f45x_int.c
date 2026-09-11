@@ -40,6 +40,7 @@
 #include "motor_commissioning.h"
 #include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
+#include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_current_transform.h"
@@ -241,6 +242,7 @@ void SysTick_Handler(void)
   /* add user code begin SysTick_IRQ 0 */
   interrupt_monitor_counters.systick++;
   motor_current_startup_process_1khz();
+  motor_rotor_feedback_process_1khz();
   motor_speed_feedback_process_1khz();
   motor_speed_control_process_1khz();
 

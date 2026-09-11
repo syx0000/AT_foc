@@ -95,9 +95,15 @@ static bool motor_current_control_config_valid(
 static motor_alpha_beta_q15_t motor_current_control_voltage_apply(
   int32_t direct_mv, int32_t quadrature_mv, uint16_t angle_u16)
 {
-  motor_alpha_beta_q15_t voltage;
-  int16_t direct_q15 = (int16_t)(((int64_t)direct_mv * 32768) / motor_current_control_bus_mv);
-  int16_t quadrature_q15 = (int16_t)(((int64_t)quadrature_mv * 32768) /
+  motor_alpha_beta_q15_t voltage = {0, 0};
+  int16_t direct_q15;
+  int16_t quadrature_q15;
+
+  /* prepare() 尚未成功时 bus_mv 为零，直接返回零向量并跳过PWM写入，
+   * 让上一次 compare 保持不变，避免除零UB和无根据的输出。 */
+  if (motor_current_control_bus_mv == 0U) return voltage;
+  direct_q15 = (int16_t)(((int64_t)direct_mv * 32768) / motor_current_control_bus_mv);
+  quadrature_q15 = (int16_t)(((int64_t)quadrature_mv * 32768) /
                                      motor_current_control_bus_mv);
   voltage = motor_foc_inverse_park_q15(
     direct_q15, quadrature_q15, angle_u16);
