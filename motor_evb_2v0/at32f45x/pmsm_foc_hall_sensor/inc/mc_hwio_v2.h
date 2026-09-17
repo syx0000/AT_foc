@@ -89,20 +89,20 @@ The definitions must be established in the following order:
 #define PWM_PHASE_C_HI_GPIO_PIN             GPIO_PINS_10
 #define PWM_PHASE_C_HI_PIN_SOURCE           GPIO_PINS_SOURCE10
 #define PWM_PHASE_C_HI_IOMUX                GPIO_MUX_1
-#define PWM_PHASE_A_LOW_GPIO_CRM_CLK        CRM_GPIOB_PERIPH_CLOCK
-#define PWM_PHASE_A_LOW_PORT                GPIOB
-#define PWM_PHASE_A_LOW_GPIO_PIN            GPIO_PINS_13
-#define PWM_PHASE_A_LOW_PIN_SOURCE          GPIO_PINS_SOURCE13
+#define PWM_PHASE_A_LOW_GPIO_CRM_CLK        CRM_GPIOA_PERIPH_CLOCK
+#define PWM_PHASE_A_LOW_PORT                GPIOA
+#define PWM_PHASE_A_LOW_GPIO_PIN            GPIO_PINS_7
+#define PWM_PHASE_A_LOW_PIN_SOURCE          GPIO_PINS_SOURCE7
 #define PWM_PHASE_A_LOW_IOMUX               GPIO_MUX_1
 #define PWM_PHASE_B_LOW_GPIO_CRM_CLK        CRM_GPIOB_PERIPH_CLOCK
 #define PWM_PHASE_B_LOW_PORT                GPIOB
-#define PWM_PHASE_B_LOW_GPIO_PIN            GPIO_PINS_14
-#define PWM_PHASE_B_LOW_PIN_SOURCE          GPIO_PINS_SOURCE14
+#define PWM_PHASE_B_LOW_GPIO_PIN            GPIO_PINS_0
+#define PWM_PHASE_B_LOW_PIN_SOURCE          GPIO_PINS_SOURCE0
 #define PWM_PHASE_B_LOW_IOMUX               GPIO_MUX_1
 #define PWM_PHASE_C_LOW_GPIO_CRM_CLK        CRM_GPIOB_PERIPH_CLOCK
 #define PWM_PHASE_C_LOW_PORT                GPIOB
-#define PWM_PHASE_C_LOW_GPIO_PIN            GPIO_PINS_15
-#define PWM_PHASE_C_LOW_PIN_SOURCE          GPIO_PINS_SOURCE15
+#define PWM_PHASE_C_LOW_GPIO_PIN            GPIO_PINS_1
+#define PWM_PHASE_C_LOW_PIN_SOURCE          GPIO_PINS_SOURCE1
 #define PWM_PHASE_C_LOW_IOMUX               GPIO_MUX_1
 #define PWM_BRK_GPIO_CRM_CLK                CRM_GPIOB_PERIPH_CLOCK
 #define PWM_BRK_PORT                        GPIOB
@@ -112,29 +112,29 @@ The definitions must be established in the following order:
 
 
 /**************** define Timer for Hall ******************/
-/* hall sensor pin definition */
-#define HALL_CAPTURE_TIMER                  TMR3
-#define HALL_CAPTURE_CRM_CLK                CRM_TMR3_PERIPH_CLOCK
-#define HALL_CAPTURE_IRQ                    TMR3_GLOBAL_IRQHandler
-#define HALL_CAPTURE_IRQn                   TMR3_GLOBAL_IRQn
+/* hall sensor pin definition - target board: PB6/PB7/PB8 on TMR4 */
+#define HALL_CAPTURE_TIMER                  TMR4
+#define HALL_CAPTURE_CRM_CLK                CRM_TMR4_PERIPH_CLOCK
+#define HALL_CAPTURE_IRQ                    TMR4_GLOBAL_IRQHandler
+#define HALL_CAPTURE_IRQn                   TMR4_GLOBAL_IRQn
 #define HALL_CAPTURE_FILTER_CLK_DIV         TMR_CLOCK_DIV2
 #define TMR_HALL_IN_FILTER                  0x6                        /* 0x0 ~ 0xF */
 
 /**************** define GPIO for Hall *******************/
 #define HALL_A_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_A_PORT                         GPIOB
-#define HALL_A_GPIO_PIN                     GPIO_PINS_4
-#define HALL_A_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE4
+#define HALL_A_GPIO_PIN                     GPIO_PINS_6
+#define HALL_A_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE6
 #define HALL_A_IOMUX                        GPIO_MUX_2
 #define HALL_B_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_B_PORT                         GPIOB
-#define HALL_B_GPIO_PIN                     GPIO_PINS_5
-#define HALL_B_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE5
+#define HALL_B_GPIO_PIN                     GPIO_PINS_7
+#define HALL_B_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE7
 #define HALL_B_IOMUX                        GPIO_MUX_2
 #define HALL_C_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_C_PORT                         GPIOB
-#define HALL_C_GPIO_PIN                     GPIO_PINS_0
-#define HALL_C_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE0
+#define HALL_C_GPIO_PIN                     GPIO_PINS_8
+#define HALL_C_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE8
 #define HALL_C_IOMUX                        GPIO_MUX_2
 
 /**************** define GPIO for Encoder *******************/
@@ -238,15 +238,15 @@ The definitions must be established in the following order:
 #define CURR_BUS_ADC_PORT                   GPIOA
 #define CURR_BUS_ADC_GPIO_PIN               GPIO_PINS_3
 
-#define VOLT_BUS_ADC_CH                     ADC_CHANNEL_4
+#define VOLT_BUS_ADC_CH                     ADC_CHANNEL_3
 #define VOLT_BUS_ADC_GPIO_CRM_CLK           CRM_GPIOA_PERIPH_CLOCK
 #define VOLT_BUS_ADC_PORT                   GPIOA
-#define VOLT_BUS_ADC_GPIO_PIN               GPIO_PINS_4
+#define VOLT_BUS_ADC_GPIO_PIN               GPIO_PINS_3
 
-#define MOS_TEMP_ADC_CH                     ADC_CHANNEL_9
-#define MOS_TEMP_ADC_GPIO_CRM_CLK           CRM_GPIOB_PERIPH_CLOCK
-#define MOS_TEMP_ADC_PORT                   GPIOB
-#define MOS_TEMP_ADC_GPIO_PIN               GPIO_PINS_1
+#define MOS_TEMP_ADC_CH                     ADC_CHANNEL_5
+#define MOS_TEMP_ADC_GPIO_CRM_CLK           CRM_GPIOA_PERIPH_CLOCK
+#define MOS_TEMP_ADC_PORT                   GPIOA
+#define MOS_TEMP_ADC_GPIO_PIN               GPIO_PINS_5
 
 #define POTENTIO_ADC_CH                     ADC_CHANNEL_10
 #define POTENTIO_ADC_GPIO_CRM_CLK           CRM_GPIOC_PERIPH_CLOCK
@@ -278,15 +278,15 @@ The definitions must be established in the following order:
 /**************** define comm uart Tx and Rx ******************/
 #define COMM_UART                           USART1
 #define COMM_UART_CRM_CLK                   CRM_USART1_PERIPH_CLOCK
-#define COMM_UART_TX_GPIO_CRM_CLK           CRM_GPIOB_PERIPH_CLOCK
-#define COMM_UART_TX_PORT                   GPIOB
-#define COMM_UART_TX_GPIO_PIN_SOURCE        GPIO_PINS_SOURCE6
-#define COMM_UART_TX_PIN                    GPIO_PINS_6
+#define COMM_UART_TX_GPIO_CRM_CLK           CRM_GPIOA_PERIPH_CLOCK
+#define COMM_UART_TX_PORT                   GPIOA
+#define COMM_UART_TX_GPIO_PIN_SOURCE        GPIO_PINS_SOURCE15
+#define COMM_UART_TX_PIN                    GPIO_PINS_15
 #define COMM_UART_TX_IOMUX                  GPIO_MUX_7
 #define COMM_UART_RX_GPIO_CRM_CLK           CRM_GPIOB_PERIPH_CLOCK
 #define COMM_UART_RX_PORT                   GPIOB
-#define COMM_UART_RX_GPIO_PIN_SOURCE        GPIO_PINS_SOURCE7
-#define COMM_UART_RX_PIN                    GPIO_PINS_7
+#define COMM_UART_RX_GPIO_PIN_SOURCE        GPIO_PINS_SOURCE3
+#define COMM_UART_RX_PIN                    GPIO_PINS_3
 #define COMM_UART_RX_IOMUX                  GPIO_MUX_7
 #define COMM_UART_IOMUX                     (uint32_t)NULL
 #define COMM_UART_IRQn                      USART1_IRQn
@@ -305,26 +305,31 @@ The definitions must be established in the following order:
 #define DMA_UART_RX_FLEX                    DMAMUX_DMAREQ_ID_USART1_RX
 
 /******************* define led *******************/
-/* error led state */
+/* error led state (target board: LED_ERR = PC14) */
 #define  ERROR_LED_GPIO_CRM_CLK              CRM_GPIOC_PERIPH_CLOCK
 #define  ERROR_LED_PORT                      GPIOC
-#define  ERROR_LED_GPIO_PIN                  GPIO_PINS_13
+#define  ERROR_LED_GPIO_PIN                  GPIO_PINS_14
 
 /* adc trig led state */
 #define  ADC_TRIG_LED_GPIO_CRM_CLK           CRM_GPIOA_PERIPH_CLOCK
 #define  ADC_TRIG_LED_PORT                   GPIOA
 #define  ADC_TRIG_LED_GPIO_PIN               GPIO_PINS_11
 
-/* operating status LEDs */
+/* operating status LEDs (target board: LED_RUN = PC13) */
 #define  STATUS1_LED_GPIO_CRM_CLK            CRM_GPIOC_PERIPH_CLOCK
 #define  STATUS1_LED_PORT                    GPIOC
-#define  STATUS1_LED_GPIO_PIN                GPIO_PINS_14
+#define  STATUS1_LED_GPIO_PIN                GPIO_PINS_13
 #define  STATUS2_LED_GPIO_CRM_CLK            CRM_GPIOC_PERIPH_CLOCK
 #define  STATUS2_LED_PORT                    GPIOC
 #define  STATUS2_LED_GPIO_PIN                GPIO_PINS_15
 #define  STATUS3_LED_GPIO_CRM_CLK            CRM_GPIOB_PERIPH_CLOCK
 #define  STATUS3_LED_PORT                    GPIOB
 #define  STATUS3_LED_GPIO_PIN                GPIO_PINS_9
+
+/******************* define EN_GATE for DRV8353 *******************/
+#define  EN_GATE_GPIO_CRM_CLK                CRM_GPIOC_PERIPH_CLOCK
+#define  EN_GATE_PORT                        GPIOC
+#define  EN_GATE_GPIO_PIN                    GPIO_PINS_15
 
 /******************* define button *******************/
 typedef enum
