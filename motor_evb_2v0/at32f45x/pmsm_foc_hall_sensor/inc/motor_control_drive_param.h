@@ -40,7 +40,7 @@ extern "C" {
 
 
 /* gate driver low side inverting logic input or non-inverting logic input*/
-#define GATE_DRIVER_LOW_SIDE_INVERT
+/* DRV8353 uses non-inverting inputs, so GATE_DRIVER_LOW_SIDE_INVERT is NOT defined */
 
 /* FOC control */
 #define FOC_CONTROL
@@ -96,12 +96,12 @@ extern "C" {
 #define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
 
 /********************************* Motor-related parameter *********************************/
-#define POLE_PAIRS                      (8/2)
-#define RS_LL                           (1.89f)      /* Stator resistance(line-to-line), ohm */
-#define LS_LL                           (0.002387f)  /* Stator inductance(line-to-line), H */
-#define LD_LQ_RATIO                     (1.0f)       /* Ratio of Ld to Lq (Ld/Lq) */
-#define KE                              (0.003437f)  /* Back EMF constant(line-to-line, peak voltage), V/rpm */
-#define NOMINAL_CURRENT                 (1.7f)       /* Nominal current of motor, Ampere */
+#define POLE_PAIRS                      (8/2)        /* 60BLDC140: 8 poles */
+#define RS_LL                           (0.536f)     /* line-to-line = 2 x 0.268 ohm (phase) */
+#define LS_LL                           (0.000428f)  /* line-to-line = 2 x 214 uH (phase avg) */
+#define LD_LQ_RATIO                     (1.078f)     /* Ld/Lq = 222/206 */
+#define KE                              (0.00849f)   /* V/rpm, motor spec 8.4 V/kRPM */
+#define NOMINAL_CURRENT                 (11.5f)      /* A, motor rated current */
 
 /*** Quadrature encoder ***/
 #define ENCODER_PPR                     (1000)         /* Number of pulses per revolution */
@@ -119,9 +119,9 @@ extern "C" {
 
 /********************************* Drive-related parameter *********************************/
 /* basic */
-#define VDC_RATED                       (24.0f)
+#define VDC_RATED                       (48.0f)
 #define BAT_LOW_VOLT                    (12.0f)              /*!< minimum allowable battery voltage For E_BIKE_SCOOTER use only*/
-#define V_SENSE_GAIN                    (10/(3.9f+180+10))  // 0.05157
+#define V_SENSE_GAIN                    (1.0f/21.0f)         /* divider ratio 1/21 */
 #define ADC_REFERENCE_VOLT              (3.3f)
 #define ADC_DIGITAL_SCALE_12BITS        (4095.0f)
 /* Clock */
@@ -165,18 +165,18 @@ extern "C" {
 #endif
 
 /* Current */
-#define MAX_CURRENT                     (5.0f)
+#define MAX_CURRENT                     (50.0f)
 #define MIN_CURRENT                     (-MAX_CURRENT)
-#define DC_MAX_CURRENT                  (10.0f)
+#define DC_MAX_CURRENT                  (60.0f)
 #define CURRENT_SPAN_SHIFT              ((uint8_t) 1)
 #ifdef ONE_SHUNT
 #define R_SHUNT                         (0.005f)
 #define OP_GAIN                         (39.0f/(1+39)*(1+9.1/1))                        // 9.8475 (9.8488)
 #define CURR_OFFSET_VOLT                (ADC_REFERENCE_VOLT*(1.0f/(1+39)*(1+9.1f/1)))    // 0.83325 V  0.824
 #else
-#define R_SHUNT                         (0.002f)
-#define OP_GAIN                         (33.0f/(1+33)*(1+16/1))                         // 16.5
-#define CURR_OFFSET_VOLT                (ADC_REFERENCE_VOLT*(1.0f/(1+33)*(1+16/1)))     // 1.65 V
+#define R_SHUNT                         (0.0025f)     /* 2.5 mOhm */
+#define OP_GAIN                         (10.0f)       /* DRV8353 built-in CSA */
+#define CURR_OFFSET_VOLT                (1.65f)       /* VREF/2 */
 #endif
 
 #define RDC_SHUNT                       (0.005f)
@@ -192,7 +192,7 @@ extern "C" {
 
 /* Current */
 /* software over current protection by ADC windowns */
-#define OVER_CURRENT_SW                 (43.0)  /* A */
+#define OVER_CURRENT_SW                 (55.0f)  /* A */
 /* over current setting in hardware */
 #if defined AT32M412xx || defined AT32M416xx
 #define DAC_VREF_SOURCE                 (DAC_VDDA)
@@ -202,8 +202,8 @@ extern "C" {
 #endif
 
 /* Bus voltage */
-#define OVER_VOLT_THRESHOLD             (55)
-#define UNDER_VOLT_THRESHOLD            (10)
+#define OVER_VOLT_THRESHOLD             (60)
+#define UNDER_VOLT_THRESHOLD            (24)
 /* Temperature sensing section */
 /* V[V]=V0+dV/dT[V/Celsius]*(T-T0)[Celsius] */
 #define V0_V                            (0.480f) /*!< in Volts */
@@ -232,7 +232,7 @@ extern "C" {
 /* SPEED */
 #define SPEED_LOOP_FREQ                 (1000) /* Hz */
 #define MIN_SPEED_RPM                   (200)
-#define MAX_SPEED_RPM                   (6000)
+#define MAX_SPEED_RPM                   (4000)
 #define STABLE_SPEED_RPM                (50)
 #define SLICK_SPEED_RPM                 (50)
 #define MIN_SENSE_SPEED                 (10)
