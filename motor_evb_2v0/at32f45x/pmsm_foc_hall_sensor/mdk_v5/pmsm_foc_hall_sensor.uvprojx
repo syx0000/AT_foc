@@ -14,15 +14,15 @@
       <uAC6>1</uAC6>
       <TargetOption>
         <TargetCommonOption>
-          <Device>AT32F455RET7</Device>
+          <Device>AT32F456CEU7</Device>
           <Vendor>ArteryTek</Vendor>
           <PackID>ArteryTek.AT32F45x_DFP.2.0.0</PackID>
           <Cpu>IRAM(0x20000000,0x24000) IROM(0x08000000,0x80000) CPUTYPE("Cortex-M4") FPU2 CLOCK(12000000) ELITTLE</Cpu>
           <FlashUtilSpec></FlashUtilSpec>
           <StartupFile></StartupFile>
-          <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0AT32F455_512 -FS08000000 -FL080000 -FP0($$Device:AT32F455RET7$Flash\AT32F455_512.FLM))</FlashDriverDll>
+          <FlashDriverDll>UL2CM3(-S0 -C0 -P0 -FD20000000 -FC1000 -FN1 -FF0AT32F456_512 -FS08000000 -FL080000 -FP0($$Device:AT32F456CEU7$Flash\AT32F456_512.FLM))</FlashDriverDll>
           <DeviceId>0</DeviceId>
-          <RegisterFile>$$Device:AT32F455RET7$Device\Include\at32f45x.h</RegisterFile>
+          <RegisterFile>$$Device:AT32F456CEU7$Device\Include\at32f45x.h</RegisterFile>
           <MemoryEnv></MemoryEnv>
           <Cmp></Cmp>
           <Asm></Asm>
@@ -32,7 +32,7 @@
           <SLE66CMisc></SLE66CMisc>
           <SLE66AMisc></SLE66AMisc>
           <SLE66LinkerMisc></SLE66LinkerMisc>
-          <SFDFile>$$Device:AT32F455RET7$SVD\AT32F455xx_v2.svd</SFDFile>
+          <SFDFile>$$Device:AT32F456CEU7$SVD\AT32F456xx_v2.svd</SFDFile>
           <bCustSvd>0</bCustSvd>
           <UseEnv>0</UseEnv>
           <BinPath></BinPath>
@@ -137,7 +137,7 @@
           </Flash1>
           <bUseTDR>1</bUseTDR>
           <Flash2>BIN\UL2CM3.DLL</Flash2>
-          <Flash3></Flash3>
+          <Flash3>"" ()</Flash3>
           <Flash4></Flash4>
           <pFcarmOut></pFcarmOut>
           <pFcarmGrp></pFcarmGrp>
@@ -337,7 +337,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>AT32F455RET7,USE_STDPERIPH_DRIVER</Define>
+              <Define>AT32F456CEU7,USE_STDPERIPH_DRIVER</Define>
               <Undefine></Undefine>
               <IncludePath>..\..\..\..\mclib\inc;..\inc;..\..\..\..\libraries\AT32F45x_Firmware_Library\drivers\inc;..\..\..\..\libraries\AT32F45x_Firmware_Library\cmsis\cm4\core_support;..\..\..\..\libraries\AT32F45x_Firmware_Library\cmsis\cm4\device_support</IncludePath>
             </VariousControls>

@@ -30,6 +30,15 @@
 extern "C" {
 #endif
 
+/* AT32F456xE (512 KB Flash) shares the same flash layout as AT32F455xE.
+   Alias it so mclib/mc_flash_data_table.h picks up the correct SECTOR_SIZE. */
+#if defined(AT32F456xE) && !defined(AT32F455xE)
+#define AT32F455xE
+#endif
+#if defined(AT32F456xC) && !defined(AT32F455xC)
+#define AT32F455xC
+#endif
+
 /**
   * @brief in the following line adjust the value of high speed external crystal (hext)
   * used in your application
