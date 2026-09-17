@@ -63,23 +63,23 @@ void nvic_config(void)
 #endif
 
 #if defined MT_METHOD
-  nvic_irq_enable(ENCODER_CAPTURE_IRQn, 6, 0);
+  /* nvic_irq_enable(ENCODER_CAPTURE_IRQn, 6, 0); -- no encoder on target board */
 #endif
 
 #if defined ABZ || defined MAGNET_ENCODER_W_ABZ
   /* encoder index configuration */
-  nvic_irq_enable(EXINT_ENCODER_IDX_IRQn, 0, 0);
+  /* nvic_irq_enable(EXINT_ENCODER_IDX_IRQn, 0, 0); -- no encoder on target board */
 #endif
 
 #if defined MAGNET_ENCODER_WO_ABZ
-  nvic_irq_enable(SYNC_TIMER_CH_IRQn, 0, 0);
+  /* nvic_irq_enable(SYNC_TIMER_CH_IRQn, 0, 0); -- no magnetic encoder sync */
 #endif
 
   /* systick interrupt nvic init */
   nvic_irq_enable(SysTick_IRQn, 5, 0);
 
   /* button interrupt nvic init */
-  nvic_irq_enable(BUTTON_EXINT_IRQn, 7, 0);
+  /* nvic_irq_enable(BUTTON_EXINT_IRQn, 7, 0); -- no button on target board */
   /* usart1 interrupt nvic init */
   nvic_irq_enable(COMM_UART_IRQn, 8, 0);
 }
@@ -1122,48 +1122,7 @@ void uart_init(usart_config_type *usart_config)
   */
 void button_exint_init(void)
 {
-  exint_init_type exint_init_struct;
-  gpio_init_type gpio_init_struct;
-
-  /* start/stop button gpio configuration */
-  crm_periph_clock_enable(USER_BUTTON_CRM_CLK, TRUE);
-  gpio_init_struct.gpio_pins = USER_BUTTON_PIN;
-  gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
-  gpio_init_struct.gpio_out_type = GPIO_OUTPUT_OPEN_DRAIN;
-  gpio_init_struct.gpio_pull = GPIO_PULL_UP;
-  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-  gpio_init(USER_BUTTON_PORT, &gpio_init_struct);
-
-  crm_periph_clock_enable(BUTTON_EXINT_CRM_CLK, TRUE);
-  scfg_exint_line_config(BUTTON_PORT_SOURCE, BUTTON_PIN_SOURCE);
-
-  exint_default_para_init(&exint_init_struct);
-  exint_init_struct.line_enable = TRUE;
-  exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
-  exint_init_struct.line_select = BUTTON_EXINT_LINE;
-  exint_init_struct.line_polarity = EXINT_TRIGGER_RISING_EDGE;
-  exint_init(&exint_init_struct);
-
-#ifdef HALL_SENSORS
-  /* HALL LEARN button gpio configuration */
-  crm_periph_clock_enable(HALL_LEARN_BUTTON_CRM_CLK, TRUE);
-  gpio_init_struct.gpio_pins = HALL_LEARN_BUTTON_PIN;
-  gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
-  gpio_init_struct.gpio_out_type = GPIO_OUTPUT_OPEN_DRAIN;
-  gpio_init_struct.gpio_pull = GPIO_PULL_UP;
-  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-  gpio_init(HALL_LEARN_BUTTON_PORT, &gpio_init_struct);
-
-  crm_periph_clock_enable(HALL_LEARN_BUTTON_EXINT_CRM_CLK, TRUE);
-  scfg_exint_line_config(HALL_LEARN_BUTTON_PORT_SOURCE, HALL_LEARN_BUTTON_PIN_SOURCE);
-
-  exint_default_para_init(&exint_init_struct);
-  exint_init_struct.line_enable = TRUE;
-  exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
-  exint_init_struct.line_select = HALL_LEARN_BUTTON_EXINT_LINE;
-  exint_init_struct.line_polarity = EXINT_TRIGGER_RISING_EDGE;
-  exint_init(&exint_init_struct);
-#endif
+  /* target board has no start/stop or hall-learn buttons */
 }
 
 /**
@@ -1175,16 +1134,11 @@ void led_init(void)
 {
   gpio_init_type gpio_init_struct;
 
-  /* enable the led clock */
+  /* target board has only LED_ERR (PC14) and LED_RUN (PC13) */
   crm_periph_clock_enable(ERROR_LED_GPIO_CRM_CLK, TRUE);
   crm_periph_clock_enable(STATUS1_LED_GPIO_CRM_CLK, TRUE);
-  crm_periph_clock_enable(STATUS2_LED_GPIO_CRM_CLK, TRUE);
-  crm_periph_clock_enable(STATUS3_LED_GPIO_CRM_CLK, TRUE);
 
-  /* set default parameter */
   gpio_default_para_init(&gpio_init_struct);
-
-  /* configure the led gpio */
   gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
   gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_PUSH_PULL;
   gpio_init_struct.gpio_mode = GPIO_MODE_OUTPUT;
@@ -1195,12 +1149,6 @@ void led_init(void)
 
   gpio_init_struct.gpio_pins = STATUS1_LED_GPIO_PIN;
   gpio_init(STATUS1_LED_PORT, &gpio_init_struct);
-
-  gpio_init_struct.gpio_pins = STATUS2_LED_GPIO_PIN;
-  gpio_init(STATUS2_LED_PORT, &gpio_init_struct);
-
-  gpio_init_struct.gpio_pins = STATUS3_LED_GPIO_PIN;
-  gpio_init(STATUS3_LED_PORT, &gpio_init_struct);
 }
 
 /**
@@ -1258,8 +1206,6 @@ void led_config(void)
   led_init();
   led_off(ERROR_LED_PORT, ERROR_LED_GPIO_PIN);
   led_off(STATUS1_LED_PORT, STATUS1_LED_GPIO_PIN);
-  led_off(STATUS2_LED_PORT, STATUS2_LED_GPIO_PIN);  /* always off */
-  led_off(STATUS3_LED_PORT, STATUS3_LED_GPIO_PIN);
 }
 
 /**
@@ -1286,25 +1232,7 @@ void led_blink(void)
   */
 void mode_switch_init(void)
 {
-  gpio_init_type gpio_init_struct;
-
-  /* enable the led clock */
-  crm_periph_clock_enable(MODE1_BUTTON_CRM_CLK, TRUE);
-  crm_periph_clock_enable(MODE2_BUTTON_CRM_CLK, TRUE);
-
-  /* set default parameter */
-  gpio_default_para_init(&gpio_init_struct);
-
-  /* configure the led gpio */
-  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-  gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_OPEN_DRAIN;
-  gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
-  gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-  gpio_init_struct.gpio_pins = MODE1_BUTTON_PIN;
-  gpio_init(MODE1_BUTTON_PORT, &gpio_init_struct);
-
-  gpio_init_struct.gpio_pins = MODE2_BUTTON_PIN;
-  gpio_init(MODE2_BUTTON_PORT, &gpio_init_struct);
+  /* target board has no MODE1/MODE2/REVERSE/BRAKE/LOCK/PARKING switches */
 }
 
 /**
@@ -1316,23 +1244,17 @@ void gpio_pins_init(void)
 {
   gpio_init_type gpio_init_struct;
 
-  /* enable the led clock */
-  crm_periph_clock_enable(LOCK_MOTOR_SW_CRM_CLK, TRUE);
-  crm_periph_clock_enable(PARKING_LOCK_SW_CRM_CLK, TRUE);
-
-  /* set default parameter */
   gpio_default_para_init(&gpio_init_struct);
 
-  /* configure the led gpio */
-  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
-  gpio_init_struct.gpio_out_type  = GPIO_OUTPUT_OPEN_DRAIN;
-  gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
+  /* EN_GATE = PC15 for DRV8353, init low (gate driver disabled) */
+  crm_periph_clock_enable(EN_GATE_GPIO_CRM_CLK, TRUE);
+  gpio_bits_reset(EN_GATE_PORT, EN_GATE_GPIO_PIN);
+  gpio_init_struct.gpio_pins = EN_GATE_GPIO_PIN;
+  gpio_init_struct.gpio_mode = GPIO_MODE_OUTPUT;
+  gpio_init_struct.gpio_out_type = GPIO_OUTPUT_PUSH_PULL;
   gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
-  gpio_init_struct.gpio_pins = LOCK_MOTOR_SW_PIN;
-  gpio_init(LOCK_MOTOR_SW_PORT, &gpio_init_struct);
-
-  gpio_init_struct.gpio_pins = PARKING_LOCK_SW_PIN;
-  gpio_init(PARKING_LOCK_SW_PORT, &gpio_init_struct);
+  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
+  gpio_init(EN_GATE_PORT, &gpio_init_struct);
 }
 
 /**
