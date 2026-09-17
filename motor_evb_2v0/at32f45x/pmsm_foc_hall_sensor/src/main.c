@@ -93,6 +93,10 @@ int main(void)
   /*delay for hardware stable */
   mc_delay_ms(500);
 
+  /* wake up DRV8353 gate driver: pull EN_GATE high, wait for wake time */
+  gpio_bits_set(EN_GATE_PORT, EN_GATE_GPIO_PIN);
+  mc_delay_ms(3);
+
   /* enable tmr channel mode buffer */
   enable_pwm_timer_channel_buffer(&pwm_duty);
 
