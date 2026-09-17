@@ -1,0 +1,16 @@
+# Keil MDK build artifacts
+**/mdk_v5/Objects/
+**/mdk_v5/Listings/
+
+# Keil user UI state (window layout, breakpoints per-user)
+*.uvguix.*
+
+# Backup files
+*.bak
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Build logs
+build.log
