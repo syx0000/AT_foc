@@ -1218,6 +1218,45 @@ void lock_rotor(void)
 #endif
 
 /**
+  * @brief  restore normal PWM/ADC configuration after parameter identification
+  * @param  none
+  * @retval none
+  */
+static void motor_parameter_id_hw_restore(void)
+{
+  pwm_switch_off();
+  disable_pwm_timer(&pwm_duty);
+  tmr_pwm_init();
+  adc_preempt_config();
+  enable_pwm_timer_channel_buffer(&pwm_duty);
+#if defined MAGNET_ENCODER_WO_ABZ
+  tmr_counter_enable(pwm_duty.SYNC_TMRx, TRUE);
+#endif
+  /* Keep the timer/monitor ADC running, but leave all power outputs disabled. */
+  tmr_counter_enable(pwm_duty.ADVTMRx, TRUE);
+}
+
+/**
+  * @brief  abort motor parameter identification and restore normal hardware
+  * @param  none
+  * @retval none
+  */
+void motor_parameter_id_abort(void)
+{
+#if defined USE_MOTOR_MONITOR
+  ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+  ui_wave_param.user_define_b = PARAM_IDENT_DIAG_EXTERNAL_ABORT;
+#endif
+  motor_param_ident.id_flag = RESET;
+  motor_param_ident.state_flag = FAILED;
+  motor_param_ident.step_flag = 0;
+  motor_param_ident.count = 0;
+  motor_param_ident.duty = 0;
+  motor_param_ident.timeout_count = 0;
+  motor_parameter_id_hw_restore();
+}
+
+/**
   * @brief  motor parameter identification process
   * @param  none
   * @retval none
@@ -1232,6 +1271,10 @@ void motor_parameter_id_process(void)
   {
     if (motor_param_ident.Ls.f <= 0 || motor_param_ident.Rs.f <= 0)
     {
+#if defined USE_MOTOR_MONITOR
+      ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+      ui_wave_param.user_define_b = PARAM_IDENT_DIAG_INVALID_RESULT;
+#endif
       motor_param_ident.state_flag = FAILED;
       error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
       motor_param_ident.Rs.f = motor_param_ident.Rs_Old.f;
@@ -1243,20 +1286,19 @@ void motor_parameter_id_process(void)
       motor_param_ident.Rs_Old.f = motor_param_ident.Rs.f;
       motor_param_ident.Ls_Old.f = motor_param_ident.Ls.f;
     }
-    pwm_switch_off();
-    disable_pwm_timer(&pwm_duty);
-    tmr_pwm_init();
-    adc_preempt_config();
-    enable_pwm_timer(&pwm_duty);
+    motor_parameter_id_hw_restore();
     esc_state = ESC_STATE_FREE_RUN;
   }
   else if (motor_param_ident.state_flag == FAILED)
   {
-    pwm_switch_off();
-    disable_pwm_timer(&pwm_duty);
-    tmr_pwm_init();
-    adc_preempt_config();
-    enable_pwm_timer(&pwm_duty);
+#if defined USE_MOTOR_MONITOR
+    if (ui_wave_param.user_define_b >= 0)
+    {
+      ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+      ui_wave_param.user_define_b = PARAM_IDENT_DIAG_TIMEOUT;
+    }
+#endif
+    motor_parameter_id_hw_restore();
     error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
   }
 }

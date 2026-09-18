@@ -57,7 +57,7 @@ extern "C" {
 //#define U_W_SHUNT
 #endif
 //#define MOS_RDS_SHUNT         /* use MOSFET RDS(ON) as current sensing, AT-MOTOR EVB need be modified */
-//#define TWO_ADC_CONVERTERS    /* use two ADC converters */
+#define TWO_ADC_CONVERTERS    /* use two ADC converters */
 #endif
 
 /* hall sensors */
@@ -65,7 +65,7 @@ extern "C" {
 
 
 #ifdef HALL_SENSORS
-//#define LOW_SPEED_VOLT_CTRL      /* if need low speed control or position control */
+#define LOW_SPEED_VOLT_CTRL      /* if need low speed control or position control */
 #endif
 
 /* Enable Ia/Ib/Ic current signal low-pass filtering mode or not */
@@ -102,6 +102,11 @@ extern "C" {
 #define LD_LQ_RATIO                     (1.078f)     /* Ld/Lq = 222/206 */
 #define KE                              (0.00849f)   /* V/rpm, motor spec 8.4 V/kRPM */
 #define NOMINAL_CURRENT                 (11.5f)      /* A, motor rated current */
+
+/* Bench-safe winding parameter identification limits */
+#define PARAM_IDENT_CURRENT             (1.0f)       /* A, identification target current */
+#define PARAM_IDENT_OVERCURRENT         (2.0f)       /* A, fast software abort threshold */
+#define PARAM_IDENT_MAX_VOLTAGE         (2.5f)       /* V, maximum identification excitation */
 
 /*** Quadrature encoder ***/
 #define ENCODER_PPR                     (1000)         /* Number of pulses per revolution */

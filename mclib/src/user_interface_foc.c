@@ -726,6 +726,16 @@ void RCP_GetReg(MC_Protocol_REG_t RegID, RCP_Frame_t * pFrame)
     TCP_SendFrame(&tx_data_response, TCP_CODE_ACK, pData, 16);
     break;
 
+  case MC_PROTOCOL_REG_USER_DEFINED_A:
+    pData = (uint8_t*)&ui_wave_param.user_define_a;
+    TCP_SendFrame(&tx_data_response, TCP_CODE_ACK, pData, 16);
+    break;
+
+  case MC_PROTOCOL_REG_USER_DEFINED_B:
+    pData = (uint8_t*)&ui_wave_param.user_define_b;
+    TCP_SendFrame(&tx_data_response, TCP_CODE_ACK, pData, 16);
+    break;
+
   case MC_PROTOCOL_REG_ENCODER_RESOLUTION:
     pData = (uint8_t*)&(intCoeffs32[MC_PROTOCOL_REG_ENCODER_RESOLUTION]);
     TCP_SendFrame(&tx_data_response, TCP_CODE_ACK, pData, 32);

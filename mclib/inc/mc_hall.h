@@ -42,6 +42,10 @@ void hall_learn_process(void);
 
 #ifdef FOC_CONTROL
 void hall_isr_handler(void);
+#if defined HALL_EXINT_EDGE_CAPTURE
+void hall_edge_capture_reset(uint8_t hall_state);
+void hall_edge_isr_handler(uint8_t hall_state, uint32_t hall_interval);
+#endif
 err_code_type hall_at_zero_speed(hall_sensor_type *hall_handler, rotor_angle_type *rotor_angle_handler, int16_t *hall_next_table);
 void hall_learn_process(void);
 void foc_hall_table_mapping(void);

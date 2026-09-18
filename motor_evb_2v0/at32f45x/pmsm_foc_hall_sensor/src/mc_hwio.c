@@ -60,6 +60,9 @@ void nvic_config(void)
 
 #if defined HALL_SENSORS
   nvic_irq_enable(HALL_CAPTURE_IRQn, 3, 0);
+#if defined HALL_EXINT_EDGE_CAPTURE
+  nvic_irq_enable(HALL_EXINT_IRQn, 3, 0);
+#endif
 #endif
 
 #if defined MT_METHOD
@@ -774,13 +777,109 @@ void magnetic_encoder_timer_init(void)
 }
 #endif
 
+#if defined HALL_EXINT_EDGE_CAPTURE
 /**
-  * @brief  initialization of a timer for capturing hall signals
+  * @brief  read PB5/PB6/PB7 once and pack Hall A/B/C as bits 2/1/0
+  * @param  none
+  * @retval packed Hall state
+  */
+uint8_t hall_gpio_state_get(void)
+{
+  uint16_t gpio_state;
+
+  gpio_state = gpio_input_data_read(GPIOB);
+
+  return (uint8_t)(((gpio_state >> 3U) & 0x04U) |
+                   ((gpio_state >> 5U) & 0x02U) |
+                   ((gpio_state >> 7U) & 0x01U));
+}
+
+/**
+  * @brief  configure PB5/PB6/PB7 as Hall GPIO and EXINT inputs
+  * @param  none
+  * @retval none
+  */
+void hall_gpio_init(void)
+{
+  gpio_init_type gpio_init_struct = {0};
+  exint_init_type exint_init_struct;
+
+  crm_periph_clock_enable(HALL_EXINT_CRM_CLK, TRUE);
+  crm_periph_clock_enable(HALL_A_GPIO_CRM_CLK, TRUE);
+  crm_periph_clock_enable(HALL_B_GPIO_CRM_CLK, TRUE);
+  crm_periph_clock_enable(HALL_C_GPIO_CRM_CLK, TRUE);
+
+  gpio_default_para_init(&gpio_init_struct);
+  gpio_init_struct.gpio_pins = HALL_A_GPIO_PIN | HALL_B_GPIO_PIN | HALL_C_GPIO_PIN;
+  gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
+  gpio_init_struct.gpio_out_type = GPIO_OUTPUT_OPEN_DRAIN;
+  gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
+  gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_STRONGER;
+  gpio_init(HALL_A_PORT, &gpio_init_struct);
+
+  scfg_exint_line_config(HALL_EXINT_PORT_SOURCE, HALL_A_EXINT_PIN_SOURCE);
+  scfg_exint_line_config(HALL_EXINT_PORT_SOURCE, HALL_B_EXINT_PIN_SOURCE);
+  scfg_exint_line_config(HALL_EXINT_PORT_SOURCE, HALL_C_EXINT_PIN_SOURCE);
+
+  exint_default_para_init(&exint_init_struct);
+  exint_init_struct.line_enable = TRUE;
+  exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
+  exint_init_struct.line_select = HALL_EXINT_LINES;
+  exint_init_struct.line_polarity = EXINT_TRIGGER_BOTH_EDGE;
+  exint_init(&exint_init_struct);
+
+  /* Leave the edge source masked until the Hall tables are initialized. */
+  exint_interrupt_enable(HALL_EXINT_LINES, FALSE);
+  exint_flag_clear(HALL_EXINT_LINES);
+}
+
+/**
+  * @brief  enable or disable Hall edge interrupts
+  * @param  new_state: TRUE to enable, FALSE to disable
+  * @retval none
+  */
+void hall_exint_enable(confirm_state new_state)
+{
+  exint_interrupt_enable(HALL_EXINT_LINES, FALSE);
+  exint_flag_clear(HALL_EXINT_LINES);
+
+  if(new_state != FALSE)
+  {
+    hall_edge_capture_reset(HALL_GPIO_STATE_GET());
+    tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+    tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4,
+                          MAX_CAP_COUNT);
+    tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+    exint_interrupt_enable(HALL_EXINT_LINES, TRUE);
+  }
+}
+#endif
+
+/**
+  * @brief  initialize Hall edge capture
   * @param  none
   * @retval none
   */
 void hall_timer_init(void)
 {
+#if defined HALL_EXINT_EDGE_CAPTURE
+  hall_exint_enable(FALSE);
+  crm_periph_clock_enable(HALL_CAPTURE_CRM_CLK, TRUE);
+  tmr_reset(HALL_CAPTURE_TIMER);
+  tmr_base_init(HALL_CAPTURE_TIMER, MAX_CAP_COUNT, (TIM_CAP_CLK_DIV - 1));
+  tmr_cnt_dir_set(HALL_CAPTURE_TIMER, TMR_COUNT_UP);
+  tmr_internal_clock_set(HALL_CAPTURE_TIMER);
+
+  tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+  tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4, MAX_CAP_COUNT);
+  tmr_flag_clear(HALL_CAPTURE_TIMER,
+                 TMR_TRIGGER_FLAG | TMR_C1_FLAG | TMR_C4_FLAG | TMR_OVF_FLAG);
+
+  /* Hall edges arrive through EXINT; TMR4 only supplies the no-edge timeout. */
+  tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT, TRUE);
+  tmr_counter_enable(HALL_CAPTURE_TIMER, TRUE);
+  hall_exint_enable(TRUE);
+#else
   gpio_init_type gpio_init_struct = {0};
   tmr_input_config_type tmr_input_config_struct;
 
@@ -839,6 +938,7 @@ void hall_timer_init(void)
 
   /* enable hall timer */
   tmr_counter_enable(HALL_CAPTURE_TIMER, TRUE);
+#endif
 }
 
 /**
@@ -1391,4 +1491,67 @@ void get_int_vref_cal_ratio(void)
   vref_adc >>= 1;
 
   vref_cal_ratio = (int16_t) ((IDEAL_1V2_ADC_VALUE<<14) / vref_adc);
+}
+
+/*
+ * MOS NTC lookup table.
+ * Sensor:   10 kOhm @ 25 C, B = 3950 K, 10 kOhm pull-up to 3.3 V.
+ * ADC:      12-bit, 3.3 V reference.
+ * Range:    -40 C to +150 C, 5 C step (39 points).
+ * Layout:   temperature ascending, ADC counts descending.
+ * Ported from AT_foc_hall/project/foc/foc_app/motor_slow_sensor.c
+ */
+#define MOS_NTC_TABLE_MIN_C       (-40)
+#define MOS_NTC_TABLE_STEP_C      (5)
+#define MOS_NTC_TABLE_SIZE        (39U)
+#define MOS_NTC_ADC_OPEN_MIN      (4000U)  /* wire open / disconnected */
+
+static const uint16_t mos_ntc_adc_table[MOS_NTC_TABLE_SIZE] = {
+  3996, 3955, 3900, 3830, 3740, 3629, 3495, 3337, 3156, 2955,
+  2738, 2510, 2278, 2048, 1825, 1614, 1419, 1241, 1081,  940,
+   815,  707,  613,  532,  462,  401,  350,  305,  267,  234,
+   206,  181,  160,  142,  126,  112,  100,   89,   80
+};
+
+int16_t mos_temp_ntc_x100_from_adc(uint16_t adc)
+{
+  uint32_t i;
+  int32_t temp_c_x100;
+
+  /* Wire open / sensor disconnected: report +150 C so overtemp trips. */
+  if (adc == 0U || adc >= MOS_NTC_ADC_OPEN_MIN)
+  {
+    return (int16_t)(15000);
+  }
+
+  /* Below -40 C (adc >= table[0]): clamp. */
+  if (adc >= mos_ntc_adc_table[0])
+  {
+    return (int16_t)(MOS_NTC_TABLE_MIN_C * 100);
+  }
+
+  /* Above +150 C (adc <= table[last]): clamp. */
+  if (adc <= mos_ntc_adc_table[MOS_NTC_TABLE_SIZE - 1U])
+  {
+    return (int16_t)((MOS_NTC_TABLE_MIN_C +
+                      (int32_t)(MOS_NTC_TABLE_SIZE - 1U) *
+                      MOS_NTC_TABLE_STEP_C) * 100);
+  }
+
+  /* Linear interpolation between two consecutive rows. */
+  for (i = 0U; i < (MOS_NTC_TABLE_SIZE - 1U); i++)
+  {
+    if (adc >= mos_ntc_adc_table[i + 1U])
+    {
+      temp_c_x100 = (int32_t)(MOS_NTC_TABLE_MIN_C +
+                              (int32_t)i * MOS_NTC_TABLE_STEP_C) * 100;
+      temp_c_x100 += ((int32_t)mos_ntc_adc_table[i] - (int32_t)adc) *
+                     MOS_NTC_TABLE_STEP_C * 100 /
+                     ((int32_t)mos_ntc_adc_table[i] -
+                      (int32_t)mos_ntc_adc_table[i + 1U]);
+      return (int16_t)temp_c_x100;
+    }
+  }
+
+  return (int16_t)(15000);
 }

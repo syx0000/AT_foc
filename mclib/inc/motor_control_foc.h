@@ -59,6 +59,7 @@ void pwm_duty_buffer(pwm_duty_type *pwm_duty_handler);
 void set_normal_pwm_mode(void);
 void lock_rotor(void);
 void motor_parameter_id_process(void);
+void motor_parameter_id_abort(void);
 void current_auto_tuning(i_auto_tune_type *i_tune_handler);
 void ipmsm_mtpa_control(void);
 uint16_t calcVdcRatio(int16_t vref_ratio);

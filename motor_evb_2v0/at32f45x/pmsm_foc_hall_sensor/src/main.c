@@ -55,11 +55,11 @@ int main(void)
 
   mc_delay_init();
 
+  gpio_pins_init();
+
   button_exint_init();
 
   led_config();
-
-  nvic_config();
 
   adc_ordinary_config();
 
@@ -71,7 +71,14 @@ int main(void)
 
   speed_timer_init();
 
+  /* Hall inputs must be readable before param_init(). */
+#if defined HALL_EXINT_EDGE_CAPTURE
+  /* EXINT stays masked until the Hall lookup tables have been initialized. */
+  hall_gpio_init();
+#else
+  /* Preserve the original TMR4 CH1/CH2/CH3 XOR initialization sequence. */
   hall_timer_init();
+#endif
 
 #ifdef BRAKING_RESISTOR
   /* pwm init for brake resistor */
@@ -93,6 +100,19 @@ int main(void)
   /*delay for hardware stable */
   mc_delay_ms(500);
 
+  firmware_id = get_fw_id();
+  param_initial_rdy = mc_param_init(firmware_id);
+
+  /*
+   * Build and bind the Hall state/angle tables before either Hall or PWM
+   * interrupts can consume them.
+   */
+  param_init();
+  nvic_config();
+#if defined HALL_EXINT_EDGE_CAPTURE
+  hall_timer_init();
+#endif
+
   /* wake up DRV8353 gate driver: pull EN_GATE high, wait for wake time */
   gpio_bits_set(EN_GATE_PORT, EN_GATE_GPIO_PIN);
   mc_delay_ms(3);
@@ -105,11 +125,6 @@ int main(void)
 
   /* current offset initialization */
   curr_offset_rdy = I_offset_init(&current);
-
-  firmware_id = get_fw_id();
-  param_initial_rdy = mc_param_init(firmware_id);
-
-  param_init();
 
   led_blink();
 

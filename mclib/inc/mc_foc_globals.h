@@ -107,6 +107,8 @@ extern "C" {
 #define DC_CURRENT_BASE                    ((float)((ADC_REFERENCE_VOLT-IDC_OFFSET_VOLT)/IDC_SENSE_GAIN))
 /* Current */
 #define NOMINAL_CURRENT_PU                 ((int16_t) (0x7FFF*NOMINAL_CURRENT/CURRENT_BASE))
+#define PARAM_IDENT_CURRENT_PU             ((int16_t) (0x7FFF*PARAM_IDENT_CURRENT/CURRENT_BASE))
+#define PARAM_IDENT_OVERCURRENT_PU         ((int16_t) (0x7FFF*PARAM_IDENT_OVERCURRENT/CURRENT_BASE))
 #define MAX_CURRENT_PU                     ((int16_t) (0x7FFF*MAX_CURRENT/CURRENT_BASE))
 #define MIN_CURRENT_PU                     ((int16_t) (0x7FFF*MIN_CURRENT/CURRENT_BASE))
 #define DC_MAX_CURRENT_PU                  ((int16_t) (0x7FFF*DC_MAX_CURRENT/CURRENT_BASE))
@@ -316,6 +318,12 @@ extern "C" {
 #define ADC_TRIG_POS_ID                    ((uint16_t) (PWM_PERIOD_ID-1))
 #define ADC_TRIG_DELAY_ID                  (0.0)   /* us */
 #define ADC_TRIG_DELAY_COUNT_ID            ((uint16_t) (ADC_TRIG_DELAY_ID*TMR_CLK/1000000))
+#define PARAM_IDENT_MAX_DUTY_COUNT         ((uint16_t) (PWM_PERIOD_ID*PARAM_IDENT_MAX_VOLTAGE/VDC_RATED))
+#define PARAM_IDENT_DIAG_OVERCURRENT       ((int16_t)-1)
+#define PARAM_IDENT_DIAG_DUTY_LIMIT        ((int16_t)-2)
+#define PARAM_IDENT_DIAG_TIMEOUT           ((int16_t)-3)
+#define PARAM_IDENT_DIAG_INVALID_RESULT    ((int16_t)-4)
+#define PARAM_IDENT_DIAG_EXTERNAL_ABORT    ((int16_t)-5)
 #define SYSTEM_TICK_FREQ                   (1000)
 #define ALIGN_TIME                         (0.5f)   /* second */
 #define ALIGN_TIME_COUNT                   ((uint16_t)(ALIGN_TIME*SYSTEM_TICK_FREQ))
@@ -509,7 +517,7 @@ extern int16_t sys_counter, startup_counter, stop_counter;
 extern uint8_t hall_sequence_seen_states[8];
 extern uint16_t hall_learn_state_table[6];
 extern uint16_t hall_learn_sequence_table[6];
-extern uint16_t next_hall_learn_state_table[7];
+extern uint16_t next_hall_learn_state_table[8];
 extern qd_type Iref, Ival;
 extern int16_t Iq_ref_cmd, Iq_ref_cmd_limit;
 extern moving_average_type *Idc_ma_fliter;

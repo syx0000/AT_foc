@@ -50,6 +50,9 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
 {
   static int8_t ui_count = 0;
   int16_t position_delta;
+#ifdef MOTOR_PARAM_IDENTIFY
+  int16_t ident_current;
+#endif
 
   if (tmr_flag_get(PWM_ADVANCE_TIMER, TMR_OVF_FLAG) != RESET)
   {
@@ -64,7 +67,38 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
 #ifdef MOTOR_PARAM_IDENTIFY
       if (motor_param_ident.state_flag == PROCESSING)
       {
-        if (motor_param_ident.id_flag == SET)
+        ident_current = *(motor_param_ident.I_val);
+
+        /*
+         * The library identification routine uses a signed phase-A current
+         * target and otherwise keeps increasing duty.  Abort immediately if
+         * current polarity/scaling is wrong or the safe excitation is
+         * exceeded; the state task restores the normal PWM configuration.
+         */
+        if ((ident_current > PARAM_IDENT_OVERCURRENT_PU) ||
+            (ident_current < -PARAM_IDENT_OVERCURRENT_PU))
+        {
+#if defined USE_MOTOR_MONITOR
+          ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+          ui_wave_param.user_define_b = PARAM_IDENT_DIAG_OVERCURRENT;
+#endif
+          motor_param_ident.id_flag = RESET;
+          motor_param_ident.state_flag = FAILED;
+          pwm_switch_off();
+          error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
+        }
+        else if (motor_param_ident.duty > PARAM_IDENT_MAX_DUTY_COUNT)
+        {
+#if defined USE_MOTOR_MONITOR
+          ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+          ui_wave_param.user_define_b = PARAM_IDENT_DIAG_DUTY_LIMIT;
+#endif
+          motor_param_ident.id_flag = RESET;
+          motor_param_ident.state_flag = FAILED;
+          pwm_switch_off();
+          error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
+        }
+        else if (motor_param_ident.id_flag == SET)
         {
           param_identify(&motor_param_ident);
         }
@@ -231,8 +265,19 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
 #if defined USE_MOTOR_MONITOR
       if(++ui_count >= ui_wave_param.sample_cycle)
       {
-        ui_wave_param.user_define_a = (int16_t)hall.state;
-        ui_wave_param.user_define_b = (int16_t)elec_angle_val;
+#ifdef MOTOR_PARAM_IDENTIFY
+        if (motor_param_ident.state_flag == PROCESSING)
+        {
+          /* Parameter-ID diagnostics: PWM count and library step (0...9). */
+          ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
+          ui_wave_param.user_define_b = (int16_t)motor_param_ident.step_flag;
+        }
+        else if (motor_param_ident.state_flag != FAILED)
+#endif
+        {
+          ui_wave_param.user_define_a = (int16_t)hall.state;
+          ui_wave_param.user_define_b = (int16_t)elec_angle_val;
+        }
         ui_save_monitor_data();
         ui_count = 0;
       }
@@ -333,7 +378,43 @@ void ADC_SHUNT_SAMP_READY_IRQ(void)
 }
 
 /**
-  * @brief  hall timer interrupt handler for Hall edge input
+  * @brief  shared EXINT handler for Hall edges on PB5/PB6/PB7
+  * @param  none
+  * @retval none
+  */
+#if defined HALL_EXINT_EDGE_CAPTURE
+void HALL_EXINT_IRQ(void)
+{
+  uint8_t hall_state;
+  uint32_t hall_interval;
+
+  if (exint_interrupt_flag_get(HALL_EXINT_LINES) != RESET)
+  {
+    /*
+     * Clear the grouped pending bits once, then process one coherent GPIOB
+     * snapshot even if more than one Hall line is pending.
+     */
+    exint_flag_clear(HALL_EXINT_LINES);
+    hall_state = HALL_GPIO_STATE_GET();
+    hall_interval = tmr_counter_value_get(HALL_CAPTURE_TIMER);
+
+    /*
+     * Reading CVAL before OVF closes the wrap race: if overflow happens
+     * before or during this check, the real interval is at least one full
+     * timer period and must be saturated instead of treated as a fast edge.
+     */
+    if(tmr_flag_get(HALL_CAPTURE_TIMER, TMR_OVF_FLAG) != RESET)
+    {
+      hall_interval = MAX_CAP_COUNT;
+    }
+
+    hall_edge_isr_handler(hall_state, hall_interval);
+  }
+}
+#endif
+
+/**
+  * @brief  hall timer interrupt handler for the no-edge timeout
   * @param  none
   * @retval none
   */
@@ -444,6 +525,8 @@ void SPEED_LOOP_TIMER_IRQ(void)
   */
 void SysTick_Handler(void)
 {
+  static flag_status monitoring_adc_ready = RESET;
+
   rotor_speed_val = rotor_speed_hall.filtered >> rotor_speed_hall.shift;
   rotor_speed_val_filt = moving_average_shift(speed_ma_fliter, rotor_speed_val);
 
@@ -454,28 +537,47 @@ void SysTick_Handler(void)
 
   ESC_State_Task(esc_state_old);
 
-  iMosTemperature = (int16_t)(((uint32_t)(adc_in_tab[ADC_MOS_TEMP_IDX] * TEMPER_A + TEMPER_B + TEMPER_C)*100)>>16); /* Celsius degrees = iMosTemperature/100 */
-  ui_wave_param.iMosTemperature_meas = (int16_t)(iMosTemperature);
-  ui_wave_param.iBusVoltage_meas = (int16_t)(adc_in_tab[ADC_BUS_VOLT_IDX]*vref_cal_ratio>>14);
+  /*
+   * SysTick starts before PWM begins triggering the ordinary ADC.  Do not
+   * treat the zero-initialized DMA buffer as a real 0 V / hot NTC sample.
+   * A full DMA transfer proves that every monitoring channel is valid.
+   */
+  if ((monitoring_adc_ready == RESET) &&
+      (dma_flag_get(ADC_ORDINARY_DMA_FT_STS_FLAG) != RESET))
+  {
+    dma_flag_clear(ADC_ORDINARY_DMA_FT_STS_FLAG);
+    monitoring_adc_ready = SET;
+  }
+
+  if (monitoring_adc_ready != RESET)
+  {
+    /* NTC (10k@25C, B=3950K) lookup, returns Celsius x 100 */
+    iMosTemperature = mos_temp_ntc_x100_from_adc(adc_in_tab[ADC_MOS_TEMP_IDX]);
+    ui_wave_param.iMosTemperature_meas = (int16_t)(iMosTemperature);
+    ui_wave_param.iBusVoltage_meas = (int16_t)(adc_in_tab[ADC_BUS_VOLT_IDX]*vref_cal_ratio>>14);
+  }
   ui_wave_param.speed_meas_filter_pu = (int16_t)((rotor_speed_val_filt * RPM_TO_SPEED_PU)>>15);
   ui_wave_param.speed_reference_pu = (int16_t)((speed_ramp.command * RPM_TO_SPEED_PU)>>15);
   ui_wave_param.position_meas_pu = (int16_t)((int32_t)(angle.val * DEGREE_TO_POS_PU)>>15);
   ui_wave_param.position_reference_pu = (int16_t)((int32_t)(angle.command * DEGREE_TO_POS_PU)>>15);
 
-  /* Over/under voltage protection */
-  if (ui_wave_param.iBusVoltage_meas < UNDERVOLTAGE_THRESHOLD_d)
+  if (monitoring_adc_ready != RESET)
   {
-    error_code |= error_code_mask & MC_UNDER_VOLT_ERROR;
-  }
-  else if (ui_wave_param.iBusVoltage_meas > OVERVOLTAGE_THRESHOLD_d)
-  {
-    error_code |= error_code_mask & MC_OVER_VOLT_ERROR;
-  }
+    /* Over/under voltage protection */
+    if (ui_wave_param.iBusVoltage_meas < UNDERVOLTAGE_THRESHOLD_d)
+    {
+      error_code |= error_code_mask & MC_UNDER_VOLT_ERROR;
+    }
+    else if (ui_wave_param.iBusVoltage_meas > OVERVOLTAGE_THRESHOLD_d)
+    {
+      error_code |= error_code_mask & MC_OVER_VOLT_ERROR;
+    }
 
-  /* MOS Temperature protection */
-  if (adc_in_tab[ADC_MOS_TEMP_IDX] > TEMPERATURE_THRESHOLD_d)
-  {
-    error_code |= error_code_mask & MC_OVER_TEMP_ERROR;
+    /* MOS Temperature protection (NTC path, compare in Celsius x 100) */
+    if (iMosTemperature > (OVER_TEMP_THRESHOLD * 100))
+    {
+      error_code |= error_code_mask & MC_OVER_TEMP_ERROR;
+    }
   }
 
   /* Enter error state handler */

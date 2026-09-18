@@ -40,14 +40,21 @@
 */
 err_code_type read_hall_state(hall_sensor_type *hall_handler)
 {
+#if !defined HALL_EXINT_EDGE_CAPTURE
   int16_t hall_a, hall_b, hall_c;
+#endif
   err_code_type error_code_handler = MC_NO_ERROR;
 
+#if defined HALL_EXINT_EDGE_CAPTURE
+  /* PB5/PB6/PB7 are adjacent, so one GPIO read gives a coherent state. */
+  hall_handler->state = HALL_GPIO_STATE_GET();
+#else
   hall_a = gpio_input_data_bit_read(hall_handler->H1_port, hall_handler->H1_pin);
   hall_b = gpio_input_data_bit_read(hall_handler->H2_port, hall_handler->H2_pin);
   hall_c = gpio_input_data_bit_read(hall_handler->H3_port, hall_handler->H3_pin);
 
   hall_handler -> state = hall_c + (hall_b << 1) + (hall_a << 2);
+#endif
 
   if(hall_handler -> state == 0 || hall_handler -> state == 7)
   {
@@ -401,6 +408,7 @@ void hall_learn_process(void)
 #if defined FOC_CONTROL && defined HALL_SENSORS
 flag_status is_duplicate_in_sequence = RESET;
 int16_t lock_flag = 0;
+#if !defined HALL_EXINT_EDGE_CAPTURE
 /**
   * @brief  timer interrupt handler for hall signals capturing
   * @param  none
@@ -626,6 +634,334 @@ void hall_isr_handler(void)
     HALL_CAPTURE_TIMER ->c4dt = hall.double_interval;
   }
 }
+#else
+static uint8_t hall_edge_pre_state = 0;
+
+/**
+  * @brief  saturating accumulation for intervals rejected by state validation
+  * @param  hall_interval: interval to accumulate in timer ticks
+  * @retval none
+  */
+static void hall_offset_accumulate(uint32_t hall_interval)
+{
+  uint32_t hall_offset;
+
+  hall_offset = (hall.offset > 0) ? (uint32_t)hall.offset : 0U;
+
+  if((hall_interval >= MAX_CAP_COUNT) ||
+     (hall_offset >= (MAX_CAP_COUNT - hall_interval)))
+  {
+    hall.offset = MAX_CAP_COUNT;
+  }
+  else
+  {
+    hall.offset = (int32_t)(hall_offset + hall_interval);
+  }
+}
+
+/**
+  * @brief  seed the software edge validator with the current Hall state
+  * @param  hall_state: packed Hall state, bit2=A, bit1=B, bit0=C
+  * @retval none
+  */
+void hall_edge_capture_reset(uint8_t hall_state)
+{
+  hall.offset = MAX_CAP_COUNT;
+  hall.double_interval = MAX_CAP_COUNT;
+
+  if((hall_state > 0U) && (hall_state < 7U))
+  {
+    hall_edge_pre_state = hall_state;
+  }
+  else
+  {
+    hall_edge_pre_state = 0U;
+  }
+}
+
+/**
+  * @brief  process one validated Hall edge captured by EXINT
+  * @param  hall_state: coherent PB5/PB6/PB7 state snapshot
+  * @param  hall_interval: elapsed TMR4 ticks since the previous edge
+  * @retval none
+  */
+void hall_edge_isr_handler(uint8_t hall_state, uint32_t hall_interval)
+{
+  uint8_t hall_state_temp;
+  uint8_t changed_bits;
+  int16_t expected_hall_state;
+  int16_t next_cw_hall_state_lock, next_ccw_hall_state_lock;
+
+  if((hall_state < 1U) || (hall_state > 6U))
+  {
+    error_code |= error_code_mask & MC_HALL_ERROR;
+    return;
+  }
+
+  if(hall_edge_pre_state == 0U)
+  {
+    hall_edge_pre_state = hall_state;
+    tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+    tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+    return;
+  }
+
+  if(hall_state == hall_edge_pre_state)
+  {
+    return;
+  }
+
+  changed_bits = hall_state ^ hall_edge_pre_state;
+
+  /*
+   * A legal six-step Hall transition changes exactly one input. Resynchronise
+   * the raw edge tracker after a missed/invalid transition, but do not feed
+   * that interval into the speed estimator.
+   */
+  if((changed_bits & (changed_bits - 1U)) != 0U)
+  {
+    hall_edge_pre_state = hall_state;
+    error_code |= error_code_mask & MC_HALL_ERROR;
+    hall.offset = MAX_CAP_COUNT;
+    tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+    tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+    return;
+  }
+
+  /*
+   * EXINT has no timer input filter. Ignore pulses that imply more than twice
+   * the configured maximum speed, without restarting the interval timer.
+   */
+  if((hall_interval <= HALF_MAX_SPD_HALL_INR) &&
+     (hall.offset < MAX_CAP_COUNT))
+  {
+    return;
+  }
+
+  hall_edge_pre_state = hall_state;
+
+  /* Every accepted physical edge starts a new interval and timeout window. */
+  tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+  tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+
+  if(hall_learn.start_flag != RESET)
+  {
+    hall_learn.hall_state.state = hall_state;
+
+    if(hall_learn.hall_state.state != hall_learn.hall_state.pre_state &&
+       hall_learn.process_state == PROCESS_3_LEARNING)
+    {
+      if(hall_learn.step < HALL_LEARN_TABLE_LENGTH)
+      {
+        if(hall_sequence_seen_states[hall_learn.hall_state.state] != 0)
+        {
+          is_duplicate_in_sequence = SET;
+        }
+        else
+        {
+          is_duplicate_in_sequence = RESET;
+        }
+
+        if(is_duplicate_in_sequence == SET)
+        {
+          hall_learn.step = 0;
+          memset(hall_sequence_seen_states, 0, sizeof(hall_sequence_seen_states));
+        }
+        else
+        {
+          next_hall_learn_state_table[hall_learn.hall_state.pre_state] =
+            hall_learn.hall_state.state;
+          hall_learn_sequence_table[hall_learn.step] = hall_learn.hall_state.state;
+          hall_learn.step++;
+          hall_sequence_seen_states[hall_learn.hall_state.state] = 1;
+        }
+      }
+      else
+      {
+        if(hall_learn.hall_state.state ==
+           next_hall_learn_state_table[hall_learn.hall_state.pre_state])
+        {
+          hall_learn.step++;
+        }
+        else
+        {
+          hall_learn.step = 0;
+        }
+      }
+
+      hall_learn.hall_state.pre_state = hall_learn.hall_state.state;
+    }
+  }
+  else if(lock_motor_time != 0)
+  {
+    hall.state = hall_state;
+    rotor_angle_hall.elec_angle_val = hall_startup_theta_table[hall.state];
+    hall.theta_inc = 0;
+    lock_motor_time = 1;
+
+    if(hall.state != lock_motor_hall_state)
+    {
+      next_cw_hall_state_lock = hall_cw_next_state_table[lock_motor_hall_state];
+      next_ccw_hall_state_lock = hall_ccw_next_state_table[lock_motor_hall_state];
+
+      if((hall.state != next_cw_hall_state_lock) &&
+         (hall.state != next_ccw_hall_state_lock))
+      {
+        lock_motor_hall_state = hall.pre_state;
+        lock_flag = 1;
+      }
+    }
+
+    hall.pre_state = hall.state;
+  }
+  else
+  {
+    hall.state = hall_state;
+    hall.hall_interval = hall_interval;
+
+    if((hall.pre_state < 1U) || (hall.pre_state > 6U))
+    {
+      error_code |= error_code_mask & MC_HALL_ERROR;
+      hall.offset = MAX_CAP_COUNT;
+      return;
+    }
+
+    expected_hall_state = hall_next_state_table[hall.pre_state];
+    if((expected_hall_state < 1) || (expected_hall_state > 6))
+    {
+      error_code |= error_code_mask & MC_HALL_ERROR;
+      hall.offset = MAX_CAP_COUNT;
+      return;
+    }
+    hall.next_state = (uint8_t)expected_hall_state;
+
+    if((hall.state != hall.pre_state) &&
+       (hall.hall_interval > HALF_MAX_SPD_HALL_INR))
+    {
+      if(hall.state == hall.next_state)
+      {
+        if((uint32_t)hall.offset >= (MAX_CAP_COUNT - hall.hall_interval))
+        {
+          hall.hall_interval = MAX_CAP_COUNT;
+        }
+        else
+        {
+          hall.hall_interval += (uint32_t)hall.offset;
+        }
+        hall.offset = 0;
+
+        if(abs(rotor_speed_hall.filtered) < MIN_SPEED_RPM_SHIFT)
+        {
+          reset_ma_buffer(hall_interval_moving_average);
+        }
+
+        hall.hall_interval_filt =
+          moving_average_update(hall_interval_moving_average, hall.hall_interval);
+#ifdef AT32L021xx
+        hwdiv_dividend_set((uint32_t)MIN_SPD_HALL_INR);
+        hwdiv_divisor_set((uint32_t)hall.hall_interval_filt);
+        rotor_speed_hall.filtered =
+          ((int32_t)hwdiv_quotient_get()) * rotor_speed_hall.dir;
+#else
+        rotor_speed_hall.filtered =
+          (int32_t)(MIN_SPD_HALL_INR / hall.hall_interval_filt) *
+          rotor_speed_hall.dir;
+#endif
+
+        hall.double_interval = hall.hall_interval << 1;
+        if(hall.double_interval > MAX_CAP_COUNT)
+        {
+          hall.double_interval = MAX_CAP_COUNT;
+        }
+        tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4,
+                              hall.double_interval);
+
+        hall.theta_inc =
+          hall_delta_theta_calculation(&rotor_speed_hall, &rotor_angle_hall,
+                                       &hall, hall_theta_table);
+        hall.pre_state = hall.state;
+      }
+      else
+      {
+        if(hall.next_state > 0)
+        {
+          hall_state_temp = hall.state;
+          error_code |= error_code_mask & read_hall_state(&hall);
+
+          if((abs(rotor_speed_hall.filtered) < STABLE_SPEED_RPM_SHIFT) &&
+             (hall.state == hall_state_temp))
+          {
+            hall.theta_inc = 0;
+            rotor_speed_hall.filtered = 0;
+            hall.pre_state = hall.state;
+            rotor_angle_hall.elec_angle_val = hall_startup_theta_table[hall.state];
+            reset_ma_buffer(hall_interval_moving_average);
+            hall.double_interval = MAX_CAP_COUNT;
+            tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4,
+                                  hall.double_interval);
+            hall.offset = 0;
+          }
+          else
+          {
+            hall_offset_accumulate(hall.hall_interval);
+          }
+        }
+        else
+        {
+          error_code |= error_code_mask & MC_HALL_ERROR;
+        }
+      }
+    }
+    else
+    {
+      hall_offset_accumulate(hall.hall_interval);
+    }
+  }
+}
+
+/**
+  * @brief  TMR4 compare handler for Hall no-edge timeout
+  * @param  none
+  * @retval none
+  */
+void hall_isr_handler(void)
+{
+  if(tmr_flag_get(HALL_CAPTURE_TIMER, TMR_C4_FLAG) != RESET)
+  {
+    tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+
+    /*
+     * C4 is an absolute threshold from the last EXINT edge. Do not add that
+     * threshold to hall.offset: the current counter already contains it.
+     */
+    if((hall.double_interval >= MAX_CAP_COUNT) ||
+       (abs(rotor_speed_hall.filtered) < MIN_SPEED_RPM_SHIFT))
+    {
+      rotor_speed_hall.filtered = 0;
+      hall.theta_inc = 0;
+      error_code |= error_code_mask &
+        hall_at_zero_speed(&hall, &rotor_angle_hall, hall_next_state_table);
+      reset_ma_buffer(hall_interval_moving_average);
+      hall.offset = MAX_CAP_COUNT;
+      hall.double_interval = MAX_CAP_COUNT;
+    }
+    else
+    {
+      hall.theta_inc >>= 1;
+      rotor_speed_hall.filtered >>= 1;
+      hall.double_interval <<= 1;
+
+      if(hall.double_interval > MAX_CAP_COUNT)
+      {
+        hall.double_interval = MAX_CAP_COUNT;
+      }
+    }
+
+    tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4,
+                          hall.double_interval);
+  }
+}
+#endif
 
 /**
   * @brief  hall initialize function at zero speed
@@ -662,7 +998,11 @@ void hall_learn_process(void)
   {
   case PROCESS_0_LOCK:
     /* disable overflow and trigger interrup of hall timer */
+#if defined HALL_EXINT_EDGE_CAPTURE
+    tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT, FALSE);
+#else
     tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT | TMR_TRIGGER_INT, FALSE);
+#endif
     openloop.theta = 0;
     openloop.inc = 0;
     openloop.volt.d = hall_learn.learn_volt;
@@ -679,6 +1019,16 @@ void hall_learn_process(void)
   case PROCESS_1_FREE_RUN:
     /* get hall state */
     error_code |= error_code_mask & read_hall_state(&hall_learn.hall_state);
+
+    if((hall_learn.hall_state.state < 1U) ||
+       (hall_learn.hall_state.state > 6U))
+    {
+      openloop.volt.d = 0;
+      openloop.inc = 0;
+      hall_learn.process_state = PROCESS_5_ERROR;
+      break;
+    }
+
     hall_learn_state_table[0] = hall_learn.hall_state.state;
     hall_learn.hall_state.pre_state = hall_learn.hall_state.state;
 
@@ -694,9 +1044,19 @@ void hall_learn_process(void)
     memset(next_hall_learn_state_table, 0, sizeof(next_hall_learn_state_table));
     memset(hall_sequence_seen_states, 0, sizeof(hall_sequence_seen_states));
     /* clear interrupt flag of hall timer */
+#if defined HALL_EXINT_EDGE_CAPTURE
+    tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_C4_FLAG | TMR_OVF_FLAG);
+    tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+#else
     tmr_flag_clear(HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG | TMR_C4_INT);
+#endif
     /* enable overflow flag of hall timer */
+#if defined HALL_EXINT_EDGE_CAPTURE
+    tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT, TRUE);
+    hall_exint_enable(TRUE);
+#else
     tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_TRIGGER_INT | TMR_C4_INT, TRUE);
+#endif
     /* enable hall timer */
     tmr_counter_enable(HALL_CAPTURE_TIMER, TRUE);
     hall_learn.process_state = PROCESS_3_LEARNING;
@@ -718,9 +1078,16 @@ void hall_learn_process(void)
       openloop.inc = 0;
       pwm_switch_off();
       /* disable overflow and trigger interrup of hall timer */
+#if defined HALL_EXINT_EDGE_CAPTURE
+      tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT, FALSE);
+#else
       tmr_interrupt_enable(HALL_CAPTURE_TIMER, TMR_C4_INT | TMR_TRIGGER_INT, FALSE);
+#endif
       /* disable hall timer */
       tmr_counter_enable(HALL_CAPTURE_TIMER, FALSE);
+#if defined HALL_EXINT_EDGE_CAPTURE
+      hall_exint_enable(FALSE);
+#endif
     }
 
     break;
@@ -739,17 +1106,26 @@ void hall_learn_process(void)
       hall_learn_state_table[i] = hall_learn_sequence_table[(i + start_index) % 6];
     }
 
+#if defined HALL_EXINT_EDGE_CAPTURE
+    hall_exint_enable(FALSE);
+#endif
     hall_learn.check_flag = SET;
     hall_learn.start_flag = RESET;
-    hall_timer_init();
     foc_hall_table_mapping();
+    hall_timer_init();
     esc_state = ESC_STATE_FREE_RUN;
     break;
 
   case PROCESS_5_ERROR:
+#if defined HALL_EXINT_EDGE_CAPTURE
+    hall_exint_enable(FALSE);
+#endif
     hall_learn.check_flag = RESET;
     error_code |= error_code_mask & MC_HALL_LEARN_ERROR;
     hall_learn.start_flag = RESET;
+#if defined HALL_EXINT_EDGE_CAPTURE
+    hall_timer_init();
+#endif
     esc_state = ESC_STATE_FREE_RUN;
     break;
 

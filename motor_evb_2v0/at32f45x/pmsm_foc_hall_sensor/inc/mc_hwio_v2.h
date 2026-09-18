@@ -112,30 +112,77 @@ The definitions must be established in the following order:
 
 
 /**************** define Timer for Hall ******************/
-/* hall sensor pin definition - target board: PB6/PB7/PB8 on TMR4 */
+/*
+ * Hall edge capture mode:
+ *   HALL_CAPTURE_MODE_EXINT     - PB5/PB6/PB7, EXINT on both edges
+ *   HALL_CAPTURE_MODE_TIMER_XOR - PB8/PB6/PB7, original TMR4 XOR capture
+ *
+ * HALL_CAPTURE_MODE can also be supplied by the compiler command line.
+ */
+#define HALL_CAPTURE_MODE_EXINT             0
+#define HALL_CAPTURE_MODE_TIMER_XOR         1
+#ifndef HALL_CAPTURE_MODE
+#define HALL_CAPTURE_MODE                   HALL_CAPTURE_MODE_EXINT
+#endif
+
+#if HALL_CAPTURE_MODE == HALL_CAPTURE_MODE_EXINT
+#define HALL_EXINT_EDGE_CAPTURE
+#elif HALL_CAPTURE_MODE != HALL_CAPTURE_MODE_TIMER_XOR
+#error Invalid HALL_CAPTURE_MODE
+#endif
+
 #define HALL_CAPTURE_TIMER                  TMR4
 #define HALL_CAPTURE_CRM_CLK                CRM_TMR4_PERIPH_CLOCK
 #define HALL_CAPTURE_IRQ                    TMR4_GLOBAL_IRQHandler
 #define HALL_CAPTURE_IRQn                   TMR4_GLOBAL_IRQn
+
+#if HALL_CAPTURE_MODE == HALL_CAPTURE_MODE_EXINT
+#define HALL_EXINT_CRM_CLK                  CRM_SCFG_PERIPH_CLOCK
+#define HALL_EXINT_PORT_SOURCE              SCFG_PORT_SOURCE_GPIOB
+#define HALL_EXINT_LINES                    (EXINT_LINE_5 | EXINT_LINE_6 | EXINT_LINE_7)
+#define HALL_EXINT_IRQ                      EXINT9_5_IRQHandler
+#define HALL_EXINT_IRQn                     EXINT9_5_IRQn
+
+/**************** define GPIO for Hall *******************/
+#define HALL_A_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
+#define HALL_A_PORT                         GPIOB
+#define HALL_A_GPIO_PIN                     GPIO_PINS_5
+#define HALL_A_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE5
+#define HALL_A_EXINT_PIN_SOURCE             SCFG_PINS_SOURCE5
+#define HALL_B_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
+#define HALL_B_PORT                         GPIOB
+#define HALL_B_GPIO_PIN                     GPIO_PINS_6
+#define HALL_B_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE6
+#define HALL_B_EXINT_PIN_SOURCE             SCFG_PINS_SOURCE6
+#define HALL_C_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
+#define HALL_C_PORT                         GPIOB
+#define HALL_C_GPIO_PIN                     GPIO_PINS_7
+#define HALL_C_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE7
+#define HALL_C_EXINT_PIN_SOURCE             SCFG_PINS_SOURCE7
+
+/* One GPIOB snapshot: state bit2=A(PB5), bit1=B(PB6), bit0=C(PB7). */
+#define HALL_GPIO_STATE_GET()               hall_gpio_state_get()
+#else
 #define HALL_CAPTURE_FILTER_CLK_DIV         TMR_CLOCK_DIV2
 #define TMR_HALL_IN_FILTER                  0x6                        /* 0x0 ~ 0xF */
 
 /**************** define GPIO for Hall *******************/
 #define HALL_A_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_A_PORT                         GPIOB
-#define HALL_A_GPIO_PIN                     GPIO_PINS_6
-#define HALL_A_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE6
+#define HALL_A_GPIO_PIN                     GPIO_PINS_8
+#define HALL_A_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE8
 #define HALL_A_IOMUX                        GPIO_MUX_2
 #define HALL_B_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_B_PORT                         GPIOB
-#define HALL_B_GPIO_PIN                     GPIO_PINS_7
-#define HALL_B_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE7
+#define HALL_B_GPIO_PIN                     GPIO_PINS_6
+#define HALL_B_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE6
 #define HALL_B_IOMUX                        GPIO_MUX_2
 #define HALL_C_GPIO_CRM_CLK                 CRM_GPIOB_PERIPH_CLOCK
 #define HALL_C_PORT                         GPIOB
-#define HALL_C_GPIO_PIN                     GPIO_PINS_8
-#define HALL_C_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE8
+#define HALL_C_GPIO_PIN                     GPIO_PINS_7
+#define HALL_C_GPIO_PIN_SOURCE              GPIO_PINS_SOURCE7
 #define HALL_C_IOMUX                        GPIO_MUX_2
+#endif
 
 /**************** define GPIO for Encoder *******************/
 /* encoder sensor pin definition */
@@ -413,6 +460,11 @@ void adc_preempt_config(void);
 void encoder_timer_init(void);
 void encoder_capture_timer_init(void);
 void magnetic_encoder_timer_init(void);
+#if defined HALL_EXINT_EDGE_CAPTURE
+uint8_t hall_gpio_state_get(void);
+void hall_gpio_init(void);
+void hall_exint_enable(confirm_state new_state);
+#endif
 void hall_timer_init(void);
 void speed_timer_init(void);
 void brake_pwm_init(void);
@@ -440,6 +492,12 @@ void foc_angle_init_config(void);
 void motor_parameter_ID_config(void);
 
 void get_int_vref_cal_ratio(void);
+
+/* NTC (10k@25C, B=3950K, 10k pullup) MOS temperature lookup.
+   Returns temperature in Celsius x 100 (e.g. 2500 = 25 C).
+   Open circuit (adc >= 4000) returns +150 C so overtemp trips. */
+int16_t mos_temp_ntc_x100_from_adc(uint16_t adc);
+
 #ifdef __cplusplus
 }
 #endif

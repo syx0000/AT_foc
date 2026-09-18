@@ -111,6 +111,13 @@ void ESC_State_Init(esc_state_type esc_state_handler)
   case ESC_STATE_ERROR:
     foc_rdy = RESET;
     pwm_switch_off();
+#ifdef MOTOR_PARAM_IDENTIFY
+    if ((esc_state_old == ESC_STATE_WINDING_PARAM_ID) &&
+        (motor_param_ident.state_flag == PROCESSING))
+    {
+      motor_parameter_id_abort();
+    }
+#endif
     param_clear();
     start_stop_btn_flag = RESET;
     led_on(ERROR_LED_PORT, ERROR_LED_GPIO_PIN);
@@ -132,6 +139,14 @@ void ESC_State_Init(esc_state_type esc_state_handler)
     break;
 #ifdef MOTOR_PARAM_IDENTIFY
   case ESC_STATE_WINDING_PARAM_ID:
+    motor_param_ident.id_flag = RESET;
+    motor_param_ident.step_flag = 0;
+    motor_param_ident.count = 0;
+    motor_param_ident.duty = 0;
+#if defined USE_MOTOR_MONITOR
+    ui_wave_param.user_define_a = 0;
+    ui_wave_param.user_define_b = 0;
+#endif
     motor_parameter_ID_config();
     motor_param_ident.timeout_count = 0;
     break;
@@ -271,6 +286,9 @@ void ESC_State_Task(esc_state_type esc_state_handler)
   case ESC_STATE_AUTO_LEARN:
     if (hall_learn.start_flag == RESET)
     {
+#if defined HALL_EXINT_EDGE_CAPTURE
+      hall_timer_init();
+#endif
       esc_state = ESC_STATE_FREE_RUN;
     }
     else
