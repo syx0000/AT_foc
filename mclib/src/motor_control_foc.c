@@ -23,6 +23,7 @@
   */
 
 #include "mc_lib.h"
+#include "mc_ident_diag.h"
 
 /** @addtogroup Motor_Control_Library
   * @{
@@ -1243,6 +1244,9 @@ static void motor_parameter_id_hw_restore(void)
   */
 void motor_parameter_id_abort(void)
 {
+#if defined USE_UART_LOG
+  motor_ident_diag_fault_if_unset(IDENT_DIAG_EXTERNAL_ABORT);
+#endif
 #if defined USE_MOTOR_MONITOR
   ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
   ui_wave_param.user_define_b = PARAM_IDENT_DIAG_EXTERNAL_ABORT;
@@ -1271,6 +1275,9 @@ void motor_parameter_id_process(void)
   {
     if (motor_param_ident.Ls.f <= 0 || motor_param_ident.Rs.f <= 0)
     {
+#if defined USE_UART_LOG
+      motor_ident_diag_fault_if_unset(IDENT_DIAG_INVALID_RESULT);
+#endif
 #if defined USE_MOTOR_MONITOR
       ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
       ui_wave_param.user_define_b = PARAM_IDENT_DIAG_INVALID_RESULT;
@@ -1283,6 +1290,9 @@ void motor_parameter_id_process(void)
     else
     {
       motor_param_ident.state_flag = SUCCEED;
+#if defined USE_UART_LOG
+      motor_ident_diag_capture(IDENT_DIAG_SUCCESS);
+#endif
       motor_param_ident.Rs_Old.f = motor_param_ident.Rs.f;
       motor_param_ident.Ls_Old.f = motor_param_ident.Ls.f;
     }
@@ -1291,6 +1301,9 @@ void motor_parameter_id_process(void)
   }
   else if (motor_param_ident.state_flag == FAILED)
   {
+#if defined USE_UART_LOG
+    motor_ident_diag_fault_if_unset(IDENT_DIAG_TIMEOUT);
+#endif
 #if defined USE_MOTOR_MONITOR
     if (ui_wave_param.user_define_b >= 0)
     {

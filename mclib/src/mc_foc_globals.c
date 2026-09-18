@@ -498,7 +498,7 @@ motor_param_id_type motor_param_ident =
   .ADVTMRx = PWM_ADVANCE_TIMER,
   .sample_freq = PWM_FREQ_ID,
   .pwm_period = (PWM_PERIOD_ID-1),
-  .I_nominal = PARAM_IDENT_CURRENT_PU,
+  .I_nominal = NOMINAL_CURRENT_PU,
   .I_threshold = THRESHOLD_CURRENT_PU,
 #if defined ONE_SHUNT
   .I_val = &current.ID_1shunt,

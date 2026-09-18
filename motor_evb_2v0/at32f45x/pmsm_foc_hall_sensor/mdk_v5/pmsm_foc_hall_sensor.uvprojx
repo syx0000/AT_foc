@@ -337,7 +337,7 @@
             <v6Rtti>0</v6Rtti>
             <VariousControls>
               <MiscControls></MiscControls>
-              <Define>AT32F456CEU7,USE_STDPERIPH_DRIVER</Define>
+              <Define>AT32F456CEU7,USE_STDPERIPH_DRIVER,ARM_DSP_CONFIG_TABLES,ARM_FAST_ALLOW_TABLES,ARM_TABLE_SIN_Q15</Define>
               <Undefine></Undefine>
               <IncludePath>..\..\..\..\mclib\inc;..\inc;..\..\..\..\libraries\AT32F45x_Firmware_Library\drivers\inc;..\..\..\..\libraries\AT32F45x_Firmware_Library\cmsis\cm4\core_support;..\..\..\..\libraries\AT32F45x_Firmware_Library\cmsis\cm4\device_support</IncludePath>
             </VariousControls>
@@ -409,6 +409,11 @@
               <FilePath>..\src\mc_isr.c</FilePath>
             </File>
             <File>
+              <FileName>mc_ident_diag.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\mc_ident_diag.c</FilePath>
+            </File>
+            <File>
               <FileName>mc_hwio_v2.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\inc\mc_hwio_v2.h</FilePath>
@@ -417,6 +422,11 @@
               <FileName>mc_lib.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\inc\mc_lib.h</FilePath>
+            </File>
+            <File>
+              <FileName>mc_ident_diag.h</FileName>
+              <FileType>5</FileType>
+              <FilePath>..\inc\mc_ident_diag.h</FilePath>
             </File>
             <File>
               <FileName>motor_control_drive_param.h</FileName>

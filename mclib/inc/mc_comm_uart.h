@@ -33,6 +33,9 @@ extern "C" {
 
 void dma_uart_configuration(void);
 void uart_rx_init(void);
+#if defined USE_UART_LOG
+flag_status uart_log_rx_take(uint8_t *data, uint8_t *length);
+#endif
 
 /* UART external buffer variables define  */
 extern uint8_t usart_rx_buffer[];

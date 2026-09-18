@@ -23,6 +23,7 @@
   */
 
 #include "mc_lib.h"
+#include "mc_ident_diag.h"
 
 /** @addtogroup motor_evb_2v0
   * @{
@@ -91,10 +92,13 @@ int main(void)
   crm_clocks_freq_get(&crm_clocks_freq_struct);
 
   /* uart initialization */
-#if defined USE_MOTOR_MONITOR
+#if defined USE_MOTOR_MONITOR || defined USE_UART_LOG
   uart_init(&ui_usart);
   dma_uart_configuration();
   uart_rx_init();
+#endif
+#if defined USE_UART_LOG
+  printf("\r\nFOC UART log ready, baud=921600\r\n");
 #endif
 
   /*delay for hardware stable */
@@ -130,6 +134,10 @@ int main(void)
 
   while(1)
   {
+#if defined USE_UART_LOG && defined MOTOR_PARAM_IDENTIFY
+    motor_ident_diag_task();
+#endif
+
     if(hall_learn.check_flag == SET)
     {
       write_flash_cmd();

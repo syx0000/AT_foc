@@ -23,6 +23,7 @@
   */
 
 #include "mc_lib.h"
+#include "mc_ident_diag.h"
 
 trig_components_type trig_components;
 int16_t Iq_cmd;
@@ -48,11 +49,10 @@ int16_t Vq_cmd;
   */
 void ADVTMR_PWM_CYCLE_IRQ(void)
 {
+#if defined USE_MOTOR_MONITOR
   static int8_t ui_count = 0;
-  int16_t position_delta;
-#ifdef MOTOR_PARAM_IDENTIFY
-  int16_t ident_current;
 #endif
+  int16_t position_delta;
 
   if (tmr_flag_get(PWM_ADVANCE_TIMER, TMR_OVF_FLAG) != RESET)
   {
@@ -67,38 +67,7 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
 #ifdef MOTOR_PARAM_IDENTIFY
       if (motor_param_ident.state_flag == PROCESSING)
       {
-        ident_current = *(motor_param_ident.I_val);
-
-        /*
-         * The library identification routine uses a signed phase-A current
-         * target and otherwise keeps increasing duty.  Abort immediately if
-         * current polarity/scaling is wrong or the safe excitation is
-         * exceeded; the state task restores the normal PWM configuration.
-         */
-        if ((ident_current > PARAM_IDENT_OVERCURRENT_PU) ||
-            (ident_current < -PARAM_IDENT_OVERCURRENT_PU))
-        {
-#if defined USE_MOTOR_MONITOR
-          ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
-          ui_wave_param.user_define_b = PARAM_IDENT_DIAG_OVERCURRENT;
-#endif
-          motor_param_ident.id_flag = RESET;
-          motor_param_ident.state_flag = FAILED;
-          pwm_switch_off();
-          error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
-        }
-        else if (motor_param_ident.duty > PARAM_IDENT_MAX_DUTY_COUNT)
-        {
-#if defined USE_MOTOR_MONITOR
-          ui_wave_param.user_define_a = (int16_t)motor_param_ident.duty;
-          ui_wave_param.user_define_b = PARAM_IDENT_DIAG_DUTY_LIMIT;
-#endif
-          motor_param_ident.id_flag = RESET;
-          motor_param_ident.state_flag = FAILED;
-          pwm_switch_off();
-          error_code |= error_code_mask & MC_PARAM_IDENT_ERROR;
-        }
-        else if (motor_param_ident.id_flag == SET)
+        if (motor_param_ident.id_flag == SET)
         {
           param_identify(&motor_param_ident);
         }
@@ -366,6 +335,12 @@ void ADC_SHUNT_SAMP_READY_IRQ(void)
 #endif
         current_read_foc_1shunt(&current, volt_cmd.sector_old);
 #endif
+#endif
+
+#if defined INVERT_PHASE_CURRENT_POLARITY
+      current.Iabc.a = -current.Iabc.a;
+      current.Iabc.b = -current.Iabc.b;
+      current.Iabc.c = -current.Iabc.c;
 #endif
 
 #if AC_CURRENT_LP_FILTER

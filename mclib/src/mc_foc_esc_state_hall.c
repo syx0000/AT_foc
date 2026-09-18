@@ -23,6 +23,7 @@
   */
 
 #include "mc_lib.h"
+#include "mc_ident_diag.h"
 
 /** @addtogroup Motor_Control_Library
   * @{
@@ -149,6 +150,10 @@ void ESC_State_Init(esc_state_type esc_state_handler)
 #endif
     motor_parameter_ID_config();
     motor_param_ident.timeout_count = 0;
+#if defined USE_UART_LOG
+    motor_ident_diag_reset();
+    motor_ident_diag_capture(IDENT_DIAG_START);
+#endif
     break;
 #endif
   case ESC_STATE_NONE:

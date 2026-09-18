@@ -35,7 +35,12 @@
   */
 
 uint8_t usart_rx_buffer[RCP_MAX_FRAME_SIZE];
-#if defined USE_MOTOR_MONITOR
+#if defined USE_UART_LOG
+static uint8_t uart_log_rx_buffer[RCP_MAX_FRAME_SIZE + 1U];
+static volatile uint8_t uart_log_rx_length;
+static volatile flag_status uart_log_rx_ready;
+#endif
+#if defined USE_MOTOR_MONITOR || defined USE_UART_LOG
 /* global variables definition */
 uint8_t sync_frame[10] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB};
 
@@ -127,9 +132,11 @@ void uart_rx_init(void)
   */
 void COMM_UART_IRQHandler(void)
 {
+#if defined USE_MOTOR_MONITOR
   uint8_t bErrorCode;
   uint8_t* pErrorCode = &bErrorCode;
   uint8_t receive_frame_len;
+#endif
 
   if (usart_flag_get(COMM_UART, USART_IDLEF_FLAG))
   {
@@ -140,6 +147,7 @@ void COMM_UART_IRQHandler(void)
     /* count data length */
     usart_data_idx.data_len = RCP_MAX_FRAME_SIZE - dma_data_number_get(DMA_UART_RX_CHANNEL);
 
+#if defined USE_MOTOR_MONITOR
     /* check start byte */
     if(usart_rx_buffer[0] != MC_PROTOCOL_START_BYTE)
     {
@@ -162,6 +170,28 @@ void COMM_UART_IRQHandler(void)
         TCP_SendFrame(&tx_data_response, TCP_CODE_NACK, pErrorCode, 8);
       }
     }
+#else
+    /* Raw log mode: publish one complete DMA/IDLE frame to the command task. */
+    usart_data_idx.frame_len = usart_data_idx.data_len;
+    usart_data_idx.no_error = TRUE;
+    if ((uart_log_rx_ready == RESET) && (usart_data_idx.data_len > 0U))
+    {
+      uint8_t index;
+      uint8_t length = usart_data_idx.data_len;
+
+      if (length > RCP_MAX_FRAME_SIZE)
+      {
+        length = RCP_MAX_FRAME_SIZE;
+      }
+      for (index = 0U; index < length; index++)
+      {
+        uart_log_rx_buffer[index] = usart_rx_buffer[index];
+      }
+      uart_log_rx_buffer[length] = 0U;
+      uart_log_rx_length = length;
+      uart_log_rx_ready = SET;
+    }
+#endif
 
     /* reset DMA UART RX length */
     dma_data_number_set(DMA_UART_RX_CHANNEL, RCP_MAX_FRAME_SIZE);
@@ -169,4 +199,36 @@ void COMM_UART_IRQHandler(void)
     dma_channel_enable(DMA_UART_RX_CHANNEL, TRUE);
   }
 }
+
+#if defined USE_UART_LOG
+flag_status uart_log_rx_take(uint8_t *data, uint8_t *length)
+{
+  uint32_t primask;
+  uint8_t index;
+
+  if ((data == NULL) || (length == NULL))
+  {
+    return RESET;
+  }
+
+  primask = __get_PRIMASK();
+  __disable_irq();
+  if (uart_log_rx_ready == RESET)
+  {
+    __set_PRIMASK(primask);
+    return RESET;
+  }
+
+  *length = uart_log_rx_length;
+  for (index = 0U; index < uart_log_rx_length; index++)
+  {
+    data[index] = uart_log_rx_buffer[index];
+  }
+  data[uart_log_rx_length] = 0U;
+  uart_log_rx_length = 0U;
+  uart_log_rx_ready = RESET;
+  __set_PRIMASK(primask);
+  return SET;
+}
+#endif
 #endif

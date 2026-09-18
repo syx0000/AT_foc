@@ -50,6 +50,12 @@ extern "C" {
 //#define TWO_SHUNT
 //#define ONE_SHUNT
 
+/*
+ * The target board phase-current amplifiers rise for positive inverter-to-motor
+ * current, opposite to the motor library's default ADC polarity.
+ */
+#define INVERT_PHASE_CURRENT_POLARITY
+
 #ifndef ONE_SHUNT
 #ifdef TWO_SHUNT              /* choose current sensing circuit for TWO-SHUNT */
 #define U_V_SHUNT
@@ -92,21 +98,27 @@ extern "C" {
 /* Enable Winding parameter identification or not */
 #define MOTOR_PARAM_IDENTIFY
 
-/* use artery motor monitor or not */
-#define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
+/* Select one UART mode: binary Motor Monitor or ASCII log. */
+//#define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
+#define USE_UART_LOG
+
+#if defined(USE_MOTOR_MONITOR) && defined(USE_UART_LOG)
+#error "Select only one UART mode"
+#elif defined(USE_MOTOR_MONITOR)
+#define UI_UART_BAUDRATE                (1500000UL)
+#elif defined(USE_UART_LOG)
+#define UI_UART_BAUDRATE                (921600UL)
+#else
+#error "Select USE_MOTOR_MONITOR or USE_UART_LOG"
+#endif
 
 /********************************* Motor-related parameter *********************************/
 #define POLE_PAIRS                      (8/2)        /* 60BLDC140: 8 poles */
-#define RS_LL                           (0.536f)     /* line-to-line = 2 x 0.268 ohm (phase) */
-#define LS_LL                           (0.000428f)  /* line-to-line = 2 x 214 uH (phase avg) */
+#define RS_LL                           (0.39997f)     /* line-to-line = 2 x 0.268 ohm (phase) */
+#define LS_LL                           (0.000381854f)  /* line-to-line = 2 x 214 uH (phase avg) */
 #define LD_LQ_RATIO                     (1.078f)     /* Ld/Lq = 222/206 */
 #define KE                              (0.00849f)   /* V/rpm, motor spec 8.4 V/kRPM */
 #define NOMINAL_CURRENT                 (11.5f)      /* A, motor rated current */
-
-/* Bench-safe winding parameter identification limits */
-#define PARAM_IDENT_CURRENT             (1.0f)       /* A, identification target current */
-#define PARAM_IDENT_OVERCURRENT         (2.0f)       /* A, fast software abort threshold */
-#define PARAM_IDENT_MAX_VOLTAGE         (2.5f)       /* V, maximum identification excitation */
 
 /*** Quadrature encoder ***/
 #define ENCODER_PPR                     (1000)         /* Number of pulses per revolution */
@@ -115,12 +127,12 @@ extern "C" {
 
 /* hall learn table */
 #define HALL_LEARN_DIR                  (0)            /* Polarity, 0 or 1 */
-#define HALL_LEARN_0_STATE              (1)
-#define HALL_LEARN_1_STATE              (5)
-#define HALL_LEARN_2_STATE              (4)
-#define HALL_LEARN_3_STATE              (6)
-#define HALL_LEARN_4_STATE              (2)
-#define HALL_LEARN_5_STATE              (3)
+#define HALL_LEARN_0_STATE              (5)
+#define HALL_LEARN_1_STATE              (1)
+#define HALL_LEARN_2_STATE              (3)
+#define HALL_LEARN_3_STATE              (2)
+#define HALL_LEARN_4_STATE              (6)
+#define HALL_LEARN_5_STATE              (4)
 
 /********************************* Drive-related parameter *********************************/
 /* basic */
@@ -203,7 +215,6 @@ extern "C" {
 #define DAC_VREF_SOURCE                 (DAC_VDDA)
 #define OCP_CURRENT                     (50.0)
 #define BUS_CURR_CMP_OCP_VOLT           ((OCP_CURRENT*RDC_SHUNT*DC_OP_GAIN)+IDC_OFFSET_VOLT) //3.04
-#define TMR_BRK_FILTER_COUNT            (3)
 #endif
 
 /* Bus voltage */
@@ -227,7 +238,6 @@ extern "C" {
 #define PWM_FREQ                        (16000)  /* Hz */
 #define MOTOR_CONTROL_MODE              (OPEN_LOOP_CTRL)
 #define CTRL_SOURCE                     (CTRL_SOURCE_SOFTWARE)
-#define UI_UART_BAUDRATE                (1500000UL)
 
 /* current tuning parameter */
 #define TUNE_TARGET_CURRENT             (1.0f)
@@ -281,18 +291,18 @@ extern "C" {
 #define AUTO_TUNE_CURR_BANDWIDTH        (3500)     /* 2*pi*freq */
 
 /* Id/Iq pid parameter */
-#define PID_ID_KP_DEFUALT               (7500)
-#define PID_ID_KI_DEFUALT               (6000)
-#define PID_ID_KP_GAIN_DIV              (512)
+#define PID_ID_KP_DEFUALT               (6047)
+#define PID_ID_KI_DEFUALT               (3414)
+#define PID_ID_KP_GAIN_DIV              (4096)
 #define PID_ID_KP_GAIN_DIV_LOG          (LOG2(PID_ID_KP_GAIN_DIV))
-#define PID_ID_KI_GAIN_DIV              (8192)
+#define PID_ID_KI_GAIN_DIV              (32768)
 #define PID_ID_KI_GAIN_DIV_LOG          (LOG2(PID_ID_KI_GAIN_DIV))
 
-#define PID_IQ_KP_DEFUALT               (7500)
-#define PID_IQ_KI_DEFUALT               (6000)
-#define PID_IQ_KP_GAIN_DIV              (512)
+#define PID_IQ_KP_DEFUALT               (6047)
+#define PID_IQ_KI_DEFUALT               (3414)
+#define PID_IQ_KP_GAIN_DIV              (4096)
 #define PID_IQ_KP_GAIN_DIV_LOG          (LOG2(PID_IQ_KP_GAIN_DIV))
-#define PID_IQ_KI_GAIN_DIV              (8192)
+#define PID_IQ_KI_GAIN_DIV              (32768)
 #define PID_IQ_KI_GAIN_DIV_LOG          (LOG2(PID_IQ_KI_GAIN_DIV))
 
 /* speed pid parameter */
