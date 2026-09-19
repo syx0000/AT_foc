@@ -295,26 +295,44 @@ void ADVTMR_PWM_BRK_IRQ(void)
 void ADC_SHUNT_SAMP_READY_IRQ(void)
 {
 #ifndef MOS_RDS_SHUNT
+  static uint8_t vmor_confirm_count = 0U;
+  static flag_status vmor_pending = RESET;
+
   if(adc_interrupt_flag_get(ADC_CONVERTER, ADC_VMOR_FLAG) != RESET)
   {
     adc_flag_clear(ADC_CONVERTER, ADC_VMOR_FLAG);
-
-    /* Over current protection */
-    error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
+    vmor_pending = SET;
   }
 #if defined TWO_ADC_CONVERTERS
   if(adc_interrupt_flag_get(ADC_SIMULTANE_CONVERTER, ADC_VMOR_FLAG) != RESET)
   {
     adc_flag_clear(ADC_SIMULTANE_CONVERTER, ADC_VMOR_FLAG);
-
-    /* Over current protection */
-    error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
+    vmor_pending = SET;
   }
 #endif
 #endif
   if (adc_flag_get(ADC_CONVERTER, ADC_PCCE_FLAG) != RESET)
   {
     adc_flag_clear(ADC_CONVERTER, ADC_PCCE_FLAG);
+
+#ifndef MOS_RDS_SHUNT
+    if (vmor_pending != RESET)
+    {
+      if (vmor_confirm_count < ADC_VMOR_CONFIRM_COUNT)
+      {
+        vmor_confirm_count++;
+      }
+      if (vmor_confirm_count >= ADC_VMOR_CONFIRM_COUNT)
+      {
+        error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
+      }
+      vmor_pending = RESET;
+    }
+    else
+    {
+      vmor_confirm_count = 0U;
+    }
+#endif
 
     if (esc_state != ESC_STATE_ANGLE_INIT)
     {
@@ -506,6 +524,7 @@ void SPEED_LOOP_TIMER_IRQ(void)
 void SysTick_Handler(void)
 {
   static flag_status monitoring_adc_ready = RESET;
+  static uint16_t undervoltage_count = 0U;
 
   rotor_speed_val = rotor_speed_hall.filtered >> rotor_speed_hall.shift;
   rotor_speed_val_filt = moving_average_shift(speed_ma_fliter, rotor_speed_val);
@@ -546,11 +565,22 @@ void SysTick_Handler(void)
     /* Over/under voltage protection */
     if (ui_wave_param.iBusVoltage_meas < UNDERVOLTAGE_THRESHOLD_d)
     {
-      error_code |= error_code_mask & MC_UNDER_VOLT_ERROR;
+      if (undervoltage_count < UNDER_VOLT_DEBOUNCE_MS)
+      {
+        undervoltage_count++;
+      }
+      if (undervoltage_count >= UNDER_VOLT_DEBOUNCE_MS)
+      {
+        error_code |= error_code_mask & MC_UNDER_VOLT_ERROR;
+      }
     }
-    else if (ui_wave_param.iBusVoltage_meas > OVERVOLTAGE_THRESHOLD_d)
+    else
     {
-      error_code |= error_code_mask & MC_OVER_VOLT_ERROR;
+      undervoltage_count = 0U;
+      if (ui_wave_param.iBusVoltage_meas > OVERVOLTAGE_THRESHOLD_d)
+      {
+        error_code |= error_code_mask & MC_OVER_VOLT_ERROR;
+      }
     }
 
     /* MOS Temperature protection (NTC path, compare in Celsius x 100) */

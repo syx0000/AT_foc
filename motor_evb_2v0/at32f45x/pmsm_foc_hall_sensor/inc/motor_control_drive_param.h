@@ -210,6 +210,7 @@ extern "C" {
 /* Current */
 /* software over current protection by ADC windowns */
 #define OVER_CURRENT_SW                 (55.0f)  /* A */
+#define ADC_VMOR_CONFIRM_COUNT          (30U)     /* consecutive out-of-window samples */
 /* over current setting in hardware */
 #if defined AT32M412xx || defined AT32M416xx
 #define DAC_VREF_SOURCE                 (DAC_VDDA)
@@ -220,6 +221,7 @@ extern "C" {
 /* Bus voltage */
 #define OVER_VOLT_THRESHOLD             (60)
 #define UNDER_VOLT_THRESHOLD            (24)
+#define UNDER_VOLT_DEBOUNCE_MS          (300U)
 /* Temperature sensing section */
 /* V[V]=V0+dV/dT[V/Celsius]*(T-T0)[Celsius] */
 #define V0_V                            (0.480f) /*!< in Volts */
@@ -352,8 +354,8 @@ extern "C" {
 #define PLL_KI_GAIN_DIV_LOG             (LOG2(PLL_KI_GAIN_DIV))
 
 /* start-up parameter */
-#define STARTUP_CURRENT                 (0.5f)   /* A */
-#define STARTUP_VOLTAGE                 (1.0f)   /* V */
+#define STARTUP_CURRENT                 (6.5f)   /* A */
+#define STARTUP_VOLTAGE                 (3.0f)   /* V */
 /* Open loop startup */
 #define STARTUP_MAX_SPD                 (400)    /* rpm */
 #define STARTUP_OL_SLOPE                (800)    /* rpm/s */
@@ -361,7 +363,7 @@ extern "C" {
 #define STARTUP_ALIGN_TIME              (1000)   /* ms */
 #define STARTUP_START_TIME              (10)     /* ms */
 /* Angle init parameter */
-#define DETECT_PULSE_WIDTH              (20.0f)  /* us;  range [1...10000] */
+#define DETECT_PULSE_WIDTH              (200.0f)  /* us;  range [1...10000] */
 
 /* Detect the startup error parameter */
 #define DETECT_DELAY_TIME               (300)    /* msec; A startup error is triggered when motor reverses to "DETECT_REVERSE_SPEED" rpm in ESC_STATE_RUNNING state after "DETECT_DELAY_TIME" */
