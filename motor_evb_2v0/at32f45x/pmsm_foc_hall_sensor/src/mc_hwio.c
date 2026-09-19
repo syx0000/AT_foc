@@ -256,12 +256,14 @@ void tmr_pwm_init(void)
   tmr_brkdt_config_struct.brk_polarity = TMR_BRK_INPUT_ACTIVE_LOW;
   tmr_brkdt_config_struct.wp_level = TMR_WP_OFF;
   tmr_brkdt_config(PWM_ADVANCE_TIMER, &tmr_brkdt_config_struct);
+  tmr_brk_filter_value_set(PWM_ADVANCE_TIMER, PWM_BRK_FILTER_VALUE);
 
   //tmr_primary_mode_select(PWM_ADVANCE_TIMER, TMR_PRIMARY_SEL_OVERFLOW);
 
   tmr_flag_clear(PWM_ADVANCE_TIMER, TMR_OVF_FLAG | TMR_BRK_FLAG | TMR_C4_FLAG);
   tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_OVF_INT, TRUE);
-  tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_BRK_INT, TRUE);
+  /* Enabled by gate_driver_enable() only while the driver is awake. */
+  tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_BRK_INT, FALSE);
 
   /* disable single pulse mode */
   tmr_one_cycle_mode_enable(PWM_ADVANCE_TIMER, FALSE);
@@ -1355,6 +1357,89 @@ void gpio_pins_init(void)
   gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
   gpio_init_struct.gpio_drive_strength = GPIO_DRIVE_STRENGTH_MODERATE;
   gpio_init(EN_GATE_PORT, &gpio_init_struct);
+}
+
+/**
+  * @brief  enable the DRV8353 and verify that nFAULT has recovered
+  * @param  none
+  * @retval SET when the driver is ready, otherwise RESET
+  */
+flag_status gate_driver_enable(void)
+{
+  /* Never handle a disabled driver's nFAULT level as a live fault. */
+  tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_BRK_INT, FALSE);
+
+  /* Never wake the driver while PWM outputs are enabled. */
+  tmr_output_enable(PWM_ADVANCE_TIMER, FALSE);
+  gpio_bits_set(EN_GATE_PORT, EN_GATE_GPIO_PIN);
+  mc_delay_ms(GATE_DRIVER_WAKE_DELAY_MS);
+
+  /*
+   * A Break interrupt may have shut EN_GATE down during the wake delay.
+   * Check both the output latch and the active-low nFAULT input before
+   * clearing the historical Break flag.
+   */
+  if ((gpio_output_data_bit_read(EN_GATE_PORT, EN_GATE_GPIO_PIN) == RESET) ||
+      (gpio_input_data_bit_read(PWM_BRK_PORT, PWM_BRK_GPIO_PIN) == RESET))
+  {
+    gate_driver_emergency_shutdown();
+    return RESET;
+  }
+
+  tmr_flag_clear(PWM_ADVANCE_TIMER, TMR_BRK_FLAG);
+  __DSB();
+  if (tmr_flag_get(PWM_ADVANCE_TIMER, TMR_BRK_FLAG) != RESET)
+  {
+    gate_driver_emergency_shutdown();
+    return RESET;
+  }
+
+  tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_BRK_INT, TRUE);
+  return SET;
+}
+
+/**
+  * @brief  disable the DRV8353 and the PWM main output
+  * @param  none
+  * @retval none
+  */
+void gate_driver_disable(void)
+{
+  tmr_output_enable(PWM_ADVANCE_TIMER, FALSE);
+  tmr_interrupt_enable(PWM_ADVANCE_TIMER, TMR_BRK_INT, FALSE);
+  gpio_bits_reset(EN_GATE_PORT, EN_GATE_GPIO_PIN);
+  tmr_flag_clear(PWM_ADVANCE_TIMER, TMR_BRK_FLAG);
+}
+
+/**
+  * @brief  immediately make the motor power stage safe
+  * @param  none
+  * @retval none
+  */
+void gate_driver_emergency_shutdown(void)
+{
+  gate_driver_disable();
+  tmr_channel_value_set(PWM_ADVANCE_TIMER, TMR_SELECT_CHANNEL_1, 0);
+  tmr_channel_value_set(PWM_ADVANCE_TIMER, TMR_SELECT_CHANNEL_2, 0);
+  tmr_channel_value_set(PWM_ADVANCE_TIMER, TMR_SELECT_CHANNEL_3, 0);
+}
+
+/**
+  * @brief  verify gate-driver recovery while leaving the motor stopped
+  * @param  none
+  * @retval SET when nFAULT is inactive and the Break flag is clear
+  */
+flag_status gate_driver_fault_recover(void)
+{
+  flag_status ready;
+
+  /*
+   * Wake the driver long enough to validate nFAULT.  Always shut it back
+   * down: clearing a fault must not resume the state that was interrupted.
+   */
+  ready = gate_driver_enable();
+  gate_driver_disable();
+  return ready;
 }
 
 /**

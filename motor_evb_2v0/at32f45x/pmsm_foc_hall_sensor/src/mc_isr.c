@@ -275,10 +275,15 @@ void ADVTMR_PWM_BRK_IRQ(void)
 {
   if (tmr_flag_get(PWM_ADVANCE_TIMER, TMR_BRK_FLAG) != RESET)
   {
+    /* nFAULT is active: immediately disable the complete power stage. */
+    gate_driver_emergency_shutdown();
     tmr_flag_clear(PWM_ADVANCE_TIMER, TMR_BRK_FLAG);
 
-    /* Over current protection */
+    /* Latch the fault and discard the command that was running. */
+    foc_rdy = RESET;
+    start_stop_btn_flag = RESET;
     error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
+    esc_state = ESC_STATE_ERROR;
   }
 }
 

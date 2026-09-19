@@ -232,7 +232,12 @@ void RCP_ExecCmd(uint8_t CmdID, RCP_Frame_t * pFrame)
     break;
 
   case MC_PROTOCOL_CMD_FAULT_ACK:
+    /* Acknowledge the fault in a stopped state; never resume the old run. */
+    gate_driver_emergency_shutdown();
+    foc_rdy = RESET;
+    start_stop_btn_flag = RESET;
     error_code = MC_NO_ERROR;
+    esc_state = ESC_STATE_IDLE;
     TCP_SendFrame(&tx_data_response, TCP_CODE_ACK, 0, 0);
     break;
 

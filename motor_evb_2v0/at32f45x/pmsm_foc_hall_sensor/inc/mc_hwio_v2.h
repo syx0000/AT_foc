@@ -109,6 +109,7 @@ The definitions must be established in the following order:
 #define PWM_BRK_GPIO_PIN                    GPIO_PINS_12
 #define PWM_BRK_GPIO_PIN_SOURCE             GPIO_PINS_SOURCE12
 #define PWM_BRK_IOMUX                       GPIO_MUX_1
+#define PWM_BRK_FILTER_VALUE                (0x0FU)
 
 
 /**************** define Timer for Hall ******************/
@@ -122,7 +123,7 @@ The definitions must be established in the following order:
 #define HALL_CAPTURE_MODE_EXINT             0
 #define HALL_CAPTURE_MODE_TIMER_XOR         1
 #ifndef HALL_CAPTURE_MODE
-#define HALL_CAPTURE_MODE                   HALL_CAPTURE_MODE_EXINT
+#define HALL_CAPTURE_MODE                   HALL_CAPTURE_MODE_TIMER_XOR
 #endif
 
 #if HALL_CAPTURE_MODE == HALL_CAPTURE_MODE_EXINT
@@ -377,6 +378,7 @@ The definitions must be established in the following order:
 #define  EN_GATE_GPIO_CRM_CLK                CRM_GPIOC_PERIPH_CLOCK
 #define  EN_GATE_PORT                        GPIOC
 #define  EN_GATE_GPIO_PIN                    GPIO_PINS_15
+#define  GATE_DRIVER_WAKE_DELAY_MS           (3U)
 
 /******************* define button *******************/
 typedef enum
@@ -482,6 +484,10 @@ void led_blink(void);
 /* mode switch configuration */
 void mode_switch_init(void);
 void gpio_pins_init(void);
+flag_status gate_driver_enable(void);
+void gate_driver_disable(void);
+void gate_driver_emergency_shutdown(void);
+flag_status gate_driver_fault_recover(void);
 /* button operation function */
 void button_exint_init(void);
 

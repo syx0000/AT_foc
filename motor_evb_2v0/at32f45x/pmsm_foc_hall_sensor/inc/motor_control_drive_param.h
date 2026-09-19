@@ -99,8 +99,8 @@ extern "C" {
 #define MOTOR_PARAM_IDENTIFY
 
 /* Select one UART mode: binary Motor Monitor or ASCII log. */
-//#define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
-#define USE_UART_LOG
+#define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
+//#define USE_UART_LOG
 
 #if defined(USE_MOTOR_MONITOR) && defined(USE_UART_LOG)
 #error "Select only one UART mode"

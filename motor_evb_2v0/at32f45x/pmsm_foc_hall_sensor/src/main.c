@@ -40,6 +40,8 @@
 
 crm_clocks_freq_type crm_clocks_freq_struct = {0};
 void check_configured_core_clock(void);
+static flag_status esc_state_requires_gate_driver(esc_state_type state);
+static void gate_driver_fault_latch(void);
 /**
   * @brief  main function.
   * @param  none
@@ -117,18 +119,21 @@ int main(void)
   hall_timer_init();
 #endif
 
-  /* wake up DRV8353 gate driver: pull EN_GATE high, wait for wake time */
-  gpio_bits_set(EN_GATE_PORT, EN_GATE_GPIO_PIN);
-  mc_delay_ms(3);
-
   /* enable tmr channel mode buffer */
   enable_pwm_timer_channel_buffer(&pwm_duty);
 
-  /* enable pwm timer */
-  enable_pwm_timer(&pwm_duty);
-
-  /* current offset initialization */
-  curr_offset_rdy = I_offset_init(&current);
+  if (gate_driver_enable() != RESET)
+  {
+    /* TMR1_CH4 must be active while I_offset_init() waits for ADC triggers. */
+    enable_pwm_timer(&pwm_duty);
+    curr_offset_rdy = I_offset_init(&current);
+    gate_driver_disable();
+  }
+  else
+  {
+    curr_offset_rdy = RESET;
+    gate_driver_fault_latch();
+  }
 
   led_blink();
 
@@ -161,8 +166,78 @@ int main(void)
 
     if (esc_state != esc_state_old)
     {
-      ESC_State_Init(esc_state);
-      esc_state_old = esc_state;
+      esc_state_type next_state = esc_state;
+      flag_status next_requires_driver =
+        esc_state_requires_gate_driver(next_state);
+
+      /*
+       * A stop request may race with a pending transition into RUNNING.
+       * Do not wake the driver for a command that has already been stopped.
+       */
+      if (((next_state == ESC_STATE_RUNNING) ||
+           (next_state == ESC_STATE_I_TUNE)) &&
+          (start_stop_btn_flag == RESET))
+      {
+        gate_driver_disable();
+        esc_state = ESC_STATE_FREE_RUN;
+        continue;
+      }
+
+      /*
+       * A boot-time gate fault skips current-offset calibration.  After the
+       * fault is acknowledged, rebuild the offset before leaving IDLE.
+       */
+      if ((next_state == ESC_STATE_IDLE) && (curr_offset_rdy == RESET))
+      {
+        if (gate_driver_enable() == RESET)
+        {
+          gate_driver_fault_latch();
+          continue;
+        }
+
+        enable_pwm_timer(&pwm_duty);
+        curr_offset_rdy = I_offset_init(&current);
+        gate_driver_disable();
+
+        if (curr_offset_rdy == RESET)
+        {
+          gate_driver_fault_latch();
+          continue;
+        }
+      }
+
+      if ((next_requires_driver != RESET) &&
+          (esc_state_requires_gate_driver(esc_state_old) == RESET))
+      {
+        if (gate_driver_enable() == RESET)
+        {
+          gate_driver_fault_latch();
+          continue;
+        }
+      }
+      else if (next_requires_driver == RESET)
+      {
+        if (next_state == ESC_STATE_ERROR)
+        {
+          gate_driver_emergency_shutdown();
+        }
+        else
+        {
+          gate_driver_disable();
+        }
+      }
+
+      /* A Break IRQ may replace the requested state during preparation. */
+      if (esc_state != next_state)
+      {
+        continue;
+      }
+
+      ESC_State_Init(next_state);
+      if (esc_state == next_state)
+      {
+        esc_state_old = next_state;
+      }
     }
   }
 }
@@ -179,6 +254,42 @@ void check_configured_core_clock(void)
     printf("Core freq.: %d, does not match the required freq. : %d", system_core_clock, SYSTEM_CORE_CLOCK);
     while(1);
   }
+}
+
+/**
+  * @brief  report whether an ESC state needs the external gate driver
+  * @param  state: requested ESC state
+  * @retval SET for an active drive state, otherwise RESET
+  */
+static flag_status esc_state_requires_gate_driver(esc_state_type state)
+{
+  switch (state)
+  {
+  case ESC_STATE_RUNNING:
+  case ESC_STATE_I_TUNE:
+  case ESC_STATE_AUTO_LEARN:
+#ifdef MOTOR_PARAM_IDENTIFY
+  case ESC_STATE_WINDING_PARAM_ID:
+#endif
+    return SET;
+
+  default:
+    return RESET;
+  }
+}
+
+/**
+  * @brief  latch a gate-driver fault and discard the previous run request
+  * @param  none
+  * @retval none
+  */
+static void gate_driver_fault_latch(void)
+{
+  gate_driver_emergency_shutdown();
+  foc_rdy = RESET;
+  start_stop_btn_flag = RESET;
+  error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
+  esc_state = ESC_STATE_ERROR;
 }
 
 /**

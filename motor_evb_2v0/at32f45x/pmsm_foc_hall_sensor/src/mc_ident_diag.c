@@ -138,7 +138,16 @@ static void motor_ident_diag_command_task(void)
       return;
     }
 
+    if (gate_driver_fault_recover() == RESET)
+    {
+      printf("ERR clear driver_fault_active\r\n");
+      return;
+    }
+
+    /* Fault recovery always returns to a stopped state. */
+    start_stop_btn_flag = RESET;
     error_code = MC_NO_ERROR;
+    esc_state = ESC_STATE_IDLE;
     printf("OK clear\r\n");
     return;
   }
