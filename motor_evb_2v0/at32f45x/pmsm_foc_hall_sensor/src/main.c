@@ -285,6 +285,7 @@ static flag_status esc_state_requires_gate_driver(esc_state_type state)
   */
 static void gate_driver_fault_latch(void)
 {
+  ui_wave_param.user_define_b = OVERCURRENT_DIAG_GATE_DRIVER;
   gate_driver_emergency_shutdown();
   foc_rdy = RESET;
   start_stop_btn_flag = RESET;

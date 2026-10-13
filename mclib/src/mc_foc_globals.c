@@ -403,7 +403,11 @@ ui_wave_param_type ui_wave_param =
   .iMosTemperature_meas = 0,
 };
 
-int16_t *monitor_data[2];
+int16_t *monitor_data[2] =
+{
+  &ui_wave_param.speed_reference_pu,
+  &ui_wave_param.speed_meas_filter_pu,
+};
 uint8_t monitor_data_buffer_num = 0;
 int32_t save_param_buffer[INT32_SIZE_ARRAY];
 usart_data_index usart_data_idx;
@@ -530,6 +534,7 @@ pid_ctrl_type pid_spd_volt =
 };
 
 low_spd_ctrl_type low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
+uint16_t low_spd_switch_count = 0U;
 
 curr_decoupling_type current_decoupling =
 {

@@ -95,6 +95,8 @@ void param_clear(void)
 
 #ifdef LOW_SPEED_VOLT_CTRL
   pid_spd_volt.integral = 0;
+  low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
+  low_spd_switch_count = 0U;
 #endif
 
   pwm_duty.OF.a = pwm_duty.half_duty;

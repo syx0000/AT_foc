@@ -36,7 +36,8 @@
 
 int32_t flash_buf_int[SECTOR_SIZE / 4];
 int16_t flash_buf_short[SECTOR_SIZE / 2];
-MC_Protocol_REG_t MonitorRegID_1, MonitorRegID_2;
+MC_Protocol_REG_t MonitorRegID_1 = MC_PROTOCOL_REG_SPD_REF_PU;
+MC_Protocol_REG_t MonitorRegID_2 = MC_PROTOCOL_REG_SPD_MEAS_PU;
 
 /**
   * @brief  Check CRC of receving data, and save data buffer from DMA rx

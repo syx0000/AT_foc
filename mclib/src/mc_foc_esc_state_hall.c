@@ -65,6 +65,7 @@ void ESC_State_Init(esc_state_type esc_state_handler)
     break;
 
   case ESC_STATE_RUNNING:
+    ui_wave_param.user_define_b = OVERCURRENT_DIAG_NONE;
     if ((ctrl_mode == POSITION_CTRL) || (ctrl_mode == SPEED_CTRL))
     {
       if (((rotor_speed_val == 0) && (speed_ramp.cmd_final >= 0)) || (rotor_speed_val > 0))
@@ -75,6 +76,25 @@ void ESC_State_Init(esc_state_type esc_state_handler)
       {
         hall_ccw_ctrl_para();
       }
+#ifdef LOW_SPEED_VOLT_CTRL
+      /*
+       * STARTUP_VOLTAGE is otherwise used only by sensorless startup.
+       * Seed the Hall voltage PI at standstill to overcome static friction.
+       */
+      if (abs(rotor_speed_val) < SLICK_SPEED_RPM)
+      {
+        if (rotor_speed_hall.dir == CW)
+        {
+          pid_spd_volt.integral =
+            ((int32_t)STARTUP_VOLTAGE_CMD << pid_spd_volt.ki_shift);
+        }
+        else
+        {
+          pid_spd_volt.integral =
+            -((int32_t)STARTUP_VOLTAGE_CMD << pid_spd_volt.ki_shift);
+        }
+      }
+#endif
     }
     else if (ctrl_mode == TORQUE_CTRL)
     {
@@ -91,6 +111,32 @@ void ESC_State_Init(esc_state_type esc_state_handler)
     {
       hall_cw_ctrl_para();
     }
+#if !defined HALL_EXINT_EDGE_CAPTURE
+    /*
+     * TMR XOR capture keeps running while the motor is stopped.  Reset its
+     * phase here so the first Hall edge cannot turn a stale counter remainder
+     * into a false high-speed sample.  Saturating the first interval also
+     * makes startup independent of the rotor's initial position in a sector.
+     */
+    tmr_interrupt_enable(HALL_CAPTURE_TIMER,
+                         TMR_TRIGGER_INT | TMR_C4_INT, FALSE);
+    rotor_speed_hall.filtered = 0;
+    hall.theta_inc = 0;
+    hall.offset = MAX_CAP_COUNT;
+    hall.double_interval = MAX_CAP_COUNT;
+    reset_ma_buffer(hall_interval_moving_average);
+    tmr_counter_value_set(HALL_CAPTURE_TIMER, 0);
+    tmr_channel_value_set(HALL_CAPTURE_TIMER, TMR_SELECT_CHANNEL_4,
+                          MAX_CAP_COUNT);
+    tmr_flag_clear(HALL_CAPTURE_TIMER,
+                   TMR_TRIGGER_FLAG | TMR_C1_FLAG |
+                   TMR_C4_FLAG | TMR_OVF_FLAG);
+    error_code |= error_code_mask &
+                  hall_at_zero_speed(&hall, &rotor_angle_hall,
+                                     hall_next_state_table);
+    tmr_interrupt_enable(HALL_CAPTURE_TIMER,
+                         TMR_TRIGGER_INT | TMR_C4_INT, TRUE);
+#endif
     charge_boot_cap(&pwm_duty);
     pwm_switch_on();
     foc_rdy = SET;

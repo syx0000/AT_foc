@@ -131,31 +131,51 @@ void set_current_pid_param(i_auto_tune_type *i_tune_handler, pid_ctrl_type *pid_
   */
 void command_ramp(ramp_cmd_type *cmd_ramp_handler)
 {
-  int32_t cmd_ramp_err;
+  int32_t ramp_target;
+  int32_t ramp_slope;
+  int64_t cmd_ramp_err;
 
-  cmd_ramp_err = cmd_ramp_handler->cmd_final - cmd_ramp_handler->command;
+  ramp_target = cmd_ramp_handler->cmd_final;
 
-  if (cmd_ramp_err >= cmd_ramp_handler->acc_slope)
+  /* A direction reversal must decelerate to zero before accelerating in the
+     opposite direction. */
+  if (((cmd_ramp_handler->command > 0) && (ramp_target < 0)) ||
+      ((cmd_ramp_handler->command < 0) && (ramp_target > 0)))
   {
-    cmd_ramp_handler->command += cmd_ramp_handler->acc_slope;
-
-    if (cmd_ramp_handler->command >= cmd_ramp_handler->cmd_final)
-    {
-      cmd_ramp_handler->command = cmd_ramp_handler->cmd_final;
-    }
+    ramp_target = 0;
+    ramp_slope = cmd_ramp_handler->dec_slope;
   }
-  else if (cmd_ramp_err < -cmd_ramp_handler->dec_slope)
+  /* Acceleration and deceleration are selected by speed magnitude, not by
+     whether the signed command is numerically increasing or decreasing. */
+  else if (((cmd_ramp_handler->command >= 0) &&
+            (ramp_target > cmd_ramp_handler->command)) ||
+           ((cmd_ramp_handler->command <= 0) &&
+            (ramp_target < cmd_ramp_handler->command)))
   {
-    cmd_ramp_handler->command -= cmd_ramp_handler->dec_slope;
-
-    if (cmd_ramp_handler->command <= cmd_ramp_handler->cmd_final)
-    {
-      cmd_ramp_handler->command = cmd_ramp_handler->cmd_final;
-    }
+    ramp_slope = cmd_ramp_handler->acc_slope;
   }
   else
   {
-    cmd_ramp_handler->command = cmd_ramp_handler->cmd_final;
+    ramp_slope = cmd_ramp_handler->dec_slope;
+  }
+
+  if ((ramp_target == cmd_ramp_handler->command) || (ramp_slope <= 0))
+  {
+    return;
+  }
+
+  cmd_ramp_err = (int64_t)ramp_target - cmd_ramp_handler->command;
+  if (cmd_ramp_err > ramp_slope)
+  {
+    cmd_ramp_handler->command += ramp_slope;
+  }
+  else if (cmd_ramp_err < -(int64_t)ramp_slope)
+  {
+    cmd_ramp_handler->command -= ramp_slope;
+  }
+  else
+  {
+    cmd_ramp_handler->command = ramp_target;
   }
 }
 

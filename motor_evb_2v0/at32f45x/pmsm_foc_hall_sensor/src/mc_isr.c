@@ -28,7 +28,49 @@
 trig_components_type trig_components;
 int16_t Iq_cmd;
 int8_t Iq_cmd_count;
-int16_t Vq_cmd;
+
+#ifdef LOW_SPEED_VOLT_CTRL
+/**
+  * @brief  Prepare an inactive PID so its next output continues from the
+  *         currently active controller output.
+  */
+static void pid_prepare_output(pid_ctrl_type *pid_handler, int32_t var_err, int16_t target_output)
+{
+  int32_t tracked_output;
+  int32_t proportion_output;
+  int64_t integral;
+
+  tracked_output = target_output;
+  if (tracked_output > pid_handler->upper_limit_output)
+  {
+    tracked_output = pid_handler->upper_limit_output;
+  }
+  else if (tracked_output < pid_handler->lower_limit_output)
+  {
+    tracked_output = pid_handler->lower_limit_output;
+  }
+
+  proportion_output = (int32_t)(((int64_t)pid_handler->kp_gain * var_err) >> pid_handler->kp_shift);
+  integral = ((int64_t)(tracked_output - proportion_output) * ((int64_t)1 << pid_handler->ki_shift))
+             - ((int64_t)pid_handler->ki_gain * var_err);
+
+  if (integral > pid_handler->upper_limit_integral)
+  {
+    integral = pid_handler->upper_limit_integral;
+  }
+  else if (integral < pid_handler->lower_limit_integral)
+  {
+    integral = pid_handler->lower_limit_integral;
+  }
+
+  pid_handler->integral = (int32_t)integral;
+  pid_handler->error = var_err;
+  pid_handler->pre_error = var_err;
+  pid_handler->out_start = tracked_output;
+}
+
+
+#endif
 /** @addtogroup motor_evb_2v0
   * @{
   */
@@ -187,12 +229,13 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
           {
             if (low_spd_ctrl_mode == WITHOUT_CURR_CTRL)
             {
-              pid_iq.integral = Vq_cmd << pid_iq.ki_shift;
+              pid_prepare_output(&pid_id, (Iref.d - Ival.d), volt_cmd.Vqd.d);
+              pid_prepare_output(&pid_iq, (Iref.q - Ival.q), volt_cmd.Vqd.q);
             }
             else
             {
 #ifdef CURRENT_DECOUPLE_CTRL
-              Vq_cmd = voltage_comp();
+              (void)voltage_comp();
 #else
               volt_cmd.Vqd.d = pid_controller(&pid_id, (Iref.d - Ival.d));
 
@@ -200,12 +243,10 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
               foc_vq_limitation(&volt_cmd, &pid_iq);
 
               volt_cmd.Vqd.q = pid_controller(&pid_iq, (Iref.q - Ival.q));
-              Vq_cmd = volt_cmd.Vqd.q;
 #endif
 #if defined FIELD_WEAKENING
               field_weakening.fw_err_filt = ma_filter(pid_iq.upper_limit_output - abs(pid_iq.out_start), field_weakening.fw_err_filt, FW_MA_NBR_LOG);
 #endif
-              pid_spd_volt.integral = volt_cmd.Vqd.q << pid_spd_volt.ki_shift;
             }
           }
 #endif
@@ -275,6 +316,7 @@ void ADVTMR_PWM_BRK_IRQ(void)
 {
   if (tmr_flag_get(PWM_ADVANCE_TIMER, TMR_BRK_FLAG) != RESET)
   {
+    ui_wave_param.user_define_b = OVERCURRENT_DIAG_PWM_BRK;
     /* nFAULT is active: immediately disable the complete power stage. */
     gate_driver_emergency_shutdown();
     tmr_flag_clear(PWM_ADVANCE_TIMER, TMR_BRK_FLAG);
@@ -324,6 +366,7 @@ void ADC_SHUNT_SAMP_READY_IRQ(void)
       }
       if (vmor_confirm_count >= ADC_VMOR_CONFIRM_COUNT)
       {
+        ui_wave_param.user_define_b = OVERCURRENT_DIAG_ADC;
         error_code |= error_code_mask & MC_OVER_CURRENT_ERROR;
       }
       vmor_pending = RESET;
@@ -429,6 +472,16 @@ void HALL_CAPTURE_IRQ(void)
 void SPEED_LOOP_TIMER_IRQ(void)
 {
   int32_t delta;
+#ifdef LOW_SPEED_VOLT_CTRL
+  int32_t switch_speed;
+  int32_t switch_command;
+  int32_t low_speed_release_current;
+  int32_t low_speed_vq_target;
+  int32_t low_speed_vq_delta;
+  int64_t low_speed_current_sq;
+  static int32_t low_speed_vq_applied = 0;
+  static flag_status low_speed_current_limit_active = RESET;
+#endif
 
   if (tmr_flag_get(SPEED_LOOP_TIMER, TMR_OVF_FLAG) != RESET)
   {
@@ -439,6 +492,17 @@ void SPEED_LOOP_TIMER_IRQ(void)
     rotor_angle_hall_old = rotor_angle_hall;
     pos.val += delta;
     angle.val = (int32_t)(pos.val * PULSE_TO_ANGLE);
+
+#ifdef LOW_SPEED_VOLT_CTRL
+    if ((esc_state != ESC_STATE_RUNNING) ||
+        ((ctrl_mode != SPEED_CTRL) && (ctrl_mode != POSITION_CTRL)))
+    {
+      low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
+      low_spd_switch_count = 0U;
+      low_speed_vq_applied = 0;
+      low_speed_current_limit_active = RESET;
+    }
+#endif
 
     if (esc_state == ESC_STATE_RUNNING)
     {
@@ -458,41 +522,145 @@ void SPEED_LOOP_TIMER_IRQ(void)
         }
         else
           pos.count = 0;
-#endif
 
-        spd_err = speed_ramp.command - rotor_speed_val;
-        current.Iqdref.q = pid_controller(&pid_spd, spd_err);
-
-#ifdef LOW_SPEED_VOLT_CTRL
-        volt_cmd.Vqd.q = pid_controller(&pid_spd_volt, spd_err);
-        if (rotor_speed_hall.dir == CW)
+        /*
+         * Enter current control quickly to limit acceleration overshoot.
+         * The slower filtered speed is retained for the return to voltage
+         * control, where chatter immunity matters more than latency.
+         */
+        switch_speed = (low_spd_ctrl_mode == WITHOUT_CURR_CTRL) ?
+                       rotor_speed_val : rotor_speed_val_filt;
+        if (switch_speed < 0)
         {
-          if (rotor_speed_val > HYSTERESIS_HIGH_SPEED)
-            low_spd_ctrl_mode = WITH_CURR_CTRL;
-          else if (rotor_speed_val < HYSTERESIS_LOW_SPEED)
+          switch_speed = -switch_speed;
+        }
+        switch_command = speed_ramp.command;
+        if (switch_command < 0)
+        {
+          switch_command = -switch_command;
+        }
+
+        if (low_spd_ctrl_mode == WITHOUT_CURR_CTRL)
+        {
+          if ((switch_speed >= HYSTERESIS_HIGH_SPEED) &&
+              (switch_command >= HYSTERESIS_HIGH_SPEED))
           {
-            low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
-            pid_id.integral = 0;
-            if (rotor_speed_val > SLICK_SPEED_RPM)
-              volt_cmd.Vqd.d = VD_VOLT_CMD_LOW_SPD;
-            else
-              volt_cmd.Vqd.d = 0;
+            if (low_spd_switch_count < LOW_SPEED_TO_CURRENT_COUNT)
+            {
+              low_spd_switch_count++;
+            }
+            if (low_spd_switch_count >= LOW_SPEED_TO_CURRENT_COUNT)
+            {
+              low_spd_ctrl_mode = WITH_CURR_CTRL;
+              low_spd_switch_count = 0U;
+            }
+          }
+          else
+          {
+            low_spd_switch_count = 0U;
           }
         }
         else
         {
-          if (rotor_speed_val < -HYSTERESIS_HIGH_SPEED)
-            low_spd_ctrl_mode = WITH_CURR_CTRL;
-          else if (rotor_speed_val > -HYSTERESIS_LOW_SPEED)
+          if (switch_speed <= HYSTERESIS_LOW_SPEED)
           {
-            low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
-            pid_id.integral = 0;
-            if (rotor_speed_val < -SLICK_SPEED_RPM)
-              volt_cmd.Vqd.d = VD_VOLT_CMD_LOW_SPD;
-            else
-              volt_cmd.Vqd.d = 0;
+            if (low_spd_switch_count < LOW_SPEED_TO_VOLTAGE_COUNT)
+            {
+              low_spd_switch_count++;
+            }
+            if (low_spd_switch_count >= LOW_SPEED_TO_VOLTAGE_COUNT)
+            {
+              low_spd_ctrl_mode = WITHOUT_CURR_CTRL;
+              low_spd_switch_count = 0U;
+            }
+          }
+          else
+          {
+            low_spd_switch_count = 0U;
           }
         }
+
+        spd_err = speed_ramp.command - rotor_speed_val;
+        if (low_spd_ctrl_mode == WITHOUT_CURR_CTRL)
+        {
+          low_speed_vq_target = pid_controller(&pid_spd_volt, spd_err);
+
+          /*
+           * Low-speed voltage control has no inner current loop.  Remove Vq
+           * when the filtered dq-current magnitude reaches the configured
+           * startup current, then release at 75% to avoid chatter.
+           */
+          low_speed_current_sq =
+            (int64_t)Ival.d * Ival.d + (int64_t)Ival.q * Ival.q;
+          low_speed_release_current = ((int32_t)STARTUP_CURRENT_PU * 3) / 4;
+          if (low_speed_current_sq >=
+              ((int64_t)STARTUP_CURRENT_PU * STARTUP_CURRENT_PU))
+          {
+            low_speed_current_limit_active = SET;
+          }
+          else if (low_speed_current_sq <=
+                   ((int64_t)low_speed_release_current *
+                    low_speed_release_current))
+          {
+            low_speed_current_limit_active = RESET;
+          }
+
+          if (low_speed_current_limit_active != RESET)
+          {
+            low_speed_vq_applied = 0;
+          }
+          else
+          {
+            low_speed_vq_delta = low_speed_vq_target - low_speed_vq_applied;
+            if (low_speed_vq_delta > LOW_SPEED_VQ_RAMP_STEP)
+            {
+              low_speed_vq_applied += LOW_SPEED_VQ_RAMP_STEP;
+            }
+            else if (low_speed_vq_delta < -LOW_SPEED_VQ_RAMP_STEP)
+            {
+              low_speed_vq_applied -= LOW_SPEED_VQ_RAMP_STEP;
+            }
+            else
+            {
+              low_speed_vq_applied = low_speed_vq_target;
+            }
+          }
+
+          volt_cmd.Vqd.q = (int16_t)low_speed_vq_applied;
+          pid_prepare_output(&pid_spd_volt, spd_err, volt_cmd.Vqd.q);
+
+          /*
+           * Track the torque-producing current that is actually moving the
+           * motor.  At the 400-rpm handoff the speed error is nearly zero, so
+           * a proportional-only seed would also be zero and lose all torque.
+           */
+          current.Iqdref.q = Ival.q;
+          if (current.Iqdref.q > STARTUP_CURRENT_PU)
+          {
+            current.Iqdref.q = STARTUP_CURRENT_PU;
+          }
+          else if (current.Iqdref.q < -STARTUP_CURRENT_PU)
+          {
+            current.Iqdref.q = -STARTUP_CURRENT_PU;
+          }
+          pid_prepare_output(&pid_spd, spd_err, current.Iqdref.q);
+          volt_cmd.Vqd.d = (switch_speed > SLICK_SPEED_RPM) ? VD_VOLT_CMD_LOW_SPD : 0;
+        }
+        else
+        {
+          low_speed_vq_applied = volt_cmd.Vqd.q;
+          low_speed_current_limit_active = RESET;
+          current.Iqdref.q = pid_controller(&pid_spd, spd_err);
+
+          /*
+           * Keep the voltage speed PI aligned with the current-loop voltage
+           * for a smooth transition back into low-speed voltage control.
+           */
+          pid_prepare_output(&pid_spd_volt, spd_err, volt_cmd.Vqd.q);
+        }
+#else
+        spd_err = speed_ramp.command - rotor_speed_val;
+        current.Iqdref.q = pid_controller(&pid_spd, spd_err);
 #endif
 
 #ifdef FIELD_WEAKENING

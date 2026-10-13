@@ -45,6 +45,10 @@ extern "C" {
 /* Others */
 #define TUNE_TARGET_CURRENT_PU             ((int16_t) (0x7FFF*TUNE_TARGET_CURRENT/CURRENT_BASE))
 #define STARTUP_CURRENT_PU                 ((int16_t) (0x7FFF*STARTUP_CURRENT/CURRENT_BASE))
+#define OVERCURRENT_DIAG_NONE              (0)
+#define OVERCURRENT_DIAG_PWM_BRK           (1)
+#define OVERCURRENT_DIAG_ADC               (2)
+#define OVERCURRENT_DIAG_GATE_DRIVER       (3)
 
 /* Angle init parameter */
 #define ANGLE_INIT_DIV_FREQ                (10000000)
@@ -131,6 +135,7 @@ extern "C" {
 #define ENC_OLC_VOLT_CMD                   ((int16_t)((int16_t)32767.0f*ENC_OLC_VOLT/VDC_RATED*SQRT_3))
 #define VD_VOLT_CMD_LOW_SPD                ((int16_t)((int16_t)32767.0f*VD_VOLT_LOW_SPD/VDC_RATED*SQRT_3))
 #define STARTUP_VOLTAGE_CMD                ((int16_t)((int16_t)32767.0f*STARTUP_VOLTAGE/VDC_RATED*SQRT_3))
+#define LOW_SPEED_VQ_RAMP_STEP             ((int16_t)(32767.0f*LOW_SPEED_VOLT_SLEW/SPEED_LOOP_FREQ/VDC_RATED*SQRT_3))
 /* EMF */
 #define EMF_BASE                           (ADC_REFERENCE_VOLT/EMF_SENSE_GAIN)  /* 34.964V */
 #define EMF_VBUS_SENSE_FACTOR              ((int16_t) (0x7FFF*V_SENSE_GAIN/EMF_SENSE_GAIN))  /* 17895 */
@@ -534,6 +539,7 @@ extern motor_param_id_type motor_param_ident;
 extern int32_t real_torque;
 extern pid_ctrl_type pid_spd_volt;
 extern low_spd_ctrl_type low_spd_ctrl_mode;
+extern uint16_t low_spd_switch_count;
 extern curr_decoupling_type current_decoupling;
 extern mtpa_type mtpa;
 #ifdef ANGLE_CALIBRATION

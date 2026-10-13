@@ -70,8 +70,18 @@ extern "C" {
 #define HALL_SENSORS
 
 
-#ifdef HALL_SENSORS
-#define LOW_SPEED_VOLT_CTRL      /* if need low speed control or position control */
+/* Hall speed control: 0 = current inner loop at every speed (default),
+ * 1 = legacy low-speed voltage / high-speed current comparison mode.
+ * May be overridden by a compiler definition for comparison builds.
+ */
+#ifndef HALL_HYBRID_SPEED_CONTROL
+#define HALL_HYBRID_SPEED_CONTROL 0
+#endif
+#if (HALL_HYBRID_SPEED_CONTROL != 0) && (HALL_HYBRID_SPEED_CONTROL != 1)
+#error "HALL_HYBRID_SPEED_CONTROL must be 0 or 1"
+#endif
+#if defined(HALL_SENSORS) && HALL_HYBRID_SPEED_CONTROL
+#define LOW_SPEED_VOLT_CTRL
 #endif
 
 /* Enable Ia/Ib/Ic current signal low-pass filtering mode or not */
@@ -238,7 +248,7 @@ extern "C" {
 
 /********************************* Control-related parameter *********************************/
 #define PWM_FREQ                        (16000)  /* Hz */
-#define MOTOR_CONTROL_MODE              (OPEN_LOOP_CTRL)
+#define MOTOR_CONTROL_MODE              (SPEED_CTRL)
 #define CTRL_SOURCE                     (CTRL_SOURCE_SOFTWARE)
 
 /* current tuning parameter */
@@ -254,8 +264,8 @@ extern "C" {
 #define SLICK_SPEED_RPM                 (50)
 #define MIN_SENSE_SPEED                 (10)
 #define MIN_POSCTL_SPD                  (100)
-#define ACC_SPD_SLOPE                   (15)    /* (rpm/ms) */
-#define DEC_SPD_SLOPE                   (15)
+#define ACC_SPD_SLOPE                   (3)    /* (rpm/ms) */
+#define DEC_SPD_SLOPE                   (3)
 
 /* POSITION */
 #define POSITION_LOOP_FREQ              (200)     /* Hz */
@@ -355,7 +365,7 @@ extern "C" {
 
 /* start-up parameter */
 #define STARTUP_CURRENT                 (6.5f)   /* A */
-#define STARTUP_VOLTAGE                 (3.0f)   /* V */
+#define STARTUP_VOLTAGE                 (0.5f)   /* V */
 /* Open loop startup */
 #define STARTUP_MAX_SPD                 (400)    /* rpm */
 #define STARTUP_OL_SLOPE                (800)    /* rpm/s */
@@ -393,6 +403,11 @@ extern "C" {
 /* low speed voltage control parameter */
 #define HYSTERESIS_LOW_SPEED            (300)     /* rpm */
 #define HYSTERESIS_HIGH_SPEED           (400)     /* rpm */
+#define LOW_SPEED_TO_CURRENT_CONFIRM_MS (3U)      /* ms */
+#define LOW_SPEED_TO_VOLTAGE_CONFIRM_MS (20U)     /* ms */
+#define LOW_SPEED_TO_CURRENT_COUNT      ((SPEED_LOOP_FREQ * LOW_SPEED_TO_CURRENT_CONFIRM_MS + 999U) / 1000U)
+#define LOW_SPEED_TO_VOLTAGE_COUNT      ((SPEED_LOOP_FREQ * LOW_SPEED_TO_VOLTAGE_CONFIRM_MS + 999U) / 1000U)
+#define LOW_SPEED_VOLT_SLEW             (50.0f)   /* V/s */
 #define VD_VOLT_LOW_SPD                 (0.0f)    /* V */
 /* low speed pid parameter for voltage control */
 #define PID_SPD_VOLT_KP_DEFUALT         (10000)
