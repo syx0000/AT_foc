@@ -59,32 +59,12 @@
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US      75U
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_MAXIMUM_U16 5461U /* 30度电角 */
 #define MOTOR_HALL_SIGNAL_TIMEOUT_MS               1000U
-/* Hall PLL scheduling: retain strong period filtering at low speed, then
- * continuously increase phase-loop bandwidth and shorten edge correction. */
-#define MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ        13333U
-#define MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ       40000U
-#define MOTOR_HALL_PLL_LOW_SPEED_FILTER_SHIFT           3U
-#define MOTOR_HALL_PLL_MID_SPEED_FILTER_SHIFT           2U
-#define MOTOR_HALL_PLL_HIGH_SPEED_FILTER_SHIFT          1U
-#define MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ                  3U
-#define MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ                20U
-#define MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES           255U /* uint8上限，约16 ms @16 kHz */
-#define MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES           48U /* 3 ms @16 kHz */
-#define MOTOR_HALL_PLL_MINIMUM_TIMEOUT_MS             100U
-#define MOTOR_HALL_PLL_TIMEOUT_SECTORS                   3U
-/* Hall角度解算方式：
- * 0 = Hall-PLL + 逐扇区插值 + 边沿渐进修正（原方案）；
- * 1 = demo方式：边沿硬对齐扇区边界角，按测得电频率固定步长累加，
- *     超前边界角70°电角后冻结累加（对应mclib max_angle_err）。 */
-#ifndef MOTOR_HALL_ANGLE_MODE
-#define MOTOR_HALL_ANGLE_MODE                            1U
-#endif
-#define MOTOR_HALL_ANGLE_MODE_PLL                        0U
-#define MOTOR_HALL_ANGLE_MODE_DEMO                       1U
-#define MOTOR_HALL_DEMO_MAX_ANGLE_ERR_U16            12743U /* 70°电角 */
-#if (MOTOR_HALL_ANGLE_MODE > 1U)
-#error "MOTOR_HALL_ANGLE_MODE must be 0 or 1"
-#endif
+/* Hall角度解算（对应mclib）：边沿硬对齐扇区边界角，按测得电频率固定步长累加，
+ * 超前边界角70°电角后冻结累加（max_angle_err）。无边沿超时取
+ * 扇区周期x MOTOR_HALL_TIMEOUT_SECTORS，且不小于MOTOR_HALL_MINIMUM_TIMEOUT_MS。 */
+#define MOTOR_HALL_MAX_ANGLE_LEAD_U16                12743U /* 70°电角 */
+#define MOTOR_HALL_MINIMUM_TIMEOUT_MS                  100U
+#define MOTOR_HALL_TIMEOUT_SECTORS                       3U
 /* 16 kHz current loop: tolerate brief Hall input/decoder glitches (10 ms). */
 #define MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES     160U
 
@@ -241,23 +221,6 @@
 #if ((MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16 == 0U) || \
      (MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16 >= 16384U))
 #error "Hall offset correction limit must be within 0..90 electrical degrees"
-#endif
-
-#if ((MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ == 0U) || \
-     (MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ >= \
-      MOTOR_HALL_PLL_HIGH_FREQUENCY_MILLIHZ) || \
-     (MOTOR_HALL_PLL_LOW_SPEED_FILTER_SHIFT > 8U) || \
-     (MOTOR_HALL_PLL_MID_SPEED_FILTER_SHIFT > 8U) || \
-     (MOTOR_HALL_PLL_HIGH_SPEED_FILTER_SHIFT > 8U) || \
-     (MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ == 0U) || \
-     (MOTOR_HALL_PLL_LOW_BANDWIDTH_HZ > \
-      MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ) || \
-     (MOTOR_HALL_PLL_HIGH_BANDWIDTH_HZ > 1000U) || \
-     (MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES > 255U) || \
-     (MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES == 0U) || \
-     (MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES < \
-      MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES))
-#error "Hall PLL scheduling configuration is invalid"
 #endif
 
 #if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)

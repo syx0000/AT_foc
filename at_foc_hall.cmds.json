@@ -106,7 +106,7 @@
           {
             "name": "debug 1",
             "intro_on": true,
-            "intro": "Start 500 Hz CSV including Vdq/Idq/Hall/sector/current sampling plus edge_error_u16 and edge_correction_remaining_u16",
+            "intro": "Start 500 Hz CSV including Vdq/Idq/Hall/sector/current sampling plus edge_error_u16",
             "hex_on": false,
             "loop_on": true,
             "loop_ms": 100,

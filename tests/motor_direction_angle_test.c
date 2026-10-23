@@ -19,15 +19,11 @@ int main(void)
     {0U, 5U, 3U, 1U, 6U, 4U, 2U, 0U};
   static const uint16_t entry_angle[8] =
     {0U, 1000U, 2000U, 3000U, 4000U, 5000U, 6000U, 0U};
-  static const uint16_t equal_sector_entry_angle[8] =
-    {0U, 0U, 43691U, 54613U, 21845U, 10923U, 32768U, 0U};
   int32_t transformed;
   int32_t positive_step;
   int32_t negative_step;
   int32_t dynamic_compensation;
   int32_t sector_step;
-  uint32_t sector_intervals[8] =
-    {0U, 480000U, 480000U, 480000U, 480000U, 480000U, 480000U, 0U};
   uint16_t sector_span;
   uint16_t angle;
 
@@ -79,18 +75,6 @@ int main(void)
   assert(motor_hall_sector_phase_step_get(
     10923U, 480000U, 288000000U, 10000U, -1, &sector_step));
   assert(sector_step == -42950984);
-  assert(motor_hall_sector_table_phase_step_get(
-    positive_next, equal_sector_entry_angle, sector_intervals, 1U, 288000000U,
-    10000U, 1, 480000U, 10U, &sector_step));
-  assert(sector_step > 0);
-  sector_intervals[3] = 0U;
-  assert(!motor_hall_sector_table_phase_step_get(
-    positive_next, equal_sector_entry_angle, sector_intervals, 1U, 288000000U,
-    10000U, 1, 480000U, 10U, &sector_step));
-  sector_intervals[3] = 900000U;
-  assert(!motor_hall_sector_table_phase_step_get(
-    positive_next, equal_sector_entry_angle, sector_intervals, 1U, 288000000U,
-    10000U, 1, 480000U, 10U, &sector_step));
   printf("motor_direction_angle_test: PASS\n");
   return 0;
 }

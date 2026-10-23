@@ -55,18 +55,6 @@ bool motor_hall_sector_phase_step_get(uint16_t sector_span_u16,
                                       int8_t physical_direction,
                                       int32_t *phase_step);
 
-bool motor_hall_sector_table_phase_step_get(
-  const uint8_t positive_next[8],
-  const uint16_t entry_angle_u16[8],
-  const uint32_t sector_interval_cycles[8],
-  uint8_t current_state,
-  uint32_t core_clock_hz,
-  uint32_t update_frequency_hz,
-  int8_t physical_direction,
-  uint32_t expected_sector_interval_cycles,
-  uint8_t tolerance_percent,
-  int32_t *phase_step);
-
 /**
  * @brief 根据有符号电角速度和固定系统延迟计算Hall动态超前补偿角。
  * @param electrical_frequency_millihz 电角频率绝对值，单位mHz。

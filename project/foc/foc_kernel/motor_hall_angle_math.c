@@ -96,55 +96,6 @@ bool motor_hall_sector_phase_step_get(uint16_t sector_span_u16,
   return true;
 }
 
-bool motor_hall_sector_table_phase_step_get(
-  const uint8_t positive_next[8],
-  const uint16_t entry_angle_u16[8],
-  const uint32_t sector_interval_cycles[8],
-  uint8_t current_state,
-  uint32_t core_clock_hz,
-  uint32_t update_frequency_hz,
-  int8_t physical_direction,
-  uint32_t expected_sector_interval_cycles,
-  uint8_t tolerance_percent,
-  int32_t *phase_step)
-{
-  int32_t candidate_step[8];
-  uint64_t total_interval_cycles = 0U;
-  uint64_t expected_total_cycles;
-  uint16_t sector_span_u16;
-  uint8_t state;
-
-  if ((positive_next == NULL) || (entry_angle_u16 == NULL) ||
-      (sector_interval_cycles == NULL) || (phase_step == NULL) ||
-      (current_state < 1U) || (current_state > 6U) ||
-      (expected_sector_interval_cycles == 0U) ||
-      (tolerance_percent > 99U) ||
-      ((physical_direction != 1) && (physical_direction != -1)))
-    return false;
-
-  for (state = 1U; state <= 6U; state++)
-  {
-    if ((sector_interval_cycles[state] == 0U) ||
-        (!motor_hall_sector_span_get(positive_next, entry_angle_u16,
-                                     state, &sector_span_u16)) ||
-        (!motor_hall_sector_phase_step_get(
-          sector_span_u16, sector_interval_cycles[state], core_clock_hz,
-          update_frequency_hz, physical_direction, &candidate_step[state])))
-      return false;
-    total_interval_cycles += sector_interval_cycles[state];
-  }
-
-  expected_total_cycles = (uint64_t)expected_sector_interval_cycles * 6U;
-  if ((total_interval_cycles * 100U <
-       expected_total_cycles * (100U - tolerance_percent)) ||
-      (total_interval_cycles * 100U >
-       expected_total_cycles * (100U + tolerance_percent)))
-    return false;
-
-  *phase_step = candidate_step[current_state];
-  return true;
-}
-
 bool motor_hall_dynamic_compensation_get(
   uint32_t electrical_frequency_millihz,
   int8_t physical_direction,

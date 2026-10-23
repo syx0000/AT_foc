@@ -17,14 +17,12 @@ typedef struct
   int32_t dynamic_compensation_u16;    /**< 按电角速度和延迟计算的有符号角度补偿。 */
   int32_t phase_step;                  /**< 当前Q16.16有符号快速环相位步长。 */
   int32_t edge_error_u16;              /**< 最近一次Hall边沿的有符号预测角误差。 */
-  int32_t edge_correction_remaining_u16; /**< 尚未完成的有符号平滑角修正。 */
   uint32_t sector_interval_cycles;     /**< 当前扇区采用的历史持续周期。 */
   uint16_t electrical_angle_u16;       /**< Hall边沿插值并补偿为转子坐标系的电角度。 */
   uint32_t electrical_frequency_millihz; /**< Hall完整周期电频率，单位mHz。 */
   uint8_t hall_state;                  /**< 当前Hall组合状态1..6。 */
   int8_t direction;                    /**< 物理方向：1正向、-1反向、0未知。 */
   bool valid;                          /**< 方向、频率有效且Hall未超时时为true。 */
-  bool sector_interpolation_active;    /**< 当前扇区正在使用独立跨度/周期插值。 */
 } motor_hall_angle_estimator_t;
 
 /**
