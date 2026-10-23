@@ -24,15 +24,12 @@
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
 #include "motor_speed_control.h"
-#include "motor_speed_feedback.h"
 static volatile motor_control_status_t motor_control_status;
 static motor_fault_record_t motor_fault_history[MOTOR_FAULT_HISTORY_DEPTH];
 static uint32_t motor_fault_history_count;
 static uint32_t motor_fault_history_newest;
 static uint32_t motor_fault_sequence;
 static volatile uint32_t motor_fault_pending_mask;
-static int32_t motor_speed_start_target_rpm;
-static bool motor_speed_reverse_if_active;
 
 static bool motor_control_open_command_to_physical(
   const motor_open_loop_command_t *logical_command,
@@ -123,8 +120,6 @@ void motor_control_init(void)
   motor_fault_history_newest = 0U;
   motor_fault_sequence = 0U;
   motor_fault_pending_mask = 0U;
-  motor_speed_start_target_rpm = 0;
-  motor_speed_reverse_if_active = false;
   motor_current_startup_init();
   for (index = 0U; index < MOTOR_FAULT_HISTORY_DEPTH; index++)
   {
@@ -238,8 +233,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
   {
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-    /* demo方式：Iq=0启动电流环(静止时转子反馈回退为Hall扇区中心角)，
+    /* Iq=0启动电流环(静止时转子反馈回退为Hall扇区中心角)，
      * 随后立即启动速度PI，由其积分建立启动转矩。 */
     current_command.direct_reference_ma = 0;
     current_command.quadrature_reference_ma = 0;
@@ -250,25 +244,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
       return false;
     }
     motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
-    motor_speed_start_target_rpm = 0;
-    motor_speed_reverse_if_active = false;
     return true;
-#else
-    current_command.direct_reference_ma = 0;
-    current_command.quadrature_reference_ma =
-      (target_speed_rpm > 0) ? MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA :
-                              -MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA;
-    if ((!motor_control_current_command_to_physical(
-           &current_command, &current_command)) ||
-        (!motor_current_startup_speed_start(
-           &current_command,
-           (uint32_t)((target_speed_rpm < 0) ?
-             -target_speed_rpm : target_speed_rpm))))
-      return false;
-    motor_speed_start_target_rpm = target_speed_rpm;
-    motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_STARTING;
-    return true;
-#endif
   }
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_OPEN_LOOP)
@@ -315,56 +291,27 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
     return false;
   }
   motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
-  motor_speed_start_target_rpm = 0;
-  motor_speed_reverse_if_active = false;
   return true;
 }
 bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
 {
-  motor_speed_control_status_t speed_status;
-  int32_t deceleration_target_rpm;
-
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
       (!motor_control_speed_command_valid(target_speed_rpm)))
   {
     return false;
   }
 
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-  /* demo方式：速度斜坡直接过零换向，PI输出Iq随之反号，电流环全程不中断。 */
-  (void)speed_status;
-  (void)deceleration_target_rpm;
+  /* 速度斜坡直接过零换向，PI输出Iq随之反号，电流环全程不中断。 */
   return motor_speed_control_target_set(target_speed_rpm * 1000L);
-#else
-  if (!motor_speed_control_status_read(&speed_status)) return false;
-  if (((int64_t)speed_status.target_speed_millirpm * target_speed_rpm) < 0)
-  {
-    deceleration_target_rpm =
-      (speed_status.target_speed_millirpm > 0) ?
-        (int32_t)MOTOR_SPEED_REVERSE_ENTRY_RPM :
-        -(int32_t)MOTOR_SPEED_REVERSE_ENTRY_RPM;
-    if (!motor_speed_control_target_set(deceleration_target_rpm * 1000L))
-      return false;
-    motor_speed_start_target_rpm = target_speed_rpm;
-    motor_speed_reverse_if_active = false;
-    motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_REVERSING;
-    return true;
-  }
-  return motor_speed_control_target_set(target_speed_rpm * 1000L);
-#endif
 }
 void motor_control_stop(void)
 {
   motor_control_state_t previous_state = motor_control_status.state;
   motor_speed_control_stop();
   motor_current_startup_stop();
-  motor_speed_start_target_rpm = 0;
-  motor_speed_reverse_if_active = false;
   motor_current_control_stop();
   motor_open_loop_stop();
   if ((previous_state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
-      (previous_state == MOTOR_CONTROL_STATE_SPEED_STARTING) ||
-      (previous_state == MOTOR_CONTROL_STATE_SPEED_REVERSING) ||
       (previous_state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (previous_state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
       (previous_state == MOTOR_CONTROL_STATE_SPEED_CONTROL))
@@ -469,8 +416,6 @@ motor_fault_clear_result_t motor_control_fault_clear_ex(void)
     return MOTOR_FAULT_CLEAR_RESET_REQUIRED;
   motor_speed_control_stop();
   motor_current_startup_stop();
-  motor_speed_start_target_rpm = 0;
-  motor_speed_reverse_if_active = false;
   motor_current_control_stop();
   motor_open_loop_stop();
   if (!motor_current_sample_fault_clear())
@@ -497,8 +442,6 @@ void motor_control_poll(void)
   motor_current_startup_status_t current_startup;
   motor_hall_sample_t hall;
   motor_hall_angle_estimator_t estimator;
-  motor_speed_feedback_t speed_feedback;
-  motor_current_control_command_t reverse_command;
   bool hall_read_ok;
   bool estimator_read_ok;
 
@@ -536,92 +479,12 @@ void motor_control_poll(void)
   (void)motor_current_control_status_read(&current_control);
   (void)motor_speed_control_status_read(&speed_control);
   (void)motor_current_startup_status_read(&current_startup);
-  if ((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_STARTING) &&
-      current_startup.hall_direct &&
-      current_startup.speed_control_ready &&
-      (speed_control.state == MOTOR_SPEED_CONTROL_STOPPED))
-  {
-    if ((!motor_current_control_status_read(&current_control)) ||
-        (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
-        (!motor_speed_control_start(
-          motor_speed_start_target_rpm * 1000L,
-          current_control.command.quadrature_reference_ma)) ||
-        (!motor_current_startup_current_command_release()))
-    {
-      motor_control_fault_set(MOTOR_FAULT_SPEED_START);
-      return;
-    }
-    (void)motor_speed_control_status_read(&speed_control);
-  }
-  if ((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_REVERSING) &&
-      (!motor_speed_reverse_if_active))
-  {
-    if (motor_speed_feedback_read(&speed_feedback) && speed_feedback.valid &&
-        (((speed_feedback.filtered_speed_millirpm < 0) ?
-          -speed_feedback.filtered_speed_millirpm :
-           speed_feedback.filtered_speed_millirpm) <=
-         ((int32_t)MOTOR_SPEED_REVERSE_ENTRY_RPM * 1000L)))
-    {
-      reverse_command.direct_reference_ma = 0;
-      reverse_command.quadrature_reference_ma =
-        (motor_speed_start_target_rpm > 0) ?
-          MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA :
-          -MOTOR_CURRENT_STARTUP_IF_MINIMUM_CURRENT_MA;
-      if ((!motor_control_current_command_to_physical(
-             &reverse_command, &reverse_command)) ||
-          (!motor_current_startup_reverse_start(&reverse_command)))
-      {
-        motor_control_fault_set(MOTOR_FAULT_SPEED_START);
-        return;
-      }
-      motor_speed_control_stop();
-      motor_speed_reverse_if_active = true;
-      return;
-    }
-  }
-  if (((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_STARTING) ||
-       ((motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_REVERSING) &&
-        motor_speed_reverse_if_active)) &&
-      (current_startup.state == MOTOR_CURRENT_STARTUP_COMPLETE))
-  {
-    if (speed_control.state != MOTOR_SPEED_CONTROL_RUNNING)
-    {
-      if ((!motor_current_control_status_read(&current_control)) ||
-          (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING))
-      {
-        motor_control_fault_set(MOTOR_FAULT_SPEED_START);
-        return;
-      }
-      /* Releasing the startup angle override and publishing the corresponding
-       * speed feedback happen in different periodic tasks.  On their boundary
-       * there can be one transient frame with invalid or stale-sign feedback.
-       * Wait for the first coherent sample instead of turning that scheduler
-       * race into an intermittent speed-start fault. */
-      if ((!motor_speed_feedback_read(&speed_feedback)) ||
-          (!speed_feedback.valid) ||
-          (((int64_t)motor_speed_start_target_rpm *
-            speed_feedback.filtered_speed_millirpm) <= 0))
-        return;
-      if (!motor_speed_control_start(
-            motor_speed_start_target_rpm * 1000L,
-            current_control.command.quadrature_reference_ma))
-      {
-        motor_control_fault_set(MOTOR_FAULT_SPEED_START);
-        return;
-      }
-    }
-    motor_speed_start_target_rpm = 0;
-    motor_speed_reverse_if_active = false;
-    motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
-  }
-  else if ((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) &&
+  if ((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) &&
       (current_startup.state == MOTOR_CURRENT_STARTUP_COMPLETE))
   {
     motor_control_status.state = MOTOR_CONTROL_STATE_CURRENT_CONTROL;
   }
-  else if (((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
-            (motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_STARTING) ||
-            (motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_REVERSING)) &&
+  else if ((motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) &&
            (current_startup.state == MOTOR_CURRENT_STARTUP_FAULT))
   {
     LOGE("Current startup fault: reason=%u elapsed_ms=%lu edges=%u\r\n",

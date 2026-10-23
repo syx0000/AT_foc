@@ -74,24 +74,6 @@ bool motor_speed_pi_output_seed(motor_speed_pi_t *controller,
   return true;
 }
 
-void motor_speed_pi_output_track(motor_speed_pi_t *controller,
-                                 int32_t applied_output_ma)
-{
-  int32_t limited_output_ma;
-
-  if ((controller == NULL) || (controller->output_limit_ma <= 0))
-  {
-    return;
-  }
-
-  limited_output_ma = motor_speed_pi_limit(
-    applied_output_ma, controller->output_limit_ma);
-  controller->integral_ma = motor_speed_pi_limit(
-    (int64_t)controller->integral_ma + limited_output_ma -
-    controller->output_ma, controller->output_limit_ma);
-  controller->output_ma = limited_output_ma;
-}
-
 int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
                                int32_t reference_millirpm,
                                int32_t feedback_millirpm)

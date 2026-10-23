@@ -26,13 +26,8 @@ static int16_t motor_current_startup_blend_initial_error;
 static int8_t motor_current_startup_direction;
 static uint32_t motor_current_startup_feedback_invalid_cycles;
 static uint32_t motor_current_startup_direction_invalid_cycles;
-static bool motor_current_startup_limited_if;
 static bool motor_current_startup_hall_direct;
 static uint16_t motor_current_startup_hall_direct_angle_u16;
-static bool motor_current_startup_speed_start_requested;
-static bool motor_current_startup_current_command_released;
-static volatile uint32_t motor_current_startup_blend_complete_ms;
-static uint32_t motor_current_startup_target_speed_millirpm;
 
 /* At standstill the Hall decoder has a valid sector but no speed/direction,
  * so the interpolating estimator is deliberately invalid.  Use the calibrated
@@ -97,7 +92,6 @@ static void motor_current_startup_handover_retry(void)
   motor_current_startup_status.qualified_edges = 0U;
   motor_current_startup_status.requested_direction = 0;
   motor_current_startup_status.hall_direct = false;
-  motor_current_startup_status.speed_control_ready = false;
   motor_current_startup_blend_cycles = 0U;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
@@ -118,7 +112,6 @@ void motor_current_startup_init(void)
   motor_current_startup_status.elapsed_ms = 0U;
   motor_current_startup_status.qualified_edges = 0U;
   motor_current_startup_status.hall_direct = false;
-  motor_current_startup_status.speed_control_ready = false;
   motor_current_startup_phase_accumulator =
     (uint32_t)MOTOR_CURRENT_STARTUP_ALIGNMENT_ANGLE_U16 << 16;
   motor_current_startup_frequency_millihz = 0;
@@ -128,18 +121,12 @@ void motor_current_startup_init(void)
   motor_current_startup_blend_initial_error = 0;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_limited_if = false;
   motor_current_startup_hall_direct = false;
   motor_current_startup_hall_direct_angle_u16 = 0U;
-  motor_current_startup_speed_start_requested = false;
-  motor_current_startup_current_command_released = false;
-  motor_current_startup_blend_complete_ms = 0U;
-  motor_current_startup_target_speed_millirpm = 0U;
 }
 
-static bool motor_current_startup_start_internal(
-  const motor_current_control_command_t *physical_command,
-  bool speed_start_requested)
+bool motor_current_startup_start(
+  const motor_current_control_command_t *physical_command)
 {
   motor_current_control_command_t alignment_command;
   motor_hall_sample_t hall;
@@ -151,7 +138,6 @@ static bool motor_current_startup_start_internal(
       (motor_current_startup_status.state != MOTOR_CURRENT_STARTUP_STOPPED))
     return false;
   motor_current_startup_target = *physical_command;
-  motor_current_startup_limited_if = false;
   motor_current_startup_direction =
     (physical_command->quadrature_reference_ma < 0) ? -1 : 1;
   motor_current_startup_status.requested_direction =
@@ -164,13 +150,8 @@ static bool motor_current_startup_start_internal(
   motor_current_startup_status.fault = MOTOR_CURRENT_STARTUP_FAULT_NONE;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_speed_start_requested = speed_start_requested;
-  motor_current_startup_current_command_released = false;
-  motor_current_startup_blend_complete_ms = 0U;
   /* A valid stationary Hall sector is sufficient to establish rotor angle.
-   * Keep I/F only as a fallback for an invalid Hall input; speed starts and
-   * opposite-direction starts both use signed Iq from the sector centre. */
-  motor_current_startup_limited_if = false;
+   * I/F is kept only as a fallback for an invalid Hall input. */
 
   /* A stopped decoder still contains the previous run direction and its
    * six-edge speed window.  Starting in the opposite direction must not expose
@@ -186,9 +167,7 @@ static bool motor_current_startup_start_internal(
       hall.state, &motor_current_startup_hall_direct_angle_u16);
   /* Use the calibrated Hall-sector centre for every stationary start.  The
    * sign of Iq selects torque direction without rotating an open-loop field. */
-  motor_current_startup_hall_direct =
-    (MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE != 0U) &&
-    (!motor_current_startup_limited_if) && hall_center_valid;
+  motor_current_startup_hall_direct = hall_center_valid;
   if (motor_current_startup_hall_direct)
   {
     motor_current_startup_last_hall_update = hall.frequency_update_count;
@@ -198,14 +177,6 @@ static bool motor_current_startup_start_internal(
   {
     motor_current_startup_last_hall_update = 0U;
     motor_current_startup_last_invalid_count = 0U;
-  }
-  if (motor_current_startup_limited_if && hall_center_valid)
-  {
-    motor_current_startup_phase_accumulator =
-      (uint32_t)motor_current_startup_hall_direct_angle_u16 << 16;
-    motor_current_startup_frequency_millihz =
-      motor_current_startup_direction *
-      (int32_t)MOTOR_CURRENT_STARTUP_INITIAL_FREQUENCY_MILLIHZ;
   }
   motor_rotor_feedback_override_set(
     hall_center_valid ? motor_current_startup_hall_direct_angle_u16 :
@@ -236,88 +207,8 @@ static bool motor_current_startup_start_internal(
     return false;
   }
   motor_current_startup_status.state = motor_current_startup_hall_direct ?
-    MOTOR_CURRENT_STARTUP_HALL_DIRECT :
-    ((motor_current_startup_limited_if && hall_center_valid) ?
-      MOTOR_CURRENT_STARTUP_IF_RAMP : MOTOR_CURRENT_STARTUP_ALIGNING);
+    MOTOR_CURRENT_STARTUP_HALL_DIRECT : MOTOR_CURRENT_STARTUP_ALIGNING;
   motor_current_startup_status.hall_direct = motor_current_startup_hall_direct;
-  motor_current_startup_status.speed_control_ready = false;
-  return true;
-}
-
-bool motor_current_startup_start(
-  const motor_current_control_command_t *physical_command)
-{
-  return motor_current_startup_start_internal(physical_command, false);
-}
-
-bool motor_current_startup_speed_start(
-  const motor_current_control_command_t *physical_command,
-  uint32_t target_speed_rpm)
-{
-  if ((target_speed_rpm == 0U) ||
-      (target_speed_rpm > (UINT32_MAX / 1000U)))
-    return false;
-  motor_current_startup_target_speed_millirpm = target_speed_rpm * 1000U;
-  return motor_current_startup_start_internal(physical_command, true);
-}
-
-bool motor_current_startup_current_command_release(void)
-{
-  if ((!motor_current_startup_hall_direct) ||
-      (!motor_current_startup_speed_start_requested) ||
-      (!motor_current_startup_status.speed_control_ready))
-    return false;
-  motor_current_startup_current_command_released = true;
-  return true;
-}
-
-bool motor_current_startup_reverse_start(
-  const motor_current_control_command_t *physical_command)
-{
-  motor_current_control_status_t current;
-  motor_hall_angle_estimator_t estimator;
-  motor_hall_sample_t hall;
-  int8_t requested_direction;
-
-  if ((physical_command == NULL) ||
-      (physical_command->quadrature_reference_ma == 0) ||
-      ((motor_current_startup_status.state != MOTOR_CURRENT_STARTUP_COMPLETE) &&
-       (motor_current_startup_status.state != MOTOR_CURRENT_STARTUP_STOPPED)) ||
-      (!motor_current_control_status_read(&current)) ||
-      (current.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
-      (!motor_hall_angle_estimator_read(&estimator)) || (!estimator.valid) ||
-      (estimator.direction == 0)) return false;
-
-  requested_direction =
-    (physical_command->quadrature_reference_ma < 0) ? -1 : 1;
-  if (requested_direction == estimator.direction) return false;
-  motor_current_startup_target = *physical_command;
-  motor_current_startup_direction = requested_direction;
-  motor_current_startup_phase_accumulator =
-    (uint32_t)estimator.electrical_angle_u16 << 16;
-  motor_current_startup_frequency_millihz = estimator.direction *
-    (int32_t)estimator.electrical_frequency_millihz;
-  motor_current_startup_status.elapsed_ms = 0U;
-  motor_current_startup_status.qualified_edges = 0U;
-  motor_current_startup_status.fault = MOTOR_CURRENT_STARTUP_FAULT_NONE;
-  motor_current_startup_status.requested_direction = requested_direction;
-  motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_HANDOVER_WAIT;
-  motor_current_startup_blend_cycles = 0U;
-  motor_current_startup_feedback_invalid_cycles = 0U;
-  motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_limited_if = true;
-  motor_current_startup_hall_direct = false;
-  motor_current_startup_speed_start_requested = false;
-  motor_current_startup_current_command_released = false;
-  motor_current_startup_status.hall_direct = false;
-  motor_current_startup_status.speed_control_ready = false;
-  if (motor_hall_decoder_sample_read(&hall))
-  {
-    motor_current_startup_last_hall_update = hall.frequency_update_count;
-    motor_current_startup_last_invalid_count = hall.invalid_transition_count;
-  }
-  motor_rotor_feedback_override_set(estimator.electrical_angle_u16,
-    motor_current_startup_frequency_millihz, estimator.direction);
   return true;
 }
 
@@ -346,13 +237,8 @@ void motor_current_startup_stop(void)
   motor_current_startup_status.requested_direction = 0;
   motor_current_startup_feedback_invalid_cycles = 0U;
   motor_current_startup_direction_invalid_cycles = 0U;
-  motor_current_startup_limited_if = false;
   motor_current_startup_hall_direct = false;
-  motor_current_startup_speed_start_requested = false;
-  motor_current_startup_current_command_released = false;
   motor_current_startup_status.hall_direct = false;
-  motor_current_startup_status.speed_control_ready = false;
-  motor_current_startup_target_speed_millirpm = 0U;
 }
 
 void motor_current_startup_process_1khz(void)
@@ -369,12 +255,6 @@ void motor_current_startup_process_1khz(void)
   uint32_t frequency_lag_millihz;
   int64_t startup_current_boost_ma;
   int32_t hall_direct_quadrature_target;
-  int32_t hall_direct_current_magnitude;
-  int32_t hall_direct_current_step_ma;
-  uint32_t hall_direct_boost_elapsed_ms;
-  uint32_t measured_speed_millirpm;
-  uint32_t speed_matched_current_ma;
-  uint8_t pole_pairs;
 
   if ((motor_current_startup_status.state == MOTOR_CURRENT_STARTUP_STOPPED) ||
       (motor_current_startup_status.state == MOTOR_CURRENT_STARTUP_COMPLETE) ||
@@ -396,89 +276,19 @@ void motor_current_startup_process_1khz(void)
   {
     hall_direct_quadrature_target =
       motor_current_startup_target.quadrature_reference_ma;
-    hall_direct_current_step_ma =
-      MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS;
-    if (motor_current_startup_speed_start_requested &&
-        (!motor_current_startup_status.speed_control_ready))
+    command.direct_reference_ma = motor_current_startup_ramp(
+      command.direct_reference_ma,
+      motor_current_startup_target.direct_reference_ma,
+      MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS);
+    command.quadrature_reference_ma = motor_current_startup_ramp(
+      command.quadrature_reference_ma,
+      hall_direct_quadrature_target,
+      MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS);
+    if (!motor_current_control_command_set(&command))
     {
-      hall_direct_current_magnitude =
-        (hall_direct_quadrature_target < 0) ?
-          -hall_direct_quadrature_target : hall_direct_quadrature_target;
-      if (motor_current_startup_status.elapsed_ms >
-          MOTOR_SPEED_HALL_START_BOOST_DELAY_MS)
-      {
-        hall_direct_boost_elapsed_ms =
-          motor_current_startup_status.elapsed_ms -
-          MOTOR_SPEED_HALL_START_BOOST_DELAY_MS;
-        startup_current_boost_ma =
-          (int64_t)hall_direct_boost_elapsed_ms *
-          MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS;
-        if (startup_current_boost_ma >
-            (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA -
-             hall_direct_current_magnitude))
-          startup_current_boost_ma =
-            MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA -
-            hall_direct_current_magnitude;
-        hall_direct_current_magnitude +=
-          (int32_t)startup_current_boost_ma;
-      }
-
-      /* Above half the requested speed, reduce the startup-current ceiling
-       * linearly to zero at the target.  The time ramp still controls torque
-       * build-up below that point; taking the minimum provides load capacity
-       * without accelerating open-loop through the requested speed. */
-      pole_pairs = motor_parameter_pole_pairs_get();
-      if ((pole_pairs != 0U) &&
-          motor_hall_angle_estimator_read(&estimator) && estimator.valid &&
-          (estimator.direction == motor_current_startup_direction))
-      {
-        speed_matched_current_ma =
-          MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA;
-        measured_speed_millirpm = (uint32_t)(
-          ((uint64_t)estimator.electrical_frequency_millihz * 60U) /
-          pole_pairs);
-        if (measured_speed_millirpm >=
-            motor_current_startup_target_speed_millirpm)
-        {
-          speed_matched_current_ma = 0U;
-        }
-        else if ((uint64_t)measured_speed_millirpm * 2U >
-                 motor_current_startup_target_speed_millirpm)
-        {
-          speed_matched_current_ma = (uint32_t)(
-            ((uint64_t)MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA * 2U *
-             (motor_current_startup_target_speed_millirpm -
-              measured_speed_millirpm)) /
-            motor_current_startup_target_speed_millirpm);
-        }
-        if ((uint32_t)hall_direct_current_magnitude >
-            speed_matched_current_ma)
-        {
-          hall_direct_current_magnitude =
-            (int32_t)speed_matched_current_ma;
-          hall_direct_current_step_ma =
-            MOTOR_SPEED_HALL_START_SPEED_MATCH_RELEASE_MA_PER_MS;
-        }
-      }
-      hall_direct_quadrature_target = motor_current_startup_direction *
-                                      hall_direct_current_magnitude;
-    }
-    if (!motor_current_startup_current_command_released)
-    {
-      command.direct_reference_ma = motor_current_startup_ramp(
-        command.direct_reference_ma,
-        motor_current_startup_target.direct_reference_ma,
-        MOTOR_CURRENT_STARTUP_HALL_DIRECT_CURRENT_RAMP_MA_PER_MS);
-      command.quadrature_reference_ma = motor_current_startup_ramp(
-        command.quadrature_reference_ma,
-        hall_direct_quadrature_target,
-        hall_direct_current_step_ma);
-      if (!motor_current_control_command_set(&command))
-      {
-        motor_current_startup_fault_set(
-          MOTOR_CURRENT_STARTUP_FAULT_CURRENT_CONTROL);
-        return;
-      }
+      motor_current_startup_fault_set(
+        MOTOR_CURRENT_STARTUP_FAULT_CURRENT_CONTROL);
+      return;
     }
     /* The fast loop owns the angle blend once it has started. */
     if (motor_current_startup_status.state ==
@@ -507,16 +317,13 @@ void motor_current_startup_process_1khz(void)
     /* Current control is allowed to produce continuous torque at standstill.
      * Once its requested current has been reached with a valid Hall sector,
      * hand angle ownership back to rotor feedback.  Its static-Hall fallback
-     * keeps using the sector center until interpolation becomes available.
-     * Speed startup still requires coherent motion before handover. */
-    if ((!motor_current_startup_speed_start_requested) &&
-        (command.direct_reference_ma ==
+     * keeps using the sector center until interpolation becomes available. */
+    if ((command.direct_reference_ma ==
          motor_current_startup_target.direct_reference_ma) &&
         (command.quadrature_reference_ma ==
          motor_current_startup_target.quadrature_reference_ma))
     {
       motor_rotor_feedback_override_clear();
-      motor_current_startup_limited_if = false;
       motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_COMPLETE;
       return;
     }
@@ -565,28 +372,6 @@ void motor_current_startup_process_1khz(void)
   if (motor_current_startup_status.state ==
       MOTOR_CURRENT_STARTUP_CURRENT_RAMP)
   {
-    /* Do not let the speed PI take over on the first coarse Hall samples.
-     * Hold the captured Hall angle/current until interpolation has run for a
-     * short settling interval and feedback remains coherent. */
-    if (motor_current_startup_speed_start_requested &&
-        (!motor_current_startup_status.speed_control_ready))
-    {
-      if (motor_hall_angle_estimator_read(&estimator) && estimator.valid &&
-          (estimator.direction == motor_current_startup_direction) &&
-          (estimator.electrical_frequency_millihz >=
-           MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ) &&
-          ((motor_current_startup_status.elapsed_ms -
-            motor_current_startup_blend_complete_ms) >=
-           MOTOR_SPEED_HALL_START_SETTLE_MS))
-        motor_current_startup_status.speed_control_ready = true;
-      return;
-    }
-    if (motor_current_startup_current_command_released)
-    {
-      motor_rotor_feedback_override_clear();
-      motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_COMPLETE;
-      return;
-    }
     command.direct_reference_ma = motor_current_startup_ramp(
       command.direct_reference_ma,
       motor_current_startup_target.direct_reference_ma,
@@ -609,7 +394,6 @@ void motor_current_startup_process_1khz(void)
       /* The torque transient is over; the live Hall estimator is already
          being mirrored by the override, so removing it is angle-continuous. */
       motor_rotor_feedback_override_clear();
-      motor_current_startup_limited_if = false;
       motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_COMPLETE;
     }
     return;
@@ -662,13 +446,7 @@ void motor_current_startup_process_1khz(void)
     (motor_current_startup_frequency_millihz < 0) ?
       (uint32_t)(-motor_current_startup_frequency_millihz) :
       (uint32_t)motor_current_startup_frequency_millihz;
-  if (motor_current_startup_limited_if)
-  {
-    startup_current_boost_ma = 0;
-    if (startup_current_magnitude > MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA)
-      startup_current_magnitude = MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA;
-  }
-  else if (motor_hall_decoder_sample_read(&hall) && hall.valid &&
+  if (motor_hall_decoder_sample_read(&hall) && hall.valid &&
       (hall.direction == motor_current_startup_direction) &&
       (hall.electrical_frequency_millihz != 0U) &&
       (commanded_frequency_millihz != 0U))
@@ -701,9 +479,7 @@ void motor_current_startup_process_1khz(void)
   command.quadrature_reference_ma = motor_current_startup_ramp(
     command.quadrature_reference_ma,
     startup_quadrature_target,
-    motor_current_startup_limited_if ?
-      MOTOR_SPEED_REVERSE_CURRENT_RAMP_MA_PER_MS :
-      MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS);
+    MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS);
   if (!motor_current_control_command_set(&command))
   {
     motor_current_startup_fault_set(
@@ -738,9 +514,7 @@ void motor_current_startup_process_1khz(void)
   if ((motor_current_startup_status.state ==
        MOTOR_CURRENT_STARTUP_HANDOVER_WAIT) &&
       (motor_current_startup_status.qualified_edges >=
-       (motor_current_startup_limited_if ?
-          MOTOR_SPEED_REVERSE_HALL_REQUIRED_EDGES :
-          MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES)) && estimator.valid &&
+       MOTOR_CURRENT_STARTUP_HALL_REQUIRED_EDGES) && estimator.valid &&
       (estimator.direction == motor_current_startup_direction) &&
       (estimator.electrical_frequency_millihz >=
        MOTOR_CURRENT_STARTUP_MINIMUM_HALL_FREQUENCY_MILLIHZ))
@@ -935,8 +709,6 @@ void motor_current_startup_fast_process(void)
          current ramp and release the override only after torque has settled. */
       motor_current_startup_status.state =
         MOTOR_CURRENT_STARTUP_CURRENT_RAMP;
-      motor_current_startup_blend_complete_ms =
-        motor_current_startup_status.elapsed_ms;
       return;
     }
   }

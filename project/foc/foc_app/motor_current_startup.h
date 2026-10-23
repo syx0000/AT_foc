@@ -38,17 +38,10 @@ typedef struct
   uint8_t qualified_edges;
   int8_t requested_direction;
   bool hall_direct;
-  bool speed_control_ready;
 } motor_current_startup_status_t;
 
 void motor_current_startup_init(void);
 bool motor_current_startup_start(
-  const motor_current_control_command_t *physical_command);
-bool motor_current_startup_speed_start(
-  const motor_current_control_command_t *physical_command,
-  uint32_t target_speed_rpm);
-bool motor_current_startup_current_command_release(void);
-bool motor_current_startup_reverse_start(
   const motor_current_control_command_t *physical_command);
 bool motor_current_startup_command_set(
   const motor_current_control_command_t *physical_command);

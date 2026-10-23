@@ -433,8 +433,6 @@ static void motor_cli_command_execute(char *line)
   {
     (void)motor_control_status_read(&motor);
     if ((motor.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
-        (motor.state == MOTOR_CONTROL_STATE_SPEED_STARTING) ||
-        (motor.state == MOTOR_CONTROL_STATE_SPEED_REVERSING) ||
         (motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
         (motor.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
         (motor.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||

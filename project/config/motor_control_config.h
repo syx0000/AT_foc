@@ -93,51 +93,17 @@
 
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
-/* 速度启动方式：
- * 0 = 参考demo：静止即启动电流环(Iq=0,Hall扇区角)，速度PI全程直接输出Iq；
- * 1 = 旧方案：Hall-direct启动电流爬升，满足边沿/融合条件后再交给速度PI。 */
-#ifndef MOTOR_SPEED_START_MODE
-#define MOTOR_SPEED_START_MODE                           0U
-#endif
-#define MOTOR_SPEED_START_MODE_DIRECT                    0U
-#define MOTOR_SPEED_START_MODE_HALL_HANDOVER             1U
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-/* 对应demo pid_spd Kp=2000/4096, Ki=50/32768 (CURRENT_BASE≈66 A)。 */
+/* 静止即以Iq=0启动电流环(Hall扇区角)，速度PI全程直接输出Iq。
+ * 默认增益对应demo pid_spd Kp=2000/4096, Ki=50/32768 (CURRENT_BASE≈66 A)。 */
 #define MOTOR_SPEED_PI_KP_Q20                          800L
 #define MOTOR_SPEED_PI_KI_Q20                            3L
-#else
-#define MOTOR_SPEED_PI_KP_Q20                         4500L
-#define MOTOR_SPEED_PI_KI_Q20                           45L
-#endif
-/* 直接模式堵转保护：|Iq|≥阈值且转速低于门限持续超时则故障停机。 */
+/* 堵转保护：|Iq|≥阈值且转速低于门限持续超时则故障停机。 */
 #define MOTOR_SPEED_STALL_CURRENT_MA                 12000L
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         15000L
-/* Limit speed-loop torque steps caused by discrete Hall speed updates. */
-#define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S    20000U
-/* Release excess startup torque faster than normal torque build-up. */
-#define MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S 40000U
-/* Ignore the Hall speed staircase when deciding whether torque may be
- * released quickly during an acceleration ramp. */
-#define MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM 100U
-/* Disable fast torque release while consecutive Hall samples show decel. */
-#define MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM      50U
-#define MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA       500L
-#define MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA \
-  MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA
-#define MOTOR_SPEED_HALL_START_BOOST_DELAY_MS           150U
-#define MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS           15L
-#define MOTOR_SPEED_HALL_START_SPEED_MATCH_RELEASE_MA_PER_MS 200L
-/* After six qualified Hall edges and angle blending, keep Hall control active
- * before the speed PI takes over so its feedback filter can settle. */
-#define MOTOR_SPEED_HALL_START_SETTLE_MS                   10U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    3000U /* demo: 3 rpm/ms */
-#else
-#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    1000U
-#endif
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
 
@@ -200,7 +166,6 @@
 #define MOTOR_SENSORLESS_OBSERVER_VALID_SAMPLES           20U
 
 /* Independent current-mode I/F startup and Hall handover. */
-#define MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE           1U
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA    1000L
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV       0L
 #define MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES       8U /* 0.5 ms @16 kHz */
@@ -234,14 +199,6 @@
  * correction over a longer interval to reduce the handover torque step. */
 #define MOTOR_CURRENT_STARTUP_BLEND_CYCLES              640U /* 40 ms @16 kHz */
 #define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
-#define MOTOR_SPEED_REVERSE_ENTRY_RPM                    150U
-#define MOTOR_SPEED_REVERSE_IF_CURRENT_LIMIT_MA         2000L
-#define MOTOR_SPEED_REVERSE_CURRENT_RAMP_MA_PER_MS        10L
-/* Opposite-direction stationary starts already require consecutive Hall
- * edges with the requested sign.  Begin the existing 50 ms angle blend
- * early, before the free-running I/F phase accumulates a large displacement
- * from the measured rotor angle. */
-#define MOTOR_SPEED_REVERSE_HALL_REQUIRED_EDGES             2U
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
 #define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
 #define MOTOR_CURRENT_LOOP_TEST_DIRECT_REFERENCE_MA  2000L
@@ -342,27 +299,6 @@
 #error "speed control current limit exceeds current-loop command limit"
 #endif
 
-#if ((MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S < \
-      MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S) || \
-     (MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM == 0U) || \
-     (MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM == 0U))
-#error "speed control current release configuration is invalid"
-#endif
-
-#if ((MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA <= 0L) || \
-     (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA < \
-      MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA) || \
-     (MOTOR_SPEED_HALL_START_MAXIMUM_CURRENT_MA > \
-      MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) || \
-     (MOTOR_SPEED_HALL_START_BOOST_MA_PER_MS <= 0L) || \
-     (MOTOR_SPEED_HALL_START_BOOST_DELAY_MS >= \
-      MOTOR_CURRENT_STARTUP_TIMEOUT_MS) || \
-     (MOTOR_SPEED_HALL_START_SETTLE_MS == 0U) || \
-     (MOTOR_SPEED_HALL_START_SETTLE_MS >= \
-      MOTOR_CURRENT_STARTUP_TIMEOUT_MS))
-#error "Hall speed-start current configuration is invalid"
-#endif
-
 #if (MOTOR_SPEED_OVERSPEED_RPM <= MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM)
 #error "overspeed threshold must be above maximum command speed"
 #endif
@@ -370,10 +306,6 @@
 #if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA <= 0L) || \
      (MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA > MOTOR_CURRENT_COMMAND_MAX_MA))
 #error "current startup alignment current is outside the current-loop limit"
-#endif
-
-#if (MOTOR_CURRENT_STARTUP_HALL_DIRECT_ENABLE > 1U)
-#error "Hall-direct startup enable must be 0 or 1"
 #endif
 
 #if ((MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV < 0L) || \

@@ -21,10 +21,7 @@ static motor_speed_control_config_t motor_speed_control_config;
 static motor_speed_pi_t motor_speed_controller;
 static motor_ramp_t motor_speed_ramp;
 static volatile motor_speed_control_status_t motor_speed_control_status;
-static uint32_t motor_speed_control_last_feedback_sample_count;
-static int32_t motor_speed_control_last_raw_speed_millirpm;
 static int32_t motor_speed_control_pi_target_ma;
-static bool motor_speed_control_feedback_decelerating;
 static uint32_t motor_speed_control_stall_ms;
 
 /**
@@ -50,34 +47,6 @@ static int32_t motor_speed_control_abs(int32_t value)
 {
   return (value < 0) ? -value : value;
 }
-
-#if (MOTOR_SPEED_START_MODE != MOTOR_SPEED_START_MODE_DIRECT)
-static int32_t motor_speed_control_current_slew(int32_t target_ma,
-                                                int32_t current_ma,
-                                                bool fast_release_allowed)
-{
-  uint32_t slew_ma_per_s = MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S;
-  int32_t step_ma;
-  int64_t difference = (int64_t)target_ma - current_ma;
-
-  /* Startup handover seeds the PI with the torque already being applied.
-   * On a lightly loaded motor that torque can accelerate the rotor faster
-   * than the speed ramp.  Permit torque magnitude reduction (or reversal)
-   * to happen faster, while retaining the normal gentle torque build-up. */
-  if ((fast_release_allowed &&
-       (motor_speed_control_abs(target_ma) <
-        motor_speed_control_abs(current_ma))) ||
-      (((int64_t)target_ma * current_ma) <= 0))
-  {
-    slew_ma_per_s = MOTOR_SPEED_CONTROL_CURRENT_RELEASE_MA_PER_S;
-  }
-  step_ma = (int32_t)(slew_ma_per_s / MOTOR_SPEED_LOOP_FREQUENCY_HZ);
-  if (step_ma < 1) step_ma = 1;
-  if (difference > step_ma) return current_ma + step_ma;
-  if (difference < -step_ma) return current_ma - step_ma;
-  return target_ma;
-}
-#endif
 
 /**
  * @brief 判断有符号milli-rpm指令是否在配置范围内。
@@ -120,10 +89,7 @@ void motor_speed_control_init(void)
   motor_speed_control_status.feedback_speed_millirpm = 0;
   motor_speed_control_status.quadrature_current_command_ma = 0;
   motor_speed_control_status.update_count = 0U;
-  motor_speed_control_last_feedback_sample_count = 0U;
-  motor_speed_control_last_raw_speed_millirpm = 0;
   motor_speed_control_pi_target_ma = 0;
-  motor_speed_control_feedback_decelerating = false;
   motor_speed_control_stall_ms = 0U;
 }
 
@@ -184,8 +150,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
   {
     return false;
   }
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-  /* demo方式：静止或反馈尚未建立时按0 rpm启动；只拒绝明确反向旋转。 */
+  /* 静止或反馈尚未建立时按0 rpm启动；只拒绝明确反向旋转。 */
   if (!speed_feedback.valid)
   {
     speed_feedback.filtered_speed_millirpm = 0;
@@ -196,14 +161,6 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
   {
     return false;
   }
-#else
-  if ((!speed_feedback.valid) ||
-      (((int64_t)target_speed_millirpm *
-        speed_feedback.filtered_speed_millirpm) <= 0))
-  {
-    return false;
-  }
-#endif
 
   if (!motor_direction_transform_s32(
         initial_quadrature_current_ma,
@@ -229,11 +186,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
   motor_speed_control_status.quadrature_current_command_ma =
     logical_initial_current_ma;
   motor_speed_control_status.update_count = 0U;
-  motor_speed_control_last_feedback_sample_count = speed_feedback.sample_count;
-  motor_speed_control_last_raw_speed_millirpm =
-    speed_feedback.raw_speed_millirpm;
   motor_speed_control_pi_target_ma = logical_initial_current_ma;
-  motor_speed_control_feedback_decelerating = false;
   motor_speed_control_stall_ms = 0U;
   return true;
 }
@@ -268,10 +221,7 @@ void motor_speed_control_stop(void)
   motor_speed_control_status.ramped_speed_millirpm = 0;
   motor_speed_control_status.feedback_speed_millirpm = 0;
   motor_speed_control_status.quadrature_current_command_ma = 0;
-  motor_speed_control_last_feedback_sample_count = 0U;
-  motor_speed_control_last_raw_speed_millirpm = 0;
   motor_speed_control_pi_target_ma = 0;
-  motor_speed_control_feedback_decelerating = false;
   motor_speed_control_stall_ms = 0U;
 }
 
@@ -283,30 +233,19 @@ void motor_speed_control_process_1khz(void)
   int32_t ramped_speed_millirpm;
   int32_t quadrature_current_ma;
   int32_t physical_quadrature_current_ma;
-  bool fast_release_allowed;
 
   if (motor_speed_control_status.state != MOTOR_SPEED_CONTROL_RUNNING)
   {
     return;
   }
 
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-  /* demo方式：反馈无效(静止/低于测速门限)按0 rpm参与PI，Iq由PI积分建立。 */
+  /* 反馈无效(静止/低于测速门限)按0 rpm参与PI，Iq由PI积分建立。 */
   if (!motor_speed_feedback_read(&speed_feedback)) return;
   if (!speed_feedback.valid)
   {
     speed_feedback.filtered_speed_millirpm = 0;
     speed_feedback.raw_speed_millirpm = 0;
   }
-#else
-  if ((!motor_speed_feedback_read(&speed_feedback)) ||
-      (!speed_feedback.valid))
-  {
-    /* Hold the last limited Iq command while speed is unavailable.  The
-     * current loop still owns Hall validity and over-current protection. */
-    return;
-  }
-#endif
   if ((!motor_current_control_status_read(&current_status)) ||
       (current_status.state != MOTOR_CURRENT_CONTROL_RUNNING))
   {
@@ -329,31 +268,7 @@ void motor_speed_control_process_1khz(void)
     &motor_speed_controller, ramped_speed_millirpm,
     speed_feedback.filtered_speed_millirpm);
 
-  if (speed_feedback.sample_count !=
-      motor_speed_control_last_feedback_sample_count)
-  {
-    motor_speed_control_feedback_decelerating =
-      (motor_speed_control_abs(speed_feedback.raw_speed_millirpm) +
-       (int32_t)(MOTOR_SPEED_CONTROL_RELEASE_DECEL_MARGIN_RPM * 1000U) <
-       motor_speed_control_abs(motor_speed_control_last_raw_speed_millirpm));
-    motor_speed_control_last_feedback_sample_count =
-      speed_feedback.sample_count;
-    motor_speed_control_last_raw_speed_millirpm =
-      speed_feedback.raw_speed_millirpm;
-  }
-
-  /* Hall speed changes in sector-sized steps.  During acceleration, a new
-   * edge can briefly put feedback just ahead of the 1 rpm/ms reference and
-   * make the PI request less torque.  Do not apply the aggressive release
-   * rate for that quantisation error; reserve it for real overspeed. */
-  fast_release_allowed =
-    (!motor_speed_control_feedback_decelerating) &&
-    (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) >
-     (motor_speed_control_abs(ramped_speed_millirpm) +
-      (int32_t)(MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM * 1000U)));
-#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
-  /* demo方式：PI输出直接作为Iq指令，不做额外斜率限制。 */
-  (void)fast_release_allowed;
+  /* PI输出直接作为Iq指令，不做额外斜率限制。 */
   quadrature_current_ma = motor_speed_control_pi_target_ma;
   if ((motor_speed_control_abs(quadrature_current_ma) >=
        MOTOR_SPEED_STALL_CURRENT_MA) &&
@@ -370,14 +285,6 @@ void motor_speed_control_process_1khz(void)
   {
     motor_speed_control_stall_ms = 0U;
   }
-#else
-  quadrature_current_ma = motor_speed_control_current_slew(
-    motor_speed_control_pi_target_ma,
-    motor_speed_control_status.quadrature_current_command_ma,
-    fast_release_allowed);
-  motor_speed_pi_output_track(&motor_speed_controller,
-                              quadrature_current_ma);
-#endif
   current_command.direct_reference_ma = 0;
   if (!motor_direction_transform_s32(
         quadrature_current_ma,

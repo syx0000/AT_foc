@@ -54,16 +54,6 @@ bool motor_speed_pi_output_seed(motor_speed_pi_t *controller,
                                 int32_t output_ma);
 
 /**
- * @brief 将PI状态跟踪到外部实际采用的Iq指令。
- * @param controller 已初始化的速度PI实例，不允许为空。
- * @param applied_output_ma 经过外部斜坡或保护限幅后实际采用的Iq，单位mA。
- * @return 无。
- * @details 用实际输出与PI请求值的差修正积分器，避免外部限幅导致积分饱和。
- */
-void motor_speed_pi_output_track(motor_speed_pi_t *controller,
-                                 int32_t applied_output_ma);
-
-/**
  * @brief 执行一次1 kHz速度PI计算。
  * @param controller 已初始化的速度PI实例，不允许为空。
  * @param reference_millirpm 目标有符号机械转速，单位0.001 rpm。
