@@ -13,7 +13,7 @@
 /* Allow brief estimator invalid/direction glitches after angle handover.
  * The fast loop runs at PWM frequency, so 100 cycles is about 5 ms at
  * 20 kHz.  A single inconsistent Hall snapshot must not stop the motor. */
-#define MOTOR_CURRENT_STARTUP_FEEDBACK_DEBOUNCE_CYCLES 100U
+#define MOTOR_CURRENT_STARTUP_FEEDBACK_DEBOUNCE_CYCLES 160U /* 10 ms @16 kHz */
 
 static volatile motor_current_startup_status_t motor_current_startup_status;
 static motor_current_control_command_t motor_current_startup_target;

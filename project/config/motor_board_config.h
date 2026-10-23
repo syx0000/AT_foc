@@ -14,11 +14,11 @@
 #include "at32f45x.h"
 #include "at32f45x_wk_config.h"
 
-/* TMR1时钟192 MHz，中心对齐，ARR=9599，对应PWM频率10 kHz。 */
+/* TMR1时钟192 MHz，中心对齐，ARR=5999，对应PWM频率16 kHz。 */
 #define MOTOR_PWM_TIMER                    TMR1
-#define MOTOR_PWM_PERIOD_COUNTS            9600U
+#define MOTOR_PWM_PERIOD_COUNTS            6000U
 #define MOTOR_PWM_COMPARE_MAX              (MOTOR_PWM_PERIOD_COUNTS - 1U)
-#define MOTOR_PWM_FREQUENCY_HZ             10000U
+#define MOTOR_PWM_FREQUENCY_HZ             16000U
 #define MOTOR_PWM_DEADTIME_COUNTS           80U
 
 /* Hall输入捕获方式（对齐demo HALL_CAPTURE_MODE）：

@@ -120,7 +120,7 @@ void wk_tmr1_init(void)
   tmr_clock_source_div_set(TMR1, TMR_CLOCK_DIV1);
   tmr_repetition_counter_set(TMR1, 1);
   tmr_period_buffer_enable(TMR1, FALSE);
-  tmr_base_init(TMR1, 9599, 0);
+  tmr_base_init(TMR1, 5999, 0);
 
   /* configure primary mode settings */
   tmr_sub_sync_mode_set(TMR1, FALSE);
@@ -177,7 +177,7 @@ void wk_tmr1_init(void)
   tmr_output_struct.oc_idle_state = FALSE;
   tmr_output_struct.occ_idle_state = FALSE;
   tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_4, &tmr_output_struct);
-  tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4, 9099);
+  tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4, 5499);
   tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_4, FALSE);
 
   /* configure break and dead-time settings */

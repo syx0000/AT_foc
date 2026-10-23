@@ -23,7 +23,7 @@
 #include "motor_current_transform.h"
 
 #define INTERRUPT_MONITOR_REPORT_TICKS 1000U
-#define INTERRUPT_MONITOR_ADC_FAST_HZ  10000U
+#define INTERRUPT_MONITOR_ADC_FAST_HZ  16000U
 
 interrupt_monitor_counters_t interrupt_monitor_counters;
 motor_performance_counter_t adc_fast_performance_counter;

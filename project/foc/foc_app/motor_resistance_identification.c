@@ -73,16 +73,88 @@ static bool motor_resistance_identification_safe(
          (MOTOR_PWM_TIMER->brk_bit.oen != 0U);
 }
 
+/**
+ * @brief 检查安全条件，失败时急停并写入对应状态。
+ * @param result 辨识结果，失败时写入status。
+ * @return 安全返回true；过流或驱动器故障返回false且PWM已关闭。
+ */
+static bool motor_resistance_identification_check(
+  motor_resistance_identification_result_t *result,
+  motor_current_sample_state_t *current)
+{
+  if ((!motor_current_sample_state_read(current)) ||
+      (!motor_resistance_identification_safe(current)))
+  {
+    result->status = (MOTOR_PWM_TIMER->brk_bit.oen == 0U) ?
+      MOTOR_RESISTANCE_IDENT_DRIVER_FAULT : MOTOR_RESISTANCE_IDENT_OVERCURRENT;
+    motor_pwm_port_emergency_stop();
+    return false;
+  }
+  return true;
+}
+
+/**
+ * @brief 从当前电压继续升压到目标电流，稳定后测量一个工作点。
+ * @param result 辨识结果，失败时写入status。
+ * @param bus_voltage_mv 母线电压，单位mV。
+ * @param target_current_ma 本工作点A相目标电流，单位mA。
+ * @param requested_voltage_mv 输入为当前指令电压，输出为本点最终指令电压。
+ * @param voltage_q15 输出本点最终施加的Q15电压。
+ * @param average_ma 输出本点A相平均电流，单位mA。
+ * @return 测量完成返回true；安全检查失败返回false且PWM已关闭。
+ * @details 以1 mV/ms升压直到A相电流达到目标或电压达到上限，稳定后以1 ms
+ *          周期平均。达到电压上限时不报错，由调用方检查两点电流差。
+ */
+static bool motor_resistance_identification_point(
+  motor_resistance_identification_result_t *result,
+  uint32_t bus_voltage_mv, int32_t target_current_ma,
+  uint32_t *requested_voltage_mv, uint16_t *voltage_q15,
+  int32_t *average_ma)
+{
+  motor_current_sample_state_t current;
+  uint32_t index;
+  int64_t current_sum_ma = 0;
+
+  while (*requested_voltage_mv < MOTOR_RESISTANCE_IDENT_MAX_VOLTAGE_MV)
+  {
+    if (!motor_resistance_identification_check(result, &current)) return false;
+    if (current.phase_a_ma >= target_current_ma) break;
+    *requested_voltage_mv += MOTOR_RESISTANCE_IDENT_VOLTAGE_STEP_MV;
+    *voltage_q15 = (uint16_t)(((uint64_t)*requested_voltage_mv * 32768U) /
+                              bus_voltage_mv);
+    motor_resistance_identification_voltage_apply(*voltage_q15);
+    wk_delay_ms(1U);
+  }
+
+  for (index = 0U; index < MOTOR_RESISTANCE_IDENT_SETTLE_MS; index++)
+  {
+    wk_delay_ms(1U);
+    if (!motor_resistance_identification_check(result, &current)) return false;
+  }
+
+  for (index = 0U; index < MOTOR_RESISTANCE_IDENT_MEASURE_MS; index++)
+  {
+    wk_delay_ms(1U);
+    if (!motor_resistance_identification_check(result, &current)) return false;
+    current_sum_ma += current.phase_a_ma;
+  }
+  *average_ma = (int32_t)(current_sum_ma /
+                          (int64_t)MOTOR_RESISTANCE_IDENT_MEASURE_MS);
+  result->sample_count += MOTOR_RESISTANCE_IDENT_MEASURE_MS;
+  return true;
+}
+
 bool motor_resistance_identification_run(
   motor_resistance_identification_result_t *result)
 {
   motor_slow_sensor_state_t sensor;
   motor_current_sample_state_t current;
   uint32_t bus_voltage_mv;
-  uint32_t requested_voltage_mv;
+  uint32_t requested_voltage_mv = 0U;
   uint16_t voltage_q15 = 0U;
-  uint32_t index;
-  int64_t current_sum_ma = 0;
+  int64_t low_voltage_uv;
+  int64_t high_voltage_uv;
+  int32_t delta_current_ma;
 
   if (result == NULL)
   {
@@ -93,6 +165,9 @@ bool motor_resistance_identification_run(
   result->applied_voltage_mv = 0U;
   result->phase_a_average_ma = 0;
   result->direct_average_ma = 0;
+  result->low_voltage_mv = 0U;
+  result->low_current_ma = 0;
+  result->offset_voltage_mv = 0;
   result->resistance_via_phase_a_mohm = 0U;
   result->resistance_via_direct_mohm = 0U;
   result->resistance_average_mohm = 0U;
@@ -121,74 +196,52 @@ bool motor_resistance_identification_run(
     return false;
   }
 
-  for (requested_voltage_mv = MOTOR_RESISTANCE_IDENT_VOLTAGE_STEP_MV;
-       requested_voltage_mv <= MOTOR_RESISTANCE_IDENT_MAX_VOLTAGE_MV;
-       requested_voltage_mv += MOTOR_RESISTANCE_IDENT_VOLTAGE_STEP_MV)
+  /* 两点差分：死区压降和电流零偏在同方向两工作点上近似相同，相减抵消。 */
+  if (!motor_resistance_identification_point(
+        result, bus_voltage_mv, MOTOR_RESISTANCE_IDENT_LOW_CURRENT_MA,
+        &requested_voltage_mv, &voltage_q15, &result->low_current_ma))
   {
-    voltage_q15 = (uint16_t)(((uint64_t)requested_voltage_mv * 32768U) /
-                             bus_voltage_mv);
-    motor_resistance_identification_voltage_apply(voltage_q15);
-    wk_delay_ms(1U);
-    if ((!motor_current_sample_state_read(&current)) ||
-        (!motor_resistance_identification_safe(&current)))
-    {
-      result->status = (MOTOR_PWM_TIMER->brk_bit.oen == 0U) ?
-        MOTOR_RESISTANCE_IDENT_DRIVER_FAULT : MOTOR_RESISTANCE_IDENT_OVERCURRENT;
-      motor_pwm_port_emergency_stop();
-      return false;
-    }
-    if (current.phase_a_ma >= MOTOR_RESISTANCE_IDENT_TARGET_CURRENT_MA)
-    {
-      break;
-    }
+    return false;
   }
+  low_voltage_uv = ((int64_t)voltage_q15 * bus_voltage_mv * 1000) / 32768;
+  result->low_voltage_mv = (uint16_t)(low_voltage_uv / 1000);
 
-  for (index = 0U; index < MOTOR_RESISTANCE_IDENT_SETTLE_MS; index++)
+  if (!motor_resistance_identification_point(
+        result, bus_voltage_mv, MOTOR_RESISTANCE_IDENT_TARGET_CURRENT_MA,
+        &requested_voltage_mv, &voltage_q15, &result->phase_a_average_ma))
   {
-    wk_delay_ms(1U);
-    if ((!motor_current_sample_state_read(&current)) ||
-        (!motor_resistance_identification_safe(&current)))
-    {
-      result->status = (MOTOR_PWM_TIMER->brk_bit.oen == 0U) ?
-        MOTOR_RESISTANCE_IDENT_DRIVER_FAULT : MOTOR_RESISTANCE_IDENT_OVERCURRENT;
-      motor_pwm_port_emergency_stop();
-      return false;
-    }
+    return false;
   }
-
-  for (index = 0U; index < MOTOR_RESISTANCE_IDENT_MEASURE_MS; index++)
-  {
-    wk_delay_ms(1U);
-    if ((!motor_current_sample_state_read(&current)) ||
-        (!motor_resistance_identification_safe(&current)))
-    {
-      result->status = (MOTOR_PWM_TIMER->brk_bit.oen == 0U) ?
-        MOTOR_RESISTANCE_IDENT_DRIVER_FAULT : MOTOR_RESISTANCE_IDENT_OVERCURRENT;
-      motor_pwm_port_emergency_stop();
-      return false;
-    }
-    current_sum_ma += current.phase_a_ma;
-    result->sample_count++;
-  }
+  high_voltage_uv = ((int64_t)voltage_q15 * bus_voltage_mv * 1000) / 32768;
+  result->applied_voltage_mv = (uint16_t)(high_voltage_uv / 1000);
+  result->direct_average_ma = result->phase_a_average_ma;
 
   motor_pwm_port_output_disable();
-  result->applied_voltage_mv =
-    (uint16_t)(((uint64_t)voltage_q15 * bus_voltage_mv) / 32768U);
-  result->phase_a_average_ma =
-    (int32_t)(current_sum_ma / result->sample_count);
-  result->direct_average_ma = result->phase_a_average_ma;
 
   if (result->phase_a_average_ma < MOTOR_RESISTANCE_IDENT_MIN_CURRENT_MA)
   {
     result->status = MOTOR_RESISTANCE_IDENT_CURRENT_TOO_LOW;
     return false;
   }
+  /* 旧单点结果保留作对照，包含死区压降误差。 */
+  result->resistance_via_phase_a_mohm = (uint32_t)(
+    high_voltage_uv / result->phase_a_average_ma);
 
-  result->resistance_via_phase_a_mohm =
-    ((uint32_t)result->applied_voltage_mv * 1000U) /
-    (uint32_t)result->phase_a_average_ma;
-  result->resistance_via_direct_mohm = result->resistance_via_phase_a_mohm;
-  result->resistance_average_mohm = result->resistance_via_phase_a_mohm;
+  delta_current_ma = result->phase_a_average_ma - result->low_current_ma;
+  if ((result->low_current_ma < MOTOR_RESISTANCE_IDENT_MIN_CURRENT_MA) ||
+      (delta_current_ma < MOTOR_RESISTANCE_IDENT_MIN_DELTA_CURRENT_MA) ||
+      (high_voltage_uv <= low_voltage_uv))
+  {
+    result->status = MOTOR_RESISTANCE_IDENT_CURRENT_TOO_LOW;
+    return false;
+  }
+  result->resistance_via_direct_mohm = (uint32_t)(
+    (high_voltage_uv - low_voltage_uv) / delta_current_ma);
+  /* 截距 = 死区压降 + 零偏等效压降，用于诊断。 */
+  result->offset_voltage_mv = (int32_t)(
+    (high_voltage_uv - (int64_t)result->resistance_via_direct_mohm *
+     result->phase_a_average_ma) / 1000);
+  result->resistance_average_mohm = result->resistance_via_direct_mohm;
   result->status = MOTOR_RESISTANCE_IDENT_OK;
   return true;
 }

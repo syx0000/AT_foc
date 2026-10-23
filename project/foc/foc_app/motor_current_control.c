@@ -29,6 +29,7 @@ static uint32_t motor_current_control_bus_mv;
 static int32_t motor_current_control_voltage_limit_mv;
 static uint32_t motor_current_control_sample_settle_cycles;
 static uint32_t motor_current_control_hall_invalid_cycles;
+static uint8_t motor_current_control_observer_divider;
 static int32_t motor_current_control_start_direct_mv;
 static int32_t motor_current_control_start_quadrature_mv;
 
@@ -387,8 +388,15 @@ void motor_current_control_fast_process(void)
                                     MOTOR_CURRENT_Q15_BASE_MA) / 32768LL);
       current_beta_ma = (int32_t)(((int64_t)alpha_beta.beta_q15 *
                                    MOTOR_CURRENT_Q15_BASE_MA) / 32768LL);
-      motor_sensorless_observer_update(voltage_alpha_mv, voltage_beta_mv,
-                                       current_alpha_ma, current_beta_ma);
+      /* 影子无感观测器按MOTOR_SENSORLESS_OBSERVER_SAMPLE_PERIOD_US设计，
+       * 16 kHz电流环下每DECIMATION个周期执行一次。 */
+      if (++motor_current_control_observer_divider >=
+          MOTOR_SENSORLESS_OBSERVER_DECIMATION)
+      {
+        motor_current_control_observer_divider = 0U;
+        motor_sensorless_observer_update(voltage_alpha_mv, voltage_beta_mv,
+                                         current_alpha_ma, current_beta_ma);
+      }
       motor_current_control_status.command = motor_current_control_command;
       motor_current_control_status.direct_feedback_ma = direct_ma;
       motor_current_control_status.quadrature_feedback_ma = quadrature_ma;

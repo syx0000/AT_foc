@@ -415,9 +415,11 @@ static bool commissioning_resistance_run(void)
       (int32_t)result.resistance_average_mohm)) {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U); return false;
   }
-  LOGI("Commissioning Rs: PASS phase=%lu mOhm voltage=%u mV current=%ld mA samples=%lu candidate=1\r\n",
-    result.resistance_average_mohm, result.applied_voltage_mv,
-    result.phase_a_average_ma, result.sample_count);
+  LOGI("Commissioning Rs: PASS phase=%lu mOhm (single_point=%lu) low=%u mV/%ld mA high=%u mV/%ld mA offset=%ld mV samples=%lu candidate=1\r\n",
+    result.resistance_average_mohm, result.resistance_via_phase_a_mohm,
+    result.low_voltage_mv, result.low_current_ma,
+    result.applied_voltage_mv, result.phase_a_average_ma,
+    result.offset_voltage_mv, result.sample_count);
   return true;
 }
 
