@@ -18,6 +18,7 @@ typedef struct
   int32_t integral_gain_q20;     /**< 每个1 kHz周期的积分增益Q20，输入milli-rpm时输出mA。 */
   int32_t output_limit_ma;       /**< Iq电流指令绝对限幅，单位mA。 */
   int32_t integral_ma;           /**< 积分器状态，单位mA。 */
+  int32_t integral_remainder_q20; /**< 积分步长不足1 mA的Q20余数，范围0..2^20-1。 */
   int32_t output_ma;             /**< 最近一次限幅后的Iq输出，单位mA。 */
 } motor_speed_pi_t;
 

@@ -16,6 +16,7 @@ typedef struct
 {
   int32_t raw_speed_millirpm;       /**< 未滤波有符号机械转速，单位0.001 rpm。 */
   int32_t filtered_speed_millirpm;  /**< 低通滤波后的有符号机械转速，单位0.001 rpm。 */
+  int32_t display_speed_millirpm;   /**< 1 kHz 8点滑动平均转速，仅供观测(对应demo rotor_speed_val_filt)，不参与控制。 */
   uint32_t electrical_frequency_millihz; /**< Hall测得的电频率，单位mHz。 */
   uint32_t sample_count;            /**< 已处理的新Hall测速结果累计次数。 */
   int8_t direction;                 /**< 逻辑方向：1为正向，-1为反向，0为未知。 */

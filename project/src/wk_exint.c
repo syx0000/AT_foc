@@ -49,19 +49,19 @@ void wk_exint_config(void)
 
   /* add user code end exint_config 1 */
 
-  /* configure the EXINT5 */
+  /* configure the EXINT8 (HA=PB8, same as demo) */
   gpio_default_para_init(&gpio_init_struct);
   gpio_init_struct.gpio_mode = GPIO_MODE_INPUT;
   gpio_init_struct.gpio_pins = HA_PIN;
   gpio_init_struct.gpio_pull = GPIO_PULL_NONE;
   gpio_init(HA_GPIO_PORT, &gpio_init_struct);
 
-  scfg_exint_line_config(SCFG_PORT_SOURCE_GPIOB, SCFG_PINS_SOURCE5);
+  scfg_exint_line_config(SCFG_PORT_SOURCE_GPIOB, SCFG_PINS_SOURCE8);
 
   exint_default_para_init(&exint_init_struct);
   exint_init_struct.line_enable = TRUE;
   exint_init_struct.line_mode = EXINT_LINE_INTERRUPT;
-  exint_init_struct.line_select = EXINT_LINE_5;
+  exint_init_struct.line_select = EXINT_LINE_8;
   exint_init_struct.line_polarity = EXINT_TRIGGER_BOTH_EDGE;
   exint_init(&exint_init_struct);
 

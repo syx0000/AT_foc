@@ -72,6 +72,19 @@
 #define MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES           30U
 #define MOTOR_HALL_PLL_MINIMUM_TIMEOUT_MS             100U
 #define MOTOR_HALL_PLL_TIMEOUT_SECTORS                   3U
+/* Hall角度解算方式：
+ * 0 = Hall-PLL + 逐扇区插值 + 边沿渐进修正（原方案）；
+ * 1 = demo方式：边沿硬对齐扇区边界角，按测得电频率固定步长累加，
+ *     超前边界角70°电角后冻结累加（对应mclib max_angle_err）。 */
+#ifndef MOTOR_HALL_ANGLE_MODE
+#define MOTOR_HALL_ANGLE_MODE                            1U
+#endif
+#define MOTOR_HALL_ANGLE_MODE_PLL                        0U
+#define MOTOR_HALL_ANGLE_MODE_DEMO                       1U
+#define MOTOR_HALL_DEMO_MAX_ANGLE_ERR_U16            12743U /* 70°电角 */
+#if (MOTOR_HALL_ANGLE_MODE > 1U)
+#error "MOTOR_HALL_ANGLE_MODE must be 0 or 1"
+#endif
 /* 10 kHz current loop: tolerate brief Hall input/decoder glitches. */
 #define MOTOR_CURRENT_CONTROL_HALL_INVALID_CYCLES     100U
 
@@ -80,12 +93,26 @@
 
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
+/* 速度启动方式：
+ * 0 = 参考demo：静止即启动电流环(Iq=0,Hall扇区角)，速度PI全程直接输出Iq；
+ * 1 = 旧方案：Hall-direct启动电流爬升，满足边沿/融合条件后再交给速度PI。 */
+#ifndef MOTOR_SPEED_START_MODE
+#define MOTOR_SPEED_START_MODE                           0U
+#endif
+#define MOTOR_SPEED_START_MODE_DIRECT                    0U
+#define MOTOR_SPEED_START_MODE_HALL_HANDOVER             1U
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+/* 对应demo pid_spd Kp=2000/4096, Ki=50/32768 (CURRENT_BASE≈66 A)。 */
+#define MOTOR_SPEED_PI_KP_Q20                          800L
+#define MOTOR_SPEED_PI_KI_Q20                            3L
+#else
 #define MOTOR_SPEED_PI_KP_Q20                         4500L
 #define MOTOR_SPEED_PI_KI_Q20                           45L
-#define MOTOR_SPEED_PI_LOW_GAIN_END_RPM                200U
-#define MOTOR_SPEED_PI_FULL_GAIN_START_RPM             600U
-#define MOTOR_SPEED_PI_LOW_KP_PERCENT                    75U
-#define MOTOR_SPEED_PI_LOW_KI_PERCENT                    25U
+#endif
+/* 直接模式堵转保护：|Iq|≥阈值且转速低于门限持续超时则故障停机。 */
+#define MOTOR_SPEED_STALL_CURRENT_MA                 12000L
+#define MOTOR_SPEED_STALL_SPEED_RPM                     30U
+#define MOTOR_SPEED_STALL_TIME_MS                     1000U
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         15000L
 /* Limit speed-loop torque steps caused by discrete Hall speed updates. */
 #define MOTOR_SPEED_CONTROL_CURRENT_SLEW_MA_PER_S    20000U
@@ -106,7 +133,11 @@
  * before the speed PI takes over so its feedback filter can settle. */
 #define MOTOR_SPEED_HALL_START_SETTLE_MS                   10U
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    3000U /* demo: 3 rpm/ms */
+#else
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    1000U
+#endif
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
 
@@ -264,15 +295,6 @@
      (MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES < \
       MOTOR_HALL_PLL_HIGH_EDGE_BLEND_CYCLES))
 #error "Hall PLL scheduling configuration is invalid"
-#endif
-
-#if ((MOTOR_SPEED_PI_LOW_GAIN_END_RPM >= \
-      MOTOR_SPEED_PI_FULL_GAIN_START_RPM) || \
-     (MOTOR_SPEED_PI_LOW_KP_PERCENT == 0U) || \
-     (MOTOR_SPEED_PI_LOW_KP_PERCENT > 100U) || \
-     (MOTOR_SPEED_PI_LOW_KI_PERCENT == 0U) || \
-     (MOTOR_SPEED_PI_LOW_KI_PERCENT > 100U))
-#error "speed PI gain scheduling configuration is invalid"
 #endif
 
 #if (MOTOR_SPEED_LOOP_FREQUENCY_HZ != 1000U)

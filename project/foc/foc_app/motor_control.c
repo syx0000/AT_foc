@@ -238,6 +238,22 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
   {
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+    /* demo方式：Iq=0启动电流环(静止时转子反馈回退为Hall扇区中心角)，
+     * 随后立即启动速度PI，由其积分建立启动转矩。 */
+    current_command.direct_reference_ma = 0;
+    current_command.quadrature_reference_ma = 0;
+    if (!motor_current_control_start(&current_command)) return false;
+    if (!motor_speed_control_start(target_speed_rpm * 1000L, 0))
+    {
+      motor_current_control_stop();
+      return false;
+    }
+    motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
+    motor_speed_start_target_rpm = 0;
+    motor_speed_reverse_if_active = false;
+    return true;
+#else
     current_command.direct_reference_ma = 0;
     current_command.quadrature_reference_ma =
       (target_speed_rpm > 0) ? MOTOR_SPEED_HALL_START_INITIAL_CURRENT_MA :
@@ -252,6 +268,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
     motor_speed_start_target_rpm = target_speed_rpm;
     motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_STARTING;
     return true;
+#endif
   }
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_OPEN_LOOP)
@@ -313,6 +330,12 @@ bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
     return false;
   }
 
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+  /* demo方式：速度斜坡直接过零换向，PI输出Iq随之反号，电流环全程不中断。 */
+  (void)speed_status;
+  (void)deceleration_target_rpm;
+  return motor_speed_control_target_set(target_speed_rpm * 1000L);
+#else
   if (!motor_speed_control_status_read(&speed_status)) return false;
   if (((int64_t)speed_status.target_speed_millirpm * target_speed_rpm) < 0)
   {
@@ -328,6 +351,7 @@ bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
     return true;
   }
   return motor_speed_control_target_set(target_speed_rpm * 1000L);
+#endif
 }
 void motor_control_stop(void)
 {
@@ -651,6 +675,8 @@ void motor_control_poll(void)
       motor_control_fault_set(MOTOR_FAULT_SPEED_COMMAND);
     else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_OVERSPEED)
       motor_control_fault_set(MOTOR_FAULT_OVERSPEED);
+    else if (speed_control.fault == MOTOR_SPEED_CONTROL_FAULT_STALL)
+      motor_control_fault_set(MOTOR_FAULT_STALL);
     else
       motor_control_fault_set(MOTOR_FAULT_CONTROL_SUBSYSTEM);
   }

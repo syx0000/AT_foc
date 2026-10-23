@@ -25,6 +25,7 @@ static uint32_t motor_speed_control_last_feedback_sample_count;
 static int32_t motor_speed_control_last_raw_speed_millirpm;
 static int32_t motor_speed_control_pi_target_ma;
 static bool motor_speed_control_feedback_decelerating;
+static uint32_t motor_speed_control_stall_ms;
 
 /**
  * @brief 锁存速度控制故障并安全停止底层电流环。
@@ -50,6 +51,7 @@ static int32_t motor_speed_control_abs(int32_t value)
   return (value < 0) ? -value : value;
 }
 
+#if (MOTOR_SPEED_START_MODE != MOTOR_SPEED_START_MODE_DIRECT)
 static int32_t motor_speed_control_current_slew(int32_t target_ma,
                                                 int32_t current_ma,
                                                 bool fast_release_allowed)
@@ -75,6 +77,7 @@ static int32_t motor_speed_control_current_slew(int32_t target_ma,
   if (difference < -step_ma) return current_ma - step_ma;
   return target_ma;
 }
+#endif
 
 /**
  * @brief 判断有符号milli-rpm指令是否在配置范围内。
@@ -88,43 +91,6 @@ static bool motor_speed_control_command_valid(int32_t speed_millirpm)
   return ((int64_t)speed_millirpm != 0) &&
          ((int64_t)speed_millirpm <= maximum_millirpm) &&
          ((int64_t)speed_millirpm >= -maximum_millirpm);
-}
-
-static void motor_speed_control_gain_schedule(int32_t speed_millirpm)
-{
-  uint32_t speed_rpm = (uint32_t)(
-    motor_speed_control_abs(speed_millirpm) / 1000L);
-  uint32_t kp_percent;
-  uint32_t ki_percent;
-  uint32_t span_rpm;
-  uint32_t position_rpm;
-
-  if (speed_rpm <= MOTOR_SPEED_PI_LOW_GAIN_END_RPM)
-  {
-    kp_percent = MOTOR_SPEED_PI_LOW_KP_PERCENT;
-    ki_percent = MOTOR_SPEED_PI_LOW_KI_PERCENT;
-  }
-  else if (speed_rpm >= MOTOR_SPEED_PI_FULL_GAIN_START_RPM)
-  {
-    kp_percent = 100U;
-    ki_percent = 100U;
-  }
-  else
-  {
-    span_rpm = MOTOR_SPEED_PI_FULL_GAIN_START_RPM -
-               MOTOR_SPEED_PI_LOW_GAIN_END_RPM;
-    position_rpm = speed_rpm - MOTOR_SPEED_PI_LOW_GAIN_END_RPM;
-    kp_percent = MOTOR_SPEED_PI_LOW_KP_PERCENT +
-      ((100U - MOTOR_SPEED_PI_LOW_KP_PERCENT) * position_rpm) / span_rpm;
-    ki_percent = MOTOR_SPEED_PI_LOW_KI_PERCENT +
-      ((100U - MOTOR_SPEED_PI_LOW_KI_PERCENT) * position_rpm) / span_rpm;
-  }
-  motor_speed_controller.proportional_gain_q20 = (int32_t)(
-    ((int64_t)motor_speed_control_config.proportional_gain_q20 *
-     kp_percent) / 100L);
-  motor_speed_controller.integral_gain_q20 = (int32_t)(
-    ((int64_t)motor_speed_control_config.integral_gain_q20 *
-     ki_percent) / 100L);
 }
 
 void motor_speed_control_init(void)
@@ -158,6 +124,7 @@ void motor_speed_control_init(void)
   motor_speed_control_last_raw_speed_millirpm = 0;
   motor_speed_control_pi_target_ma = 0;
   motor_speed_control_feedback_decelerating = false;
+  motor_speed_control_stall_ms = 0U;
 }
 
 bool motor_speed_control_parameter_reload(void)
@@ -210,9 +177,6 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
       (!motor_current_control_status_read(&current_control)) ||
       (current_control.state != MOTOR_CURRENT_CONTROL_RUNNING) ||
       (!motor_speed_feedback_read(&speed_feedback)) ||
-      (!speed_feedback.valid) ||
-      (((int64_t)target_speed_millirpm *
-        speed_feedback.filtered_speed_millirpm) <= 0) ||
       (initial_quadrature_current_ma >
        motor_speed_control_config.current_limit_ma) ||
       (initial_quadrature_current_ma <
@@ -220,6 +184,26 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
   {
     return false;
   }
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+  /* demo方式：静止或反馈尚未建立时按0 rpm启动；只拒绝明确反向旋转。 */
+  if (!speed_feedback.valid)
+  {
+    speed_feedback.filtered_speed_millirpm = 0;
+    speed_feedback.raw_speed_millirpm = 0;
+  }
+  else if (((int64_t)target_speed_millirpm *
+            speed_feedback.filtered_speed_millirpm) < 0)
+  {
+    return false;
+  }
+#else
+  if ((!speed_feedback.valid) ||
+      (((int64_t)target_speed_millirpm *
+        speed_feedback.filtered_speed_millirpm) <= 0))
+  {
+    return false;
+  }
+#endif
 
   if (!motor_direction_transform_s32(
         initial_quadrature_current_ma,
@@ -250,6 +234,7 @@ bool motor_speed_control_start(int32_t target_speed_millirpm,
     speed_feedback.raw_speed_millirpm;
   motor_speed_control_pi_target_ma = logical_initial_current_ma;
   motor_speed_control_feedback_decelerating = false;
+  motor_speed_control_stall_ms = 0U;
   return true;
 }
 
@@ -287,6 +272,7 @@ void motor_speed_control_stop(void)
   motor_speed_control_last_raw_speed_millirpm = 0;
   motor_speed_control_pi_target_ma = 0;
   motor_speed_control_feedback_decelerating = false;
+  motor_speed_control_stall_ms = 0U;
 }
 
 void motor_speed_control_process_1khz(void)
@@ -304,6 +290,15 @@ void motor_speed_control_process_1khz(void)
     return;
   }
 
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+  /* demo方式：反馈无效(静止/低于测速门限)按0 rpm参与PI，Iq由PI积分建立。 */
+  if (!motor_speed_feedback_read(&speed_feedback)) return;
+  if (!speed_feedback.valid)
+  {
+    speed_feedback.filtered_speed_millirpm = 0;
+    speed_feedback.raw_speed_millirpm = 0;
+  }
+#else
   if ((!motor_speed_feedback_read(&speed_feedback)) ||
       (!speed_feedback.valid))
   {
@@ -311,6 +306,7 @@ void motor_speed_control_process_1khz(void)
      * current loop still owns Hall validity and over-current protection. */
     return;
   }
+#endif
   if ((!motor_current_control_status_read(&current_status)) ||
       (current_status.state != MOTOR_CURRENT_CONTROL_RUNNING))
   {
@@ -329,10 +325,6 @@ void motor_speed_control_process_1khz(void)
 
   ramped_speed_millirpm = motor_ramp_process(
     &motor_speed_ramp, MOTOR_SPEED_LOOP_FREQUENCY_HZ);
-  motor_speed_control_gain_schedule(
-    (motor_speed_control_abs(ramped_speed_millirpm) >
-     motor_speed_control_abs(speed_feedback.filtered_speed_millirpm)) ?
-      ramped_speed_millirpm : speed_feedback.filtered_speed_millirpm);
   motor_speed_control_pi_target_ma = motor_speed_pi_process(
     &motor_speed_controller, ramped_speed_millirpm,
     speed_feedback.filtered_speed_millirpm);
@@ -359,12 +351,33 @@ void motor_speed_control_process_1khz(void)
     (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) >
      (motor_speed_control_abs(ramped_speed_millirpm) +
       (int32_t)(MOTOR_SPEED_CONTROL_RELEASE_OVERSPEED_MARGIN_RPM * 1000U)));
+#if (MOTOR_SPEED_START_MODE == MOTOR_SPEED_START_MODE_DIRECT)
+  /* demo方式：PI输出直接作为Iq指令，不做额外斜率限制。 */
+  (void)fast_release_allowed;
+  quadrature_current_ma = motor_speed_control_pi_target_ma;
+  if ((motor_speed_control_abs(quadrature_current_ma) >=
+       MOTOR_SPEED_STALL_CURRENT_MA) &&
+      (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) <
+       (int32_t)(MOTOR_SPEED_STALL_SPEED_RPM * 1000U)))
+  {
+    if (++motor_speed_control_stall_ms >= MOTOR_SPEED_STALL_TIME_MS)
+    {
+      motor_speed_control_fault_set(MOTOR_SPEED_CONTROL_FAULT_STALL);
+      return;
+    }
+  }
+  else
+  {
+    motor_speed_control_stall_ms = 0U;
+  }
+#else
   quadrature_current_ma = motor_speed_control_current_slew(
     motor_speed_control_pi_target_ma,
     motor_speed_control_status.quadrature_current_command_ma,
     fast_release_allowed);
   motor_speed_pi_output_track(&motor_speed_controller,
                               quadrature_current_ma);
+#endif
   current_command.direct_reference_ma = 0;
   if (!motor_direction_transform_s32(
         quadrature_current_ma,

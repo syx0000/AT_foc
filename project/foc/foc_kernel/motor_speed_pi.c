@@ -43,6 +43,7 @@ bool motor_speed_pi_init(motor_speed_pi_t *controller,
   controller->integral_gain_q20 = integral_gain_q20;
   controller->output_limit_ma = output_limit_ma;
   controller->integral_ma = 0;
+  controller->integral_remainder_q20 = 0;
   controller->output_ma = 0;
   return true;
 }
@@ -54,6 +55,7 @@ void motor_speed_pi_reset(motor_speed_pi_t *controller)
     return;
   }
   controller->integral_ma = 0;
+  controller->integral_remainder_q20 = 0;
   controller->output_ma = 0;
 }
 
@@ -67,6 +69,7 @@ bool motor_speed_pi_output_seed(motor_speed_pi_t *controller,
 
   controller->integral_ma = motor_speed_pi_limit(
     output_ma, controller->output_limit_ma);
+  controller->integral_remainder_q20 = 0;
   controller->output_ma = controller->integral_ma;
   return true;
 }
@@ -95,7 +98,9 @@ int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
 {
   int64_t error_millirpm;
   int64_t proportional_ma;
+  int64_t integral_total_q20;
   int64_t integral_step_ma;
+  int32_t integral_remainder_q20;
   int32_t integral_candidate_ma;
   int64_t output_candidate_ma;
 
@@ -108,8 +113,14 @@ int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
     (int64_t)reference_millirpm - feedback_millirpm;
   proportional_ma =
     (error_millirpm * controller->proportional_gain_q20) >> 20;
-  integral_step_ma =
-    (error_millirpm * controller->integral_gain_q20) >> 20;
+  /* 积分步长保留Q20余数：小Ki下(如3)误差<~350 rpm时单步不足1 mA，
+   * 直接右移会被截断为0导致积分停滞、稳态误差无法消除。 */
+  integral_total_q20 =
+    error_millirpm * controller->integral_gain_q20 +
+    controller->integral_remainder_q20;
+  integral_step_ma = integral_total_q20 >> 20;
+  integral_remainder_q20 =
+    (int32_t)(integral_total_q20 - integral_step_ma * 1048576LL);
   integral_candidate_ma = motor_speed_pi_limit(
     (int64_t)controller->integral_ma + integral_step_ma,
     controller->output_limit_ma);
@@ -123,6 +134,7 @@ int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
        (error_millirpm > 0)))
   {
     controller->integral_ma = integral_candidate_ma;
+    controller->integral_remainder_q20 = integral_remainder_q20;
   }
 
   controller->output_ma = motor_speed_pi_limit(

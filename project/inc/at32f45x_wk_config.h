@@ -139,7 +139,7 @@ extern volatile uint16_t motor_adc_ordinary_dma_buffer[4];
 #define EN_485_GPIO_PORT    GPIOB
 #define CAN_STB_PIN    GPIO_PINS_2
 #define CAN_STB_GPIO_PORT    GPIOH
-#define HA_PIN    GPIO_PINS_5
+#define HA_PIN    GPIO_PINS_8
 #define HA_GPIO_PORT    GPIOB
 #define HB_PIN    GPIO_PINS_6
 #define HB_GPIO_PORT    GPIOB

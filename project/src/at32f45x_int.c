@@ -394,14 +394,14 @@ void EXINT9_5_IRQHandler(void)
 
   /* add user code end EXINT9_5_IRQ 0 */
 
-  if(exint_interrupt_flag_get(EXINT_LINE_5) != RESET)
+  if(exint_interrupt_flag_get(EXINT_LINE_8) != RESET)
   {
-    /* add user code begin EXINT_LINE_5 */
+    /* add user code begin EXINT_LINE_8 */
     /* clear flag */
-    exint_flag_clear(EXINT_LINE_5);
+    exint_flag_clear(EXINT_LINE_8);
     interrupt_monitor_counters.hall_a_edge++;
     hall_edge_handled = 1U;
-    /* add user code end EXINT_LINE_5 */ 
+    /* add user code end EXINT_LINE_8 */ 
   }
 
   if(exint_interrupt_flag_get(EXINT_LINE_6) != RESET)

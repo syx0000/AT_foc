@@ -12,6 +12,7 @@
 #include "motor_cli.h"
 #include "motor_control_config.h"
 #include "motor_commissioning.h"
+#include "motor_hall_angle_estimator.h"
 #include "motor_hall_decoder.h"
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
@@ -58,23 +59,9 @@ static uint32_t motor_cli_observer_debug_last_us;
 
 static void motor_cli_debug_poll(void)
 {
-  motor_current_control_status_t current_control;
-  motor_open_loop_status_t open_loop;
-  motor_hall_sample_t hall_sample;
-  motor_current_sample_state_t current_sample;
-  motor_pwm_compare_t pwm_compare;
-  motor_rotor_feedback_t rotor_feedback;
   motor_speed_feedback_t speed_feedback;
   motor_speed_control_status_t speed_control;
   uint32_t now_us;
-  int32_t direct_voltage_mv = 0;
-  int32_t quadrature_voltage_mv = 0;
-  int32_t direct_current_ma = 0;
-  int32_t quadrature_current_ma = 0;
-  int32_t quadrature_reference_ma = 0;
-  uint16_t electrical_angle_u16 = 0U;
-  uint16_t mechanical_angle_u16 = 0U;
-  uint8_t hall_state = 0U;
 
   if (motor_cli_debug_mode != MOTOR_CLI_DEBUG_STREAM) return;
   now_us = motor_timebase_us_get();
@@ -82,47 +69,10 @@ static void motor_cli_debug_poll(void)
       MOTOR_CLI_DEBUG_PERIOD_US) return;
   motor_cli_debug_last_us = now_us;
 
-  if (!motor_pwm_port_compare_read(&pwm_compare))
-  {
-    pwm_compare.phase_a = 0U;
-    pwm_compare.phase_b = 0U;
-    pwm_compare.phase_c = 0U;
-  }
-  if (!motor_current_sample_state_read(&current_sample))
-  {
-    current_sample.phase_a_ma = 0;
-    current_sample.phase_b_ma = 0;
-    current_sample.phase_c_ma = 0;
-  }
-  if (motor_current_control_status_read(&current_control) &&
-      (current_control.state == MOTOR_CURRENT_CONTROL_RUNNING))
-  {
-    direct_voltage_mv = current_control.direct_voltage_mv;
-    quadrature_voltage_mv = current_control.quadrature_voltage_mv;
-    direct_current_ma = current_control.direct_feedback_ma;
-    quadrature_current_ma = current_control.quadrature_feedback_ma;
-    electrical_angle_u16 = current_control.electrical_angle_u16;
-    quadrature_reference_ma = current_control.command.quadrature_reference_ma;
-  }
-  else if (motor_open_loop_status_read(&open_loop) &&
-           (open_loop.state == MOTOR_OPEN_LOOP_RUNNING))
-  {
-    direct_voltage_mv = open_loop.applied_direct_voltage_mv;
-    quadrature_voltage_mv = open_loop.applied_quadrature_voltage_mv;
-    electrical_angle_u16 = open_loop.electrical_angle_u16;
-  }
-  if (motor_hall_decoder_sample_read(&hall_sample) && hall_sample.valid)
-  {
-    hall_state = hall_sample.state;
-  }
-  if (motor_rotor_feedback_read(&rotor_feedback) &&
-      rotor_feedback.mechanical_angle_valid)
-  {
-    mechanical_angle_u16 = rotor_feedback.mechanical_angle_u16;
-  }
   if (!motor_speed_feedback_read(&speed_feedback))
   {
     speed_feedback.filtered_speed_millirpm = 0;
+    speed_feedback.display_speed_millirpm = 0;
   }
   if (!motor_speed_control_status_read(&speed_control))
   {
@@ -130,26 +80,12 @@ static void motor_cli_debug_poll(void)
   }
 
   /* 高频调试通道只输出CSV数据，不增加标签、日志级别或时间戳。
-   * 字段顺序: duty_a,duty_b,duty_c,ia_ma,ib_ma,ic_ma,vd_mv,vq_mv,
-   *          id_ma,iq_ma,iq_ref_ma,hall_state,mech_angle_u16,elec_angle_u16,
-   *          speed_mrpm,speed_ref_mrpm */
-  printf("%u,%u,%u,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%ld,%u,%u,%u,%ld,%ld\r\n",
-         (unsigned int)pwm_compare.phase_a,
-         (unsigned int)pwm_compare.phase_b,
-         (unsigned int)pwm_compare.phase_c,
-         (long)current_sample.phase_a_ma,
-         (long)current_sample.phase_b_ma,
-         (long)current_sample.phase_c_ma,
-         (long)direct_voltage_mv,
-         (long)quadrature_voltage_mv,
-         (long)direct_current_ma,
-         (long)quadrature_current_ma,
-         (long)quadrature_reference_ma,
-         (unsigned int)hall_state,
-         (unsigned int)mechanical_angle_u16,
-         (unsigned int)electrical_angle_u16,
+   * 字段顺序: speed_ref_mrpm(斜坡后速度参考),speed_mrpm(控制用速度反馈),
+   *          speed_filt_mrpm(8点滑动平均，仅观测，对应demo显示口径) */
+  printf("%ld,%ld,%ld\r\n",
+         (long)speed_control.ramped_speed_millirpm,
          (long)speed_feedback.filtered_speed_millirpm,
-         (long)speed_control.ramped_speed_millirpm);
+         (long)speed_feedback.display_speed_millirpm);
 }
 
 static void motor_cli_observer_print(const char *label)
@@ -516,7 +452,7 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_debug_last_us = motor_timebase_us_get();
     motor_cli_debug_mode = MOTOR_CLI_DEBUG_STREAM;
-    printf("OK debug 1 period_us=%u format=duty_a,duty_b,duty_c,ia_ma,ib_ma,ic_ma,vd_mv,vq_mv,id_ma,iq_ma,iq_ref_ma,hall_state,mech_angle_u16,elec_angle_u16,speed_mrpm,speed_ref_mrpm\r\n",
+    printf("OK debug 1 period_us=%u format=speed_ref_mrpm,speed_mrpm,speed_filt_mrpm\r\n",
            (unsigned int)MOTOR_CLI_DEBUG_PERIOD_US);
   }
   else if (strcmp(line, "debug 0") == 0)

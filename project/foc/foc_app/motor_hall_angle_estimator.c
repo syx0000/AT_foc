@@ -27,13 +27,22 @@ static uint8_t motor_hall_sector_stable_count[2][8];
 static int32_t motor_hall_sector_phase_step[2][8];
 static int32_t motor_hall_edge_correction_q16;
 static uint8_t motor_hall_edge_correction_cycles;
+#if (MOTOR_HALL_ANGLE_MODE == MOTOR_HALL_ANGLE_MODE_DEMO)
+/* demo模式：最近一次边沿对齐的边界角，用于70°超前冻结判据。 */
+static uint16_t motor_hall_edge_boundary_u16;
+#endif
 
 #define MOTOR_HALL_SECTOR_TOTAL_TOLERANCE_PERCENT       10U
-#define MOTOR_HALL_SECTOR_STABILITY_TOLERANCE_PERCENT   15U
-#define MOTOR_HALL_SECTOR_STABILITY_REQUIRED_COUNT       3U
+/* Hall 传感器物理放置不均导致扇区跨度实测差异可达60%,同扇区连续测量
+ * 也因 speed ±10% 波动而波动;15% 阈值+3次要求下 stable 判据在临界抖动,
+ * 反复退化到 base_phase_step 引发速度周期性冲击。放宽到25%/2次让 per-sector
+ * 补偿常驻,line 92-97 的 2× 硬保护继续拒绝异常测量。 */
+#define MOTOR_HALL_SECTOR_STABILITY_TOLERANCE_PERCENT   25U
+#define MOTOR_HALL_SECTOR_STABILITY_REQUIRED_COUNT       2U
 #define MOTOR_HALL_EDGE_MAXIMUM_CORRECTION_U16         2731U
 #define MOTOR_HALL_SECTOR_STEP_MAXIMUM_CHANGE_PERCENT     5U
 
+#if (MOTOR_HALL_ANGLE_MODE == MOTOR_HALL_ANGLE_MODE_PLL)
 static uint8_t motor_hall_pll_speed_filter_shift_get(uint32_t frequency_millihz)
 {
   if (frequency_millihz <= MOTOR_HALL_PLL_LOW_FREQUENCY_MILLIHZ)
@@ -74,6 +83,7 @@ static uint8_t motor_hall_pll_edge_blend_cycles_get(uint32_t frequency_millihz)
   return (uint8_t)(MOTOR_HALL_PLL_LOW_EDGE_BLEND_CYCLES - inverse_value);
 }
 
+#endif
 static uint8_t motor_hall_direction_index_get(int8_t direction)
 {
   return (direction > 0) ? 0U : 1U;
@@ -162,18 +172,17 @@ static int32_t motor_hall_sector_phase_step_limit(uint8_t direction_index,
   return candidate_step;
 }
 
-static bool motor_hall_sector_table_stable(uint8_t direction_index)
+/* 逐扇区判断稳定性,允许 5 个稳定扇区在剩下 1 个偶发失稳时继续享受插值。
+ * 早期"全 6 稳"的与逻辑对 Hall PCB 焊装不均的电机(扇区跨度差 60%)不友好:
+ * 只要有一个扇区在临界抖动,整体退化到 base_phase_step 平均角速度,反过来
+ * 又加剧速度波动,形成恶性循环。改成逐扇区门控后,失稳扇区自身临时用
+ * base_phase_step 兜底,其他扇区继续使用自己的 per-sector 精确插值。 */
+static bool motor_hall_sector_state_stable(uint8_t direction_index,
+                                           uint8_t state)
 {
-  uint8_t state;
-
-  if (direction_index > 1U) return false;
-  for (state = 1U; state <= 6U; state++)
-  {
-    if (motor_hall_sector_stable_count[direction_index][state] <
-        MOTOR_HALL_SECTOR_STABILITY_REQUIRED_COUNT)
-      return false;
-  }
-  return true;
+  if ((direction_index > 1U) || (state == 0U) || (state > 6U)) return false;
+  return motor_hall_sector_stable_count[direction_index][state] >=
+         MOTOR_HALL_SECTOR_STABILITY_REQUIRED_COUNT;
 }
 
 void motor_hall_angle_estimator_init(void)
@@ -311,7 +320,7 @@ void motor_hall_angle_estimator_edge_process(void)
   }
   measured_phase_step = base_phase_step;
   motor_hall_angle_estimator.sector_interpolation_active = false;
-  if (motor_hall_sector_table_stable(direction_index) &&
+  if (motor_hall_sector_state_stable(direction_index, hall_sample.state) &&
       motor_hall_sector_table_phase_step_get(
         parameter.hall_positive_next, parameter.hall_entry_angle_u16,
         motor_hall_sector_interval_cycles[direction_index],
@@ -325,6 +334,28 @@ void motor_hall_angle_estimator_edge_process(void)
   }
   motor_hall_angle_estimator.sector_interval_cycles = sector_interval_cycles;
   predicted_angle_u16 = (uint16_t)(motor_hall_phase_accumulator >> 16);
+#if (MOTOR_HALL_ANGLE_MODE == MOTOR_HALL_ANGLE_MODE_DEMO)
+  /* demo方式：每个边沿把角度直接对齐到扇区边界，步长取Hall解码器
+   * 多边沿平均电频率（对应mclib间隔滑动平均+theta_inc），不做PLL修正。 */
+  (void)estimator_was_valid;
+  (void)previous_direction;
+  (void)phase_error_step;
+  (void)edge_error_u16;
+  (void)correction_total_q16;
+  (void)pll_bandwidth_hz;
+  (void)pll_filter_shift;
+  motor_hall_angle_estimator.edge_error_u16 =
+    (int16_t)(boundary_angle_u16 - predicted_angle_u16);
+  motor_hall_phase_accumulator = (uint32_t)boundary_angle_u16 << 16;
+  motor_hall_phase_step = base_phase_step;
+  motor_hall_edge_correction_q16 = 0;
+  motor_hall_edge_correction_cycles = 0U;
+  motor_hall_angle_estimator.edge_correction_remaining_u16 = 0;
+  motor_hall_angle_estimator.sector_interpolation_active = false;
+  motor_hall_edge_boundary_u16 = boundary_angle_u16;
+  predicted_angle_u16 = boundary_angle_u16;
+  (void)measured_phase_step;
+#else
   if ((!estimator_was_valid) || (previous_direction != hall_sample.direction))
   {
     motor_hall_phase_accumulator = (uint32_t)boundary_angle_u16 << 16;
@@ -369,6 +400,7 @@ void motor_hall_angle_estimator_edge_process(void)
     motor_hall_angle_estimator.edge_correction_remaining_u16 =
       motor_hall_edge_correction_q16 / 65536L;
   }
+#endif
   motor_hall_angle_estimator.phase_step = motor_hall_phase_step;
   motor_hall_last_edge_cycles = hall_sample.timestamp_cycles;
   motor_hall_angle_estimator.electrical_angle_u16 = (uint16_t)(
@@ -427,7 +459,21 @@ void motor_hall_angle_estimator_fast_process(void)
     return;
   }
 
+#if (MOTOR_HALL_ANGLE_MODE == MOTOR_HALL_ANGLE_MODE_DEMO)
+  {
+    /* demo方式：估计角相对边界角超前达到70°后停止累加，等待下一边沿。 */
+    int16_t lead_u16 = (int16_t)(
+      (uint16_t)(motor_hall_phase_accumulator >> 16) -
+      motor_hall_edge_boundary_u16);
+    if (((motor_hall_phase_step > 0) &&
+         (lead_u16 < (int16_t)MOTOR_HALL_DEMO_MAX_ANGLE_ERR_U16)) ||
+        ((motor_hall_phase_step < 0) &&
+         (lead_u16 > -(int16_t)MOTOR_HALL_DEMO_MAX_ANGLE_ERR_U16)))
+      motor_hall_phase_accumulator += (uint32_t)motor_hall_phase_step;
+  }
+#else
   motor_hall_phase_accumulator += (uint32_t)motor_hall_phase_step;
+#endif
   if (motor_hall_edge_correction_cycles != 0U)
   {
     correction_step_q16 = motor_hall_edge_correction_q16 /
