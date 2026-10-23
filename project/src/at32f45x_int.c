@@ -34,6 +34,7 @@
 #include "motor_current_calibration.h"
 #include "motor_current_sample.h"
 #include "motor_pwm_port.h"
+#include "motor_board_config.h"
 #include "motor_open_loop.h"
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
@@ -81,6 +82,27 @@
 
 /* private user code ---------------------------------------------------------*/
 /* add user code begin 0 */
+
+/**
+ * @brief 捕获一次Hall边沿并分发给下游模块。
+ * @param sample 输出本次捕获后的端口快照，不允许为空。
+ * @return 无。
+ * @details EXINT与TMR4 XOR两种捕获方式共用。只有解码器确认的相邻合法跳变
+ *          才会传给标定、观测器和角度估算器；重复、000/111毛刺或跳扇区的
+ *          跳变不会被当作新的转子角度边界。
+ */
+static void hall_edge_dispatch(motor_hall_port_sample_t *sample)
+{
+  motor_hall_port_edge_capture();
+  if (motor_hall_port_sample_read(sample) &&
+      motor_hall_decoder_edge_process(sample->state, sample->edge_count,
+                                      sample->timestamp_cycles))
+  {
+    motor_commissioning_hall_edge_process();
+    motor_hall_angle_observer_edge_process();
+    motor_hall_angle_estimator_edge_process();
+  }
+}
 
 /* add user code end 0 */
 
@@ -427,21 +449,7 @@ void EXINT9_5_IRQHandler(void)
   /* add user code begin EXINT9_5_IRQ 1 */
   if (hall_edge_handled != 0U)
   {
-    motor_hall_port_edge_capture();
-    if (motor_hall_port_sample_read(&hall_port_sample))
-    {
-      /* Only propagate a decoder-confirmed adjacent Hall transition.  A
-       * duplicate, 000/111 glitch, or non-adjacent transition must not be
-       * interpreted as a fresh rotor-angle boundary by downstream users. */
-      if (motor_hall_decoder_edge_process(
-            hall_port_sample.state, hall_port_sample.edge_count,
-            hall_port_sample.timestamp_cycles))
-      {
-        motor_commissioning_hall_edge_process();
-        motor_hall_angle_observer_edge_process();
-        motor_hall_angle_estimator_edge_process();
-      }
-    }
+    hall_edge_dispatch(&hall_port_sample);
   }
 
   /* add user code end EXINT9_5_IRQ 1 */
@@ -562,5 +570,34 @@ void TMR1_BRK_TMR9_IRQHandler(void)
     motor_control_fault_notify_from_isr(MOTOR_FAULT_HARDWARE_BREAK);
   }
 }
+
+#if (MOTOR_HALL_CAPTURE_MODE == MOTOR_HALL_CAPTURE_MODE_TIMER_XOR)
+/**
+ * @brief 处理TMR4 Hall XOR捕获中断。
+ * @param 无。
+ * @return 无。
+ * @details 三路Hall异或并经数字滤波后，每个边沿置位TRIGGER标志。按前后两次
+ *          端口状态的差异更新HA/HB/HC边沿计数，与EXINT模式统计口径一致。
+ */
+void TMR4_GLOBAL_IRQHandler(void)
+{
+  motor_hall_port_sample_t previous_sample;
+  motor_hall_port_sample_t hall_port_sample;
+  uint8_t changed;
+
+  if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG) !=
+      RESET)
+  {
+    tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG);
+    previous_sample.state = 0U;
+    (void)motor_hall_port_sample_read(&previous_sample);
+    hall_edge_dispatch(&hall_port_sample);
+    changed = (uint8_t)(previous_sample.state ^ hall_port_sample.state);
+    if ((changed & 0x01U) != 0U) interrupt_monitor_counters.hall_a_edge++;
+    if ((changed & 0x02U) != 0U) interrupt_monitor_counters.hall_b_edge++;
+    if ((changed & 0x04U) != 0U) interrupt_monitor_counters.hall_c_edge++;
+  }
+}
+#endif
 
 /* add user code end 1 */

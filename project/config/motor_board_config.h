@@ -21,6 +21,30 @@
 #define MOTOR_PWM_FREQUENCY_HZ             10000U
 #define MOTOR_PWM_DEADTIME_COUNTS           80U
 
+/* Hall输入捕获方式（对齐demo HALL_CAPTURE_MODE）：
+ * 0 = EXINT双边沿中断 + GPIO读取，无输入滤波；
+ * 1 = TMR4 CH1/CH2/CH3 XOR捕获，经硬件数字滤波后触发中断，再读取GPIO状态。 */
+#ifndef MOTOR_HALL_CAPTURE_MODE
+#define MOTOR_HALL_CAPTURE_MODE             1U
+#endif
+#define MOTOR_HALL_CAPTURE_MODE_EXINT       0U
+#define MOTOR_HALL_CAPTURE_MODE_TIMER_XOR   1U
+#if (MOTOR_HALL_CAPTURE_MODE > 1U)
+#error "MOTOR_HALL_CAPTURE_MODE must be 0 or 1"
+#endif
+#define MOTOR_HALL_CAPTURE_TIMER            TMR4
+#define MOTOR_HALL_CAPTURE_CRM_CLK          CRM_TMR4_PERIPH_CLOCK
+#define MOTOR_HALL_CAPTURE_IRQn             TMR4_GLOBAL_IRQn
+/* 数字滤波：DTS=TMR时钟/4，滤波值0xF(fDTS/32采样、连续8次一致)，
+ * TMR4时钟192 MHz时约5.3 us。demo为TMR_CLOCK_DIV2+0x6(约0.25 us)。 */
+#define MOTOR_HALL_CAPTURE_FILTER_CLK_DIV   TMR_CLOCK_DIV4
+#define MOTOR_HALL_CAPTURE_FILTER           0xFU
+/* HA=PB8(TMR4_CH3)、HB=PB6(TMR4_CH1)、HC=PB7(TMR4_CH2)，复用MUX2。 */
+#define MOTOR_HALL_A_PIN_SOURCE             GPIO_PINS_SOURCE8
+#define MOTOR_HALL_B_PIN_SOURCE             GPIO_PINS_SOURCE6
+#define MOTOR_HALL_C_PIN_SOURCE             GPIO_PINS_SOURCE7
+#define MOTOR_HALL_GPIO_MUX                 GPIO_MUX_2
+
 /* 三相互补输出映射，来源于当前WorkBench配置。 */
 #define MOTOR_PWM_PHASE_A_HIGH_PORT         GPIOA
 #define MOTOR_PWM_PHASE_A_HIGH_PIN          GPIO_PINS_8
