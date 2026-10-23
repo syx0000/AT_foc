@@ -1,0 +1,54 @@
+ZXQ motor CAN compatibility - AT32F456 Hall FOC
+
+Target: motor_evb_2v0/at32f45x/pmsm_foc_hall_sensor, Keil MDK project.
+Hardware: CAN1 PA11 RX / PA12 TX, GPIO MUX9, external CAN transceiver required.
+Classic CAN, standard 11-bit data frames, 500 kbit/s.
+Clock: HEXT 8 MHz / (divider 1 * (BTS1 12 + BTS2 4)).
+Node ID: MC_CAN_NODE_ID in mc_can_motor.h, default 1 (left); set 2 for right.
+No broadcast IDs. Extended, remote, FD and malformed frames are ignored.
+
+Commands (all multi-byte integers big-endian):
+  DLC 1: 00                 query; refresh communication watchdog
+  DLC 5: 02 SS SS SS SS     signed int32, value = rpm * 4
+  DLC 8: 02 SS SS SS SS xx xx xx  also accepted (ZXQ stop uses eight bytes)
+  DLC 3: 14 CC CC           uint16 maximum torque current, unit 10 mA
+
+Examples for ID 1:
+  14 01 F4                  maximum current 5 A
+  02 00 00 07 D0            speed +500 rpm; starts if state is ready
+  02 FF FF F8 30            speed -500 rpm
+  02 00 00 00 00 00 00 00  stop, follows existing FREE_RUN shutdown path
+
+Both SetMotorMaxCurrent and SetMotorMaxCurrentRaw use command 14.
+ZXQ host performs the smoothing; the motor applies each received limit immediately.
+Limit is symmetric for positive/negative Iq, clamped to configured MAX_CURRENT.
+Zero-current limit is accepted. Hardware/software fault thresholds are unchanged.
+Speed beyond +/-MAX_SPEED_RPM is rejected. Nonzero speed commands only start/update
+SPEED_CTRL in SAFETY_READY or RUNNING with no active fault. They cannot start
+calibration, change control mode, or clear faults. Zero speed requests stop.
+
+Feedback: same CAN ID as node. Every 10 ms schedules three frames; query also
+requests all three. Transmission is nonblocking; busy hardware retries next task.
+  DLC 4: 00 00 EE EE       error bitmask (native mclib err_code_type, low 16 bits)
+  DLC 6: 00 01 SS SS SS SS signed int32 measured speed, rpm * 4
+  DLC 4: 00 05 CC CC       absolute measured Iq, unit 10 mA (not DC bus current)
+Position feedback 09 is not implemented: ZXQ currently ignores this CAN field.
+
+Watchdog: once a CAN speed command starts the motor, no valid local-node command
+for 1500 ms requests stop. ZXQ's 500 ms query maintains the watchdog. Receiving
+only commands for other IDs or malformed frames does not refresh it.
+CAN does not take ownership until a nonzero speed command is accepted. Existing
+UART monitor remains available; do not issue competing motion commands via both.
+
+ZXQ host caveat: its error/current parser writes only low 16 bits of a shared
+32-bit union. After negative speed feedback, stale high bits can corrupt these
+values. The host should decode error/current with explicit uint16_t expressions.
+This firmware does not modify E:/src/ZXQ.
+
+Verification:
+  tests/can_motor/run.ps1 builds/runs the actual module with host HAL stand-ins:
+  +/-speed, wrong ID/type/DLC/FD, excessive speed, fault start rejection, current
+  conversion/clamp, stop, watchdog boundary, consecutive RX, TX busy and feedback.
+  Keil rebuild checks target integration. Hardware CAN timing and motor motion
+  still require a transceiver/bus test, including unplug/timeout and both node IDs.
+  IAR/AT32 IDE project source lists are not updated by this change.

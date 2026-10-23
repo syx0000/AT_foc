@@ -24,6 +24,7 @@
 
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
+#include "mc_can_motor.h"
 
 trig_components_type trig_components;
 int16_t Iq_cmd;
@@ -693,6 +694,8 @@ void SysTick_Handler(void)
 {
   static flag_status monitoring_adc_ready = RESET;
   static uint16_t undervoltage_count = 0U;
+
+  mc_can_motor_tick();
 
   rotor_speed_val = rotor_speed_hall.filtered >> rotor_speed_hall.shift;
   rotor_speed_val_filt = moving_average_shift(speed_ma_fliter, rotor_speed_val);

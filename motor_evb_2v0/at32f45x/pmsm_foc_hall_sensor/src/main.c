@@ -24,6 +24,7 @@
 
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
+#include "mc_can_motor.h"
 
 /** @addtogroup motor_evb_2v0
   * @{
@@ -137,8 +138,11 @@ int main(void)
 
   led_blink();
 
+  mc_can_motor_init();
+
   while(1)
   {
+    mc_can_motor_task();
 #if defined USE_UART_LOG && defined MOTOR_PARAM_IDENTIFY
     motor_ident_diag_task();
 #endif

@@ -414,6 +414,11 @@
               <FilePath>..\src\mc_ident_diag.c</FilePath>
             </File>
             <File>
+              <FileName>mc_can_motor.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\mc_can_motor.c</FilePath>
+            </File>
+            <File>
               <FileName>mc_hwio_v2.h</FileName>
               <FileType>5</FileType>
               <FilePath>..\inc\mc_hwio_v2.h</FilePath>
