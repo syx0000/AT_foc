@@ -16,7 +16,6 @@
 #include "motor_open_loop.h"
 #include "motor_pwm_port.h"
 #include "motor_hall_decoder.h"
-#include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
@@ -46,8 +45,6 @@ void interrupt_monitor_poll(void)
   bool open_loop_status_valid;
   motor_hall_sample_t hall_sample;
   bool hall_sample_valid;
-  motor_hall_angle_observer_t hall_angle_observer;
-  bool hall_angle_observer_valid;
   motor_hall_angle_estimator_t hall_angle_estimator;
   bool hall_angle_estimator_valid;
   motor_speed_feedback_t speed_feedback;
@@ -90,8 +87,6 @@ void interrupt_monitor_poll(void)
   slow_sensor_state_valid = motor_slow_sensor_state_read(&slow_sensor_state);
   open_loop_status_valid = motor_open_loop_status_read(&open_loop_status);
   hall_sample_valid = motor_hall_decoder_sample_read(&hall_sample);
-  hall_angle_observer_valid =
-    motor_hall_angle_observer_read(&hall_angle_observer);
   hall_angle_estimator_valid =
     motor_hall_angle_estimator_read(&hall_angle_estimator);
   speed_feedback_valid = motor_speed_feedback_read(&speed_feedback);
@@ -182,22 +177,6 @@ void interrupt_monitor_poll(void)
          (unsigned long)hall_sample.frequency_update_count,
          (unsigned long)(hall_sample.electrical_frequency_millihz / 1000U),
          (unsigned long)(hall_sample.electrical_frequency_millihz % 1000U));
-  }
-  if (hall_angle_observer_valid)
-  {
-    LOGI("Hall edge angle: s1=%u s2=%u s3=%u s4=%u s5=%u s6=%u counts=%lu/%lu/%lu/%lu/%lu/%lu\r\n",
-         (unsigned int)hall_angle_observer.state_angle_u16[1],
-         (unsigned int)hall_angle_observer.state_angle_u16[2],
-         (unsigned int)hall_angle_observer.state_angle_u16[3],
-         (unsigned int)hall_angle_observer.state_angle_u16[4],
-         (unsigned int)hall_angle_observer.state_angle_u16[5],
-         (unsigned int)hall_angle_observer.state_angle_u16[6],
-         (unsigned long)hall_angle_observer.state_count[1],
-         (unsigned long)hall_angle_observer.state_count[2],
-         (unsigned long)hall_angle_observer.state_count[3],
-         (unsigned long)hall_angle_observer.state_count[4],
-         (unsigned long)hall_angle_observer.state_count[5],
-         (unsigned long)hall_angle_observer.state_count[6]);
   }
   if (hall_angle_estimator_valid && open_loop_status_valid)
   {

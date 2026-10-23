@@ -520,11 +520,6 @@
               <FilePath>..\foc\foc_app\motor_open_loop.c</FilePath>
             </File>
             <File>
-              <FileName>motor_hall_angle_observer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\foc\foc_app\motor_hall_angle_observer.c</FilePath>
-            </File>
-            <File>
               <FileName>motor_hall_angle_estimator.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\foc\foc_app\motor_hall_angle_estimator.c</FilePath>
@@ -568,11 +563,6 @@
               <FileName>motor_current_control.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\foc\foc_app\motor_current_control.c</FilePath>
-            </File>
-            <File>
-              <FileName>motor_sensorless_observer.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\foc\foc_app\motor_sensorless_observer.c</FilePath>
             </File>
             <File>
               <FileName>motor_current_startup.c</FileName>

@@ -16,7 +16,6 @@
 #include "motor_hall_decoder.h"
 #include "motor_hall_port.h"
 #include "motor_current_control.h"
-#include "motor_sensorless_observer.h"
 #include "motor_current_startup.h"
 #include "motor_current_sample.h"
 #include "motor_control.h"
@@ -48,15 +47,6 @@ typedef enum
 static motor_cli_debug_mode_t motor_cli_debug_mode;
 static uint32_t motor_cli_debug_last_us;
 
-typedef enum
-{
-  MOTOR_CLI_OBSERVER_DEBUG_STOPPED = 0,
-  MOTOR_CLI_OBSERVER_DEBUG_STREAM
-} motor_cli_observer_debug_mode_t;
-
-static motor_cli_observer_debug_mode_t motor_cli_observer_debug_mode;
-static uint32_t motor_cli_observer_debug_last_us;
-
 static void motor_cli_debug_poll(void)
 {
   motor_speed_feedback_t speed_feedback;
@@ -86,50 +76,6 @@ static void motor_cli_debug_poll(void)
          (long)speed_control.ramped_speed_millirpm,
          (long)speed_feedback.filtered_speed_millirpm,
          (long)speed_feedback.display_speed_millirpm);
-}
-
-static void motor_cli_observer_print(const char *label)
-{
-  motor_sensorless_observer_state_t observer;
-
-  if (!motor_sensorless_observer_read(&observer))
-  {
-    printf("ERR observer_unavailable\r\n");
-    return;
-  }
-  printf("OK observer %s electrical_angle_u16=%u electrical_frequency_millihz=%ld bemf_alpha_beta_mv=%ld/%ld phase_error_u16=%d confidence=%u valid=%u samples=%lu\r\n",
-         label,
-         (unsigned int)observer.electrical_angle_u16,
-         (long)observer.electrical_frequency_millihz,
-         (long)observer.bemf_alpha_mv,
-         (long)observer.bemf_beta_mv,
-         (int)observer.phase_error_u16,
-         (unsigned int)observer.confidence,
-         (unsigned int)observer.valid,
-         (unsigned long)observer.sample_count);
-}
-
-static void motor_cli_observer_debug_poll(void)
-{
-  motor_sensorless_observer_state_t observer;
-  uint32_t now_us;
-
-  if (motor_cli_observer_debug_mode != MOTOR_CLI_OBSERVER_DEBUG_STREAM)
-    return;
-  now_us = motor_timebase_us_get();
-  if ((uint32_t)(now_us - motor_cli_observer_debug_last_us) <
-      MOTOR_CLI_DEBUG_PERIOD_US)
-    return;
-  motor_cli_observer_debug_last_us = now_us;
-  if (!motor_sensorless_observer_read(&observer)) return;
-  printf("OBS,%u,%ld,%ld,%ld,%d,%u,%u\r\n",
-         (unsigned int)observer.electrical_angle_u16,
-         (long)observer.electrical_frequency_millihz,
-         (long)observer.bemf_alpha_mv,
-         (long)observer.bemf_beta_mv,
-         (int)observer.phase_error_u16,
-         (unsigned int)observer.confidence,
-         (unsigned int)observer.valid);
 }
 
 typedef struct
@@ -337,8 +283,7 @@ static bool motor_cli_parameter_runtime_reload(void)
     motor_hall_decoder_init(parameter.hall_positive_next, system_core_clock,
                             hall.state, hall.timestamp_cycles) &&
      motor_current_control_parameter_reload() &&
-     motor_speed_control_parameter_reload() &&
-     motor_sensorless_observer_parameter_reload();
+     motor_speed_control_parameter_reload();
 }
 
 /**
@@ -409,7 +354,6 @@ static void motor_cli_command_execute(char *line)
     printf("OK commands:\r\n");
     printf("  help | version | status | reset\r\n");
     printf("  debug <0|1>\r\n");
-    printf("  observer status | observer debug <0|1>\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
     printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
@@ -457,22 +401,6 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_debug_mode = MOTOR_CLI_DEBUG_STOPPED;
     printf("OK debug 0\r\n");
-  }
-  else if (strcmp(line, "observer status") == 0)
-  {
-    motor_cli_observer_print("status");
-  }
-  else if (strcmp(line, "observer debug 1") == 0)
-  {
-    motor_cli_observer_debug_last_us = motor_timebase_us_get();
-    motor_cli_observer_debug_mode = MOTOR_CLI_OBSERVER_DEBUG_STREAM;
-    printf("OK observer debug 1 period_us=%u format=electrical_angle_u16,electrical_frequency_millihz,bemf_alpha_mv,bemf_beta_mv,phase_error_u16,confidence,valid\r\n",
-           (unsigned int)MOTOR_CLI_DEBUG_PERIOD_US);
-  }
-  else if (strcmp(line, "observer debug 0") == 0)
-  {
-    motor_cli_observer_debug_mode = MOTOR_CLI_OBSERVER_DEBUG_STOPPED;
-    printf("OK observer debug 0\r\n");
   }
   else if (strcmp(line, "status") == 0)
   {
@@ -845,7 +773,6 @@ void motor_cli_poll(void)
   char character;
 
   motor_cli_debug_poll();
-  motor_cli_observer_debug_poll();
   if (!motor_uart_port_frame_read(&frame)) return;
   for (index = 0U; index < frame.length; index++)
   {

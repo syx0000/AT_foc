@@ -39,7 +39,6 @@
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
 #include "motor_commissioning.h"
-#include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
@@ -99,7 +98,6 @@ static void hall_edge_dispatch(motor_hall_port_sample_t *sample)
                                       sample->timestamp_cycles))
   {
     motor_commissioning_hall_edge_process();
-    motor_hall_angle_observer_edge_process();
     motor_hall_angle_estimator_edge_process();
   }
 }

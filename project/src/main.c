@@ -51,14 +51,12 @@
 #include "motor_open_loop.h"
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
-#include "motor_hall_angle_observer.h"
 #include "motor_hall_angle_estimator.h"
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
 #include "motor_current_transform.h"
 #include "motor_current_control.h"
-#include "motor_sensorless_observer.h"
 #include "motor_uart_port.h"
 #include "motor_cli.h"
 #include "motor_control.h"
@@ -161,13 +159,11 @@ int main(void)
   motor_timebase_init();
   motor_parameter_init();
   (void)motor_parameter_storage_init();
-  motor_sensorless_observer_init();
   motor_commissioning_init();
   motor_adc_port_init();
   motor_current_sample_init();
   motor_slow_sensor_init();
   motor_open_loop_init();
-  motor_hall_angle_observer_init();
   motor_hall_angle_estimator_init();
   motor_rotor_feedback_init();
   motor_speed_feedback_init();
