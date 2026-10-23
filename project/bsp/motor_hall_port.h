@@ -23,9 +23,8 @@ typedef struct
  * @brief 初始化Hall硬件端口状态。
  * @param 无。
  * @return 无。
- * @details 读取PB8/PB6/PB7初始电平并清零边沿计数。EXINT模式下GPIO和EXINT
- *          配置由WorkBench生成代码完成；TMR4 XOR模式下关闭EXINT，改由TMR4
- *          滤波后的触发中断提供边沿（见MOTOR_HALL_CAPTURE_MODE）。
+ * @details 读取PB8/PB6/PB7初始电平并清零边沿计数。关闭WorkBench生成的EXINT，
+ *          改由TMR4滤波后的触发中断提供边沿。
  */
 void motor_hall_port_init(void);
 
@@ -34,7 +33,7 @@ void motor_hall_port_init(void);
  * @param 无。
  * @return 无。
  * @details 同时读取HA/HB/HC，生成3位状态，记录DWT时间戳并递增统一边沿计数。
- * @note 仅供EXINT9_5_IRQHandler或TMR4_GLOBAL_IRQHandler调用，函数不清除中断标志。
+ * @note 仅供TMR4_GLOBAL_IRQHandler调用，函数不清除中断标志。
  */
 void motor_hall_port_edge_capture(void);
 

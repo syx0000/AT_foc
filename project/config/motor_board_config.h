@@ -21,17 +21,8 @@
 #define MOTOR_PWM_FREQUENCY_HZ             16000U
 #define MOTOR_PWM_DEADTIME_COUNTS           80U
 
-/* Hall输入捕获方式（对齐demo HALL_CAPTURE_MODE）：
- * 0 = EXINT双边沿中断 + GPIO读取，无输入滤波；
- * 1 = TMR4 CH1/CH2/CH3 XOR捕获，经硬件数字滤波后触发中断，再读取GPIO状态。 */
-#ifndef MOTOR_HALL_CAPTURE_MODE
-#define MOTOR_HALL_CAPTURE_MODE             1U
-#endif
-#define MOTOR_HALL_CAPTURE_MODE_EXINT       0U
-#define MOTOR_HALL_CAPTURE_MODE_TIMER_XOR   1U
-#if (MOTOR_HALL_CAPTURE_MODE > 1U)
-#error "MOTOR_HALL_CAPTURE_MODE must be 0 or 1"
-#endif
+/* Hall输入捕获（对齐demo）：TMR4 CH1/CH2/CH3 XOR捕获，经硬件数字滤波后
+ * 触发中断，再读取GPIO状态。 */
 #define MOTOR_HALL_CAPTURE_TIMER            TMR4
 #define MOTOR_HALL_CAPTURE_CRM_CLK          CRM_TMR4_PERIPH_CLOCK
 #define MOTOR_HALL_CAPTURE_IRQn             TMR4_GLOBAL_IRQn

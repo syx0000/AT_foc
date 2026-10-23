@@ -410,49 +410,9 @@ void CAN1_ERR_IRQHandler(void)
   */
 void EXINT9_5_IRQHandler(void)
 {
-  /* add user code begin EXINT9_5_IRQ 0 */
-  uint32_t hall_edge_handled = 0U;
-  motor_hall_port_sample_t hall_port_sample;
-
-  /* add user code end EXINT9_5_IRQ 0 */
-
-  if(exint_interrupt_flag_get(EXINT_LINE_8) != RESET)
-  {
-    /* add user code begin EXINT_LINE_8 */
-    /* clear flag */
-    exint_flag_clear(EXINT_LINE_8);
-    interrupt_monitor_counters.hall_a_edge++;
-    hall_edge_handled = 1U;
-    /* add user code end EXINT_LINE_8 */ 
-  }
-
-  if(exint_interrupt_flag_get(EXINT_LINE_6) != RESET)
-  {
-    /* add user code begin EXINT_LINE_6 */
-    /* clear flag */
-    exint_flag_clear(EXINT_LINE_6);
-    interrupt_monitor_counters.hall_b_edge++;
-    hall_edge_handled = 1U;
-    /* add user code end EXINT_LINE_6 */ 
-  }
-
-  if(exint_interrupt_flag_get(EXINT_LINE_7) != RESET)
-  {
-    /* add user code begin EXINT_LINE_7 */
-    /* clear flag */
-    exint_flag_clear(EXINT_LINE_7);
-    interrupt_monitor_counters.hall_c_edge++;
-    hall_edge_handled = 1U;
-    /* add user code end EXINT_LINE_7 */ 
-  }
-
-  /* add user code begin EXINT9_5_IRQ 1 */
-  if (hall_edge_handled != 0U)
-  {
-    hall_edge_dispatch(&hall_port_sample);
-  }
-
-  /* add user code end EXINT9_5_IRQ 1 */
+  /* Hall由TMR4 XOR捕获处理，EXINT 6/7/8在motor_hall_port_init中关闭，
+   * 此处仅清除残留标志。 */
+  exint_flag_clear(EXINT_LINE_6 | EXINT_LINE_7 | EXINT_LINE_8);
 }
 
 /**
@@ -571,13 +531,12 @@ void TMR1_BRK_TMR9_IRQHandler(void)
   }
 }
 
-#if (MOTOR_HALL_CAPTURE_MODE == MOTOR_HALL_CAPTURE_MODE_TIMER_XOR)
 /**
  * @brief 处理TMR4 Hall XOR捕获中断。
  * @param 无。
  * @return 无。
  * @details 三路Hall异或并经数字滤波后，每个边沿置位TRIGGER标志。按前后两次
- *          端口状态的差异更新HA/HB/HC边沿计数，与EXINT模式统计口径一致。
+ *          端口状态的差异更新HA/HB/HC边沿计数。
  */
 void TMR4_GLOBAL_IRQHandler(void)
 {
@@ -598,6 +557,5 @@ void TMR4_GLOBAL_IRQHandler(void)
     if ((changed & 0x04U) != 0U) interrupt_monitor_counters.hall_c_edge++;
   }
 }
-#endif
 
 /* add user code end 1 */

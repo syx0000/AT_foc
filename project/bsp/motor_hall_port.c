@@ -39,7 +39,6 @@ static uint8_t motor_hall_port_state_get(void)
   return state;
 }
 
-#if (MOTOR_HALL_CAPTURE_MODE == MOTOR_HALL_CAPTURE_MODE_TIMER_XOR)
 /**
  * @brief 将Hall输入切换为TMR4 XOR捕获并使能滤波后的边沿中断。
  * @param 无。
@@ -101,15 +100,12 @@ static void motor_hall_port_timer_xor_init(void)
   nvic_irq_enable(MOTOR_HALL_CAPTURE_IRQn, 2, 0);
   tmr_counter_enable(MOTOR_HALL_CAPTURE_TIMER, TRUE);
 }
-#endif
 
 void motor_hall_port_init(void)
 {
   uint8_t state;
 
-#if (MOTOR_HALL_CAPTURE_MODE == MOTOR_HALL_CAPTURE_MODE_TIMER_XOR)
   motor_hall_port_timer_xor_init();
-#endif
   state = motor_hall_port_state_get();
   motor_hall_port_sample.state = state;
   motor_hall_port_sample.edge_count = 0U;
