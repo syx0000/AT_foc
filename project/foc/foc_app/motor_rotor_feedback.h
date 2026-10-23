@@ -69,6 +69,4 @@ void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
                                        int32_t electrical_frequency_millihz,
                                        int8_t direction);
 void motor_rotor_feedback_override_clear(void);
-bool motor_rotor_feedback_override_active(void);
-
 #endif /* MOTOR_ROTOR_FEEDBACK_H */

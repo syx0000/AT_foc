@@ -20,14 +20,6 @@ typedef struct {
   uint32_t sample_count;
 } motor_current_loop_test_result_t;
 /**
- * @brief 阻塞执行固定0度、Id=2 A、Iq=0的电流PI测试。
- * @param result 输出平均/峰值电流、最终电压和样本数，不允许为空。
- * @return 完成1秒测试返回true；状态异常、过流或PWM故障返回false。
- * @details 测试结束前始终关闭PWM；任一相达到10 A立即紧急关断。
- */
-bool motor_current_loop_test_run(motor_current_loop_test_result_t *result);
-
-/**
  * @brief 使用指定PI增益阻塞执行固定角度Id电流环测试。
  * @param result 输出平均/峰值电流、最终电压和样本数，不允许为空。
  * @param direct_kp_q15 d轴比例增益，Q15格式，必须大于0。

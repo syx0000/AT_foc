@@ -33,6 +33,4 @@ typedef struct
 extern interrupt_monitor_counters_t interrupt_monitor_counters;
 extern motor_performance_counter_t adc_fast_performance_counter;
 
-void interrupt_monitor_poll(void);
-
 #endif /* INTERRUPT_MONITOR_H */

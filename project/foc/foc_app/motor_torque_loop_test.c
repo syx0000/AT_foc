@@ -331,9 +331,3 @@ bool motor_torque_loop_test_run_with_gains(
   return true;
 }
 
-bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result)
-{
-  return motor_torque_loop_test_run_with_gains(
-    result, MOTOR_CURRENT_PI_D_KP_Q15, MOTOR_CURRENT_PI_Q_KP_Q15,
-    MOTOR_CURRENT_PI_KI_Q15);
-}

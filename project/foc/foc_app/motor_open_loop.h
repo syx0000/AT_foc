@@ -61,13 +61,6 @@ typedef struct
 void motor_open_loop_init(void);
 
 /**
- * @brief 更新开环安全配置。
- * @param config 最大电压/频率、起始频率和预定位参数，不允许为空。
- * @return 参数有效且控制器处于停止状态时返回true，否则返回false。
- */
-bool motor_open_loop_config_set(const motor_open_loop_config_t *config);
-
-/**
  * @brief 按运行指令启动开环控制。
  * @param command dq电压、目标电频率和加速度指令，不允许为空。
  * @return 指令及硬件状态满足安全条件并成功开启PWM时返回true。

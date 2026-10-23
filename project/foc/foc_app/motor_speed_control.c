@@ -23,6 +23,7 @@ static motor_ramp_t motor_speed_ramp;
 static volatile motor_speed_control_status_t motor_speed_control_status;
 static int32_t motor_speed_control_pi_target_ma;
 static uint32_t motor_speed_control_stall_ms;
+static bool motor_speed_control_config_set(  const motor_speed_control_config_t *config);
 
 /**
  * @brief 锁存速度控制故障并安全停止底层电流环。
@@ -104,7 +105,7 @@ bool motor_speed_control_parameter_reload(void)
   return motor_speed_control_config_set(&config);
 }
 
-bool motor_speed_control_config_set(
+static bool motor_speed_control_config_set(
   const motor_speed_control_config_t *config)
 {
   if ((config == NULL) ||

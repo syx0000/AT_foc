@@ -18,7 +18,3 @@ void motor_log_level_set(motor_log_level_t level)
   }
 }
 
-motor_log_level_t motor_log_level_get(void)
-{
-  return (motor_log_level_t)motor_log_level;
-}

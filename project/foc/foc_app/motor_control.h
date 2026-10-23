@@ -110,8 +110,6 @@ void motor_control_fault_set(motor_fault_code_t fault_code);
  *          motor_control_poll()负责锁存、记录并打印故障。可在ADC、Break等ISR中调用。
  */
 void motor_control_fault_notify_from_isr(motor_fault_code_t fault_code);
-/** @brief 安全条件恢复后清除故障并进入READY。 @param 无。 @return 成功返回true。 */
-bool motor_control_fault_clear(void);
 /**
  * @brief 尝试清除当前故障并返回明确的恢复判定结果。
  * @param 无。

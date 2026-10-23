@@ -35,13 +35,6 @@ void motor_current_pi_axis_init(motor_current_pi_axis_t *controller,
   controller->output_mv = 0;
 }
 
-void motor_current_pi_axis_reset(motor_current_pi_axis_t *controller)
-{
-  if (controller == NULL) return;
-  controller->integral_mv = 0;
-  controller->output_mv = 0;
-}
-
 bool motor_current_pi_axis_output_limit_set(
   motor_current_pi_axis_t *controller, int32_t output_limit_mv)
 {

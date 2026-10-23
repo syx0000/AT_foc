@@ -82,11 +82,6 @@ void motor_rotor_feedback_override_clear(void)
   __set_PRIMASK(primask);
 }
 
-bool motor_rotor_feedback_override_active(void)
-{
-  return motor_rotor_feedback_override_enabled;
-}
-
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
 {
   motor_hall_angle_estimator_t estimator;

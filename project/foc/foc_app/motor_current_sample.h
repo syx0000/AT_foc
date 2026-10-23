@@ -38,16 +38,6 @@ typedef struct
 void motor_current_sample_init(void);
 
 /**
- * @brief 检查两相ADC零偏是否满足启动条件。
- * @param phase_a_offset_raw SOA校准平均值。
- * @param phase_b_offset_raw SOB校准平均值。
- * @return true表示两相均在2048±160且相互差值不超过80；否则返回false。
- */
-bool motor_current_sample_offsets_valid(
-  uint16_t phase_a_offset_raw,
-  uint16_t phase_b_offset_raw);
-
-/**
  * @brief 设置正式电流采样使用的两相零偏。
  * @param phase_a_offset_raw SOA校准平均值。
  * @param phase_b_offset_raw SOB校准平均值。
@@ -56,26 +46,6 @@ bool motor_current_sample_offsets_valid(
 bool motor_current_sample_offsets_set(
   uint16_t phase_a_offset_raw,
   uint16_t phase_b_offset_raw);
-
-/**
- * @brief 将单相ADC原始值转换为有符号电流毫安值。
- * @param adc_raw 当前12位ADC原始值。
- * @param offset_raw 该相启动零偏校准值。
- * @return 相电流，单位mA；实测确认ADC值相对零偏减小为电流正方向。
- * @details 按3.3 V参考、2.5 mΩ分流电阻和10 V/V CSA增益进行64位整数换算。
- */
-int32_t motor_current_sample_raw_to_ma(
-  uint16_t adc_raw,
-  uint16_t offset_raw);
-
-/**
- * @brief 将物理相电流转换为FOC使用的Q15标幺值。
- * @param current_ma 相电流，单位mA。
- * @return 以固定128 A为1.0的Q15值，输出限制在-32768至32767。
- * @details Q15基准与50 A指令限幅相互独立，修改控制限幅不会改变PI等内核
- *          参数的物理标度；128 A基准下1 A正好对应256个Q15单位。
- */
-int16_t motor_current_sample_ma_to_q15(int32_t current_ma);
 
 /**
  * @brief 处理一次10 kHz快速ADC采样并执行软件过流监测。

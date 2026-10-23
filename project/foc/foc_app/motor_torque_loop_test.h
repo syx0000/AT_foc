@@ -54,16 +54,6 @@ typedef struct
 } motor_torque_loop_test_result_t;
 
 /**
- * @brief 阻塞执行开环起转并切换至Hall角度电流闭环的低转矩测试。
- * @param result 输出状态、dq电流、稳定段平均/最终电压、Hall频率及故障快照。
- * @return 完成闭环测试返回true；起转超时、Hall失效、过流或PWM故障返回false。
- * @details 先复用开环流程建立转速，Hall估算达到8 Hz后切换为Id=0、Iq=1 A
- *          的闭环控制；接管电流在200 ms内平滑过渡到目标，统计不包含过渡段。
- *          输出电压限制为母线电压的15%，退出前始终关闭PWM。
- */
-bool motor_torque_loop_test_run(motor_torque_loop_test_result_t *result);
-
-/**
  * @brief 使用指定PI增益执行开环起转、Hall接管及低Iq闭环测试。
  * @param result 输出闭环电流、电压、转速及故障快照，不允许为空。
  * @param direct_kp_q15 d轴比例增益，Q15格式，必须大于0。

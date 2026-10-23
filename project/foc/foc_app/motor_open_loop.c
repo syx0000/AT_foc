@@ -30,16 +30,6 @@ static int32_t motor_open_loop_abs(int32_t value)
   return (value < 0) ? -value : value;
 }
 
-static bool motor_open_loop_config_valid(const motor_open_loop_config_t *config)
-{
-  return (config != NULL) && (config->maximum_voltage_mv > 0) &&
-    (config->maximum_frequency_millihz > 0) &&
-    (config->start_frequency_millihz >= 0) &&
-    (config->start_frequency_millihz <= config->maximum_frequency_millihz) &&
-    (config->alignment_voltage_mv >= 0) &&
-    (config->alignment_voltage_mv <= config->maximum_voltage_mv);
-}
-
 static bool motor_open_loop_command_valid(const motor_open_loop_command_t *command)
 {
   int32_t direct_abs;
@@ -120,17 +110,6 @@ void motor_open_loop_init(void)
   motor_open_loop_phase_accumulator = 0U;
   motor_open_loop_alignment_ticks = 0U;
   (void)motor_ramp_init(&motor_open_loop_frequency_ramp, 0, 0, 1U);
-}
-
-bool motor_open_loop_config_set(const motor_open_loop_config_t *config)
-{
-  if ((!motor_open_loop_config_valid(config)) ||
-      (motor_open_loop_status.state != MOTOR_OPEN_LOOP_STOPPED))
-  {
-    return false;
-  }
-  motor_open_loop_config = *config;
-  return true;
 }
 
 bool motor_open_loop_command_set(const motor_open_loop_command_t *command)

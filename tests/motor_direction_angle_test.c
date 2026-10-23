@@ -23,7 +23,6 @@ int main(void)
   int32_t positive_step;
   int32_t negative_step;
   int32_t dynamic_compensation;
-  int32_t sector_step;
   uint16_t sector_span;
   uint16_t angle;
 
@@ -69,12 +68,6 @@ int main(void)
   assert(motor_hall_sector_span_get(
     positive_next, entry_angle, 1U, &sector_span));
   assert(sector_span == (uint16_t)(entry_angle[5] - entry_angle[1]));
-  assert(motor_hall_sector_phase_step_get(
-    10923U, 480000U, 288000000U, 10000U, 1, &sector_step));
-  assert(sector_step == 42950984);
-  assert(motor_hall_sector_phase_step_get(
-    10923U, 480000U, 288000000U, 10000U, -1, &sector_step));
-  assert(sector_step == -42950984);
   printf("motor_direction_angle_test: PASS\n");
   return 0;
 }

@@ -14,7 +14,6 @@
 static bool motor_pwm_gate_driver_enabled;
 static bool motor_pwm_command_valid;
 static bool motor_pwm_output_enabled;
-static motor_pwm_compare_t motor_pwm_last_compare;
 
 /**
  * @brief 将单相PWM原始比较值限制在定时器有效范围内。
@@ -40,9 +39,6 @@ void motor_pwm_port_init(void)
   motor_pwm_gate_driver_enabled = false;
   motor_pwm_command_valid = false;
   motor_pwm_output_enabled = false;
-  motor_pwm_last_compare.phase_a = 0U;
-  motor_pwm_last_compare.phase_b = 0U;
-  motor_pwm_last_compare.phase_c = 0U;
   tmr_interrupt_enable(MOTOR_PWM_TIMER, TMR_BRK_INT, TRUE);
   nvic_irq_enable(TMR1_BRK_TMR9_IRQn, 0, 0);
 }
@@ -120,9 +116,6 @@ void motor_pwm_port_emergency_stop(void)
   motor_pwm_gate_driver_enabled = false;
   motor_pwm_command_valid = false;
   motor_pwm_output_enabled = false;
-  motor_pwm_last_compare.phase_a = 0U;
-  motor_pwm_last_compare.phase_b = 0U;
-  motor_pwm_last_compare.phase_c = 0U;
 }
 
 void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare)
@@ -141,9 +134,6 @@ void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare)
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1, clamped_a);
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2, clamped_b);
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3, clamped_c);
-  motor_pwm_last_compare.phase_a = clamped_a;
-  motor_pwm_last_compare.phase_b = clamped_b;
-  motor_pwm_last_compare.phase_c = clamped_c;
   motor_pwm_command_valid = true;
 }
 
@@ -171,22 +161,3 @@ bool motor_pwm_port_status_read(motor_pwm_port_status_t *status)
   return true;
 }
 
-bool motor_pwm_port_compare_read(motor_pwm_compare_t *compare)
-{
-  uint32_t primask;
-
-  if (compare == NULL)
-  {
-    return false;
-  }
-  primask = __get_PRIMASK();
-  __disable_irq();
-  if (!motor_pwm_command_valid)
-  {
-    __set_PRIMASK(primask);
-    return false;
-  }
-  *compare = motor_pwm_last_compare;
-  __set_PRIMASK(primask);
-  return true;
-}

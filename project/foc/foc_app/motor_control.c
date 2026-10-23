@@ -426,10 +426,6 @@ motor_fault_clear_result_t motor_control_fault_clear_ex(void)
   return MOTOR_FAULT_CLEAR_OK;
 }
 
-bool motor_control_fault_clear(void)
-{
-  return (motor_control_fault_clear_ex() == MOTOR_FAULT_CLEAR_OK);
-}
 void motor_control_poll(void)
 {
   motor_open_loop_status_t open_loop;

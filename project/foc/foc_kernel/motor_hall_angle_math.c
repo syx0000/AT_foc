@@ -72,30 +72,6 @@ bool motor_hall_sector_span_get(const uint8_t positive_next[8],
   return (*span_u16 != 0U);
 }
 
-bool motor_hall_sector_phase_step_get(uint16_t sector_span_u16,
-                                      uint32_t sector_interval_cycles,
-                                      uint32_t core_clock_hz,
-                                      uint32_t update_frequency_hz,
-                                      int8_t physical_direction,
-                                      int32_t *phase_step)
-{
-  uint64_t magnitude;
-  uint64_t denominator;
-
-  if ((sector_span_u16 == 0U) || (sector_interval_cycles == 0U) ||
-      (core_clock_hz == 0U) || (update_frequency_hz == 0U) ||
-      (phase_step == NULL) ||
-      ((physical_direction != 1) && (physical_direction != -1)))
-    return false;
-  denominator = (uint64_t)sector_interval_cycles * update_frequency_hz;
-  magnitude = (((uint64_t)sector_span_u16 << 16) * core_clock_hz +
-               (denominator / 2U)) / denominator;
-  if ((magnitude == 0U) || (magnitude > INT32_MAX)) return false;
-  *phase_step = (physical_direction > 0) ?
-    (int32_t)magnitude : -(int32_t)magnitude;
-  return true;
-}
-
 bool motor_hall_dynamic_compensation_get(
   uint32_t electrical_frequency_millihz,
   int8_t physical_direction,

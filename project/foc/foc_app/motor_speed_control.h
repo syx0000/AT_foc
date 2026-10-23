@@ -65,14 +65,6 @@ void motor_speed_control_init(void);
 bool motor_speed_control_parameter_reload(void);
 
 /**
- * @brief 在停止状态更新速度PI、Iq限幅、最高转速和加速度配置。
- * @param config 新配置，不允许为空。
- * @return 参数有效且控制器已停止时返回true，否则返回false。
- */
-bool motor_speed_control_config_set(
-  const motor_speed_control_config_t *config);
-
-/**
  * @brief 从已经运行的Hall电流环启动速度外环。
  * @param target_speed_millirpm 有符号逻辑目标机械转速，单位0.001 rpm。
  * @param initial_quadrature_current_ma 接管前物理Iq指令，单位mA，用于PI无扰预置。

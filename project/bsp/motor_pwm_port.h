@@ -112,12 +112,4 @@ bool motor_pwm_port_output_is_enabled(void);
  */
 bool motor_pwm_port_status_read(motor_pwm_port_status_t *status);
 
-/**
- * @brief 读取最近一次写入TMR1的三相比较值。
- * @param compare 输出三相比较值，不允许为空。
- * @return 参数有效且已写入过比较值返回true，否则返回false。
- * @details 从软件缓存返回，不访问TMR1寄存器；紧急停止或初始化后返回false。
- */
-bool motor_pwm_port_compare_read(motor_pwm_compare_t *compare);
-
 #endif /* MOTOR_PWM_PORT_H */

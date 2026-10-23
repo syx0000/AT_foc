@@ -45,7 +45,7 @@ void motor_current_sample_init(void)
   motor_current_state.overcurrent_trip_phase_c_ma = 0L;
 }
 
-bool motor_current_sample_offsets_valid(
+static bool motor_current_sample_offsets_valid(
   uint16_t phase_a_offset_raw,
   uint16_t phase_b_offset_raw)
 {
@@ -104,7 +104,7 @@ bool motor_current_sample_offsets_set(
   return true;
 }
 
-int32_t motor_current_sample_raw_to_ma(
+static int32_t motor_current_sample_raw_to_ma(
   uint16_t adc_raw,
   uint16_t offset_raw)
 {
@@ -126,7 +126,7 @@ int32_t motor_current_sample_raw_to_ma(
   return (int32_t)current_ma;
 }
 
-int16_t motor_current_sample_ma_to_q15(int32_t current_ma)
+static int16_t motor_current_sample_ma_to_q15(int32_t current_ma)
 {
   int64_t current_q15;
 
