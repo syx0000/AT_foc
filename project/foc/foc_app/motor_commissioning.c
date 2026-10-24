@@ -14,7 +14,6 @@
 #include "motor_control_config.h"
 #include "motor_current_calibration.h"
 #include "motor_current_control.h"
-#include "motor_current_loop_test.h"
 #include "motor_current_pi_design.h"
 #include "motor_current_sample.h"
 #include "motor_hall_calibration.h"
@@ -124,8 +123,6 @@ static bool commissioning_flux_result_print(
   return true;
 }
 
-static void commissioning_current_d_result_print(
-  const motor_current_loop_test_result_t *result);
 static void commissioning_current_q_failure_print(
   const motor_torque_loop_test_result_t *result);
 
@@ -150,7 +147,6 @@ const char *motor_commissioning_error_name_get(
     case MOTOR_COMMISSIONING_ERROR_HALL_SCAN: return "hall_scan";
     case MOTOR_COMMISSIONING_ERROR_HALL_OFFSET: return "hall_offset";
     case MOTOR_COMMISSIONING_ERROR_CURRENT_PI: return "current_pi";
-    case MOTOR_COMMISSIONING_ERROR_CURRENT_D: return "current_d";
     case MOTOR_COMMISSIONING_ERROR_CURRENT_Q: return "current_q";
     case MOTOR_COMMISSIONING_ERROR_PARAMETER: return "parameter";
     case MOTOR_COMMISSIONING_ERROR_STANDSTILL: return "standstill";
@@ -326,9 +322,8 @@ static bool commissioning_hall_decoder_reload(void)
     motor_current_control_parameter_reload();
 }
 
-/** @brief 使用候选参数完成低功率验证后无条件恢复原活动参数。 @param d_result Id测试结果。 @param q_result Iq测试结果。 @return 两项测试及恢复均成功时返回true。 */
+/** @brief 使用候选参数完成低功率Iq验证后无条件恢复原活动参数。 @param q_result Iq测试结果。 @return 测试及恢复均成功时返回true。 */
 static bool commissioning_candidate_trial_run(
-  motor_current_loop_test_result_t *d_result,
   motor_torque_loop_test_result_t *q_result)
 {
   motor_parameter_t backup;
@@ -343,23 +338,14 @@ static bool commissioning_candidate_trial_run(
   if (motor_parameter_active_read(&trial) &&
       commissioning_hall_decoder_reload())
   {
-    tests_ok = motor_current_loop_test_run_with_gains(
-      d_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
-      trial.current_ki_q15);
+    tests_ok = motor_torque_loop_test_run_with_gains(
+        q_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
+        trial.current_ki_q15);
     if (!tests_ok)
-      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_D, 1U);
-    else
     {
-      commissioning_current_d_result_print(d_result);
-      tests_ok = motor_torque_loop_test_run_with_gains(
-          q_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
-          trial.current_ki_q15);
-      if (!tests_ok)
-      {
-        commissioning_current_q_failure_print(q_result);
-        commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
-                                (uint32_t)q_result->status);
-      }
+      commissioning_current_q_failure_print(q_result);
+      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
+                              (uint32_t)q_result->status);
     }
   }
   motor_control_stop();
@@ -479,25 +465,6 @@ static bool commissioning_pi_run(void)
 }
 
 /**
- * @brief 使用候选参数中的PI增益执行固定角度Id验证。
- * @param result 输出Id验证结果，不允许为空。
- * @return 候选参数有效且测试通过返回true。
- */
-static bool commissioning_current_d_run(
-  motor_current_loop_test_result_t *result)
-{
-  motor_parameter_t parameter;
-  bool ok;
-
-  ok = motor_parameter_candidate_read(&parameter) &&
-    motor_current_loop_test_run_with_gains(
-      result, parameter.current_d_kp_q15, parameter.current_q_kp_q15,
-      parameter.current_ki_q15);
-  if (!ok) commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_D, 1U);
-  return ok;
-}
-
-/**
  * @brief 临时应用候选参数并执行一次正Iq低功率闭环测量。
  * @param result 输出稳定段dq电压及电流统计，不允许为空。
  * @return 测试完成且原活动参数及Hall解码器均恢复时返回true。
@@ -575,17 +542,6 @@ static bool commissioning_hall_offset_run(
     result.candidate_offset_u16, input.direct_voltage_mv,
     input.quadrature_voltage_mv);
   return true;
-}
-
-/** @brief 打印Id测试结果。@param result 测试结果，不允许为空。@return 无。 */
-static void commissioning_current_d_result_print(
-  const motor_current_loop_test_result_t *result)
-{
-  LOGI("Commissioning Id: PASS average=%ld/%ld mA peak=%ld/%ld mA voltage=%ld/%ld mV samples=%lu\r\n",
-    result->direct_average_ma, result->quadrature_average_ma,
-    result->direct_peak_ma, result->quadrature_peak_ma,
-    result->direct_voltage_mv, result->quadrature_voltage_mv,
-    result->sample_count);
 }
 
 /** @brief 打印Iq和接管测试结果。@param result 测试结果，不允许为空。@return 无。 */
@@ -847,7 +803,7 @@ static bool commissioning_hall_run(void)
 
 bool motor_commissioning_run(motor_commissioning_task_t task)
 {
-  bool ok=false; motor_current_loop_test_result_t d_result;
+  bool ok=false;
   motor_torque_loop_test_result_t q_result;
   if ((task==MOTOR_COMMISSIONING_TASK_NONE) || !commissioning_ready() ||
       (commissioning_status.state==MOTOR_COMMISSIONING_RUNNING)) return false;
@@ -872,11 +828,6 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     if(ok) ok=commissioning_flux_result_print(&q_result);
     else commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 1U);
   }
-  else if(task==MOTOR_COMMISSIONING_TASK_CURRENT_D)
-  {
-    ok=commissioning_current_d_run(&d_result);
-    if(ok) commissioning_current_d_result_print(&d_result);
-  }
   else if(task==MOTOR_COMMISSIONING_TASK_FULL)
   {
     ok=commissioning_offset_run();
@@ -898,7 +849,7 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     if (ok)
     {
       commissioning_step_set(8U);
-      ok=commissioning_candidate_trial_run(&d_result,&q_result);
+      ok=commissioning_candidate_trial_run(&q_result);
       if(ok)
       {
         commissioning_current_q_result_print(&q_result);

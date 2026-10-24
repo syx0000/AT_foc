@@ -366,7 +366,6 @@ static void motor_cli_command_execute(char *line)
     printf("  calibrate current_offset\r\n");
     printf("  calibrate hall sequence|angle|offset\r\n");
     printf("  identify resistance|inductance | calculate current_pi\r\n");
-    printf("  test current_d\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -559,10 +558,6 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "calculate current_pi") == 0)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_PI);
-  }
-  else if (strcmp(line, "test current_d") == 0)
-  {
-    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_D);
   }
   else if (strcmp(line, "motor commissioning accept") == 0)
   {
