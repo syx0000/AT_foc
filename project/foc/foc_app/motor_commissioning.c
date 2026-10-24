@@ -37,10 +37,6 @@
 #define MOTOR_COMMISSIONING_HALL_SAMPLES 3U
 #define MOTOR_COMMISSIONING_HALL_TARGET_TIMEOUT_MS 5000U
 #define MOTOR_COMMISSIONING_HALL_SETTLE_MS 1000U
-#define MOTOR_COMMISSIONING_STANDSTILL_TIMEOUT_MS 30000U
-#define MOTOR_COMMISSIONING_STANDSTILL_STABLE_MS 500U
-#define MOTOR_COMMISSIONING_STANDSTILL_FREQUENCY_MILLIHZ 1000U
-#define MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA 500L
 #define MOTOR_COMMISSIONING_FLUX_MINIMUM_FREQUENCY_MILLIHZ 10000UL
 #define MOTOR_COMMISSIONING_FLUX_MINIMUM_UWB 1000L
 #define MOTOR_COMMISSIONING_FLUX_MAXIMUM_UWB 200000L
@@ -167,9 +163,6 @@ static bool commissioning_flux_result_print(
   return true;
 }
 
-static void commissioning_current_q_failure_print(
-  const commissioning_iq_result_t *result);
-
 /** @brief 锁存当前辨识失败阶段及底层状态码。 @param error 失败阶段。 @param detail 模块原始状态码。 @return 无。 */
 static void commissioning_error_set(motor_commissioning_error_t error,
                                     uint32_t detail)
@@ -193,7 +186,6 @@ const char *motor_commissioning_error_name_get(
     case MOTOR_COMMISSIONING_ERROR_CURRENT_PI: return "current_pi";
     case MOTOR_COMMISSIONING_ERROR_CURRENT_Q: return "current_q";
     case MOTOR_COMMISSIONING_ERROR_PARAMETER: return "parameter";
-    case MOTOR_COMMISSIONING_ERROR_STANDSTILL: return "standstill";
     case MOTOR_COMMISSIONING_ERROR_FLUX: return "flux";
     default: return "unknown";
   }
@@ -258,10 +250,6 @@ const char *motor_commissioning_error_detail_name_get(
   if (error == MOTOR_COMMISSIONING_ERROR_PARAMETER)
     return (detail == 1U) ? "candidate_update_failed" :
            ((detail == 2U) ? "trial_or_restore_failed" : "unknown");
-  if (error == MOTOR_COMMISSIONING_ERROR_STANDSTILL)
-    return (detail == 1U) ? "timeout" :
-           ((detail == 2U) ? "current_unsafe" :
-           ((detail == 3U) ? "motor_fault" : "unknown"));
   if (error == MOTOR_COMMISSIONING_ERROR_FLUX)
   {
     static const char *const names[] = {"ok", "measurement_failed",
@@ -276,83 +264,6 @@ const char *motor_commissioning_error_detail_name_get(
 static void commissioning_step_set(uint32_t step)
 {
   commissioning_status.step = step;
-}
-
-/**
- * @brief 等待旋转测试后的电机进入低速、低电流稳定状态。
- * @param 无。
- * @return 连续稳定达到门槛返回true；超时、过流或统一电机故障返回false。
- */
-static bool commissioning_standstill_wait(void)
-{
-  motor_rotor_feedback_t rotor_feedback;
-  motor_current_sample_state_t current;
-  motor_control_status_t motor_status;
-  uint32_t start=motor_timebase_cycles_get();
-  uint32_t stable_start=start;
-  uint32_t timeout=(system_core_clock/1000U)*
-    MOTOR_COMMISSIONING_STANDSTILL_TIMEOUT_MS;
-  uint32_t stable_time=(system_core_clock/1000U)*
-    MOTOR_COMMISSIONING_STANDSTILL_STABLE_MS;
-  bool stable_started=false;
-
-  motor_control_stop();
-  while (!commissioning_abort_requested &&
-         (motor_timebase_cycles_elapsed(start)<timeout))
-  {
-    bool rotor_read=motor_rotor_feedback_read(&rotor_feedback);
-    bool current_read=motor_current_sample_state_read(&current);
-    bool speed_safe=rotor_read &&
-      ((!rotor_feedback.valid) ||
-       (rotor_feedback.electrical_frequency_millihz <=
-        MOTOR_COMMISSIONING_STANDSTILL_FREQUENCY_MILLIHZ));
-    bool current_safe=current_read && (!current.overcurrent_fault) &&
-      (current.phase_a_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
-      (current.phase_a_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
-      (current.phase_b_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
-      (current.phase_b_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
-      (current.phase_c_ma > -MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA) &&
-      (current.phase_c_ma < MOTOR_COMMISSIONING_STANDSTILL_CURRENT_MA);
-
-    motor_control_poll();
-    if (!motor_control_status_read(&motor_status) ||
-        (motor_status.state == MOTOR_CONTROL_STATE_FAULT))
-    {
-      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,3U);
-      return false;
-    }
-    if (current_read && current.overcurrent_fault)
-    {
-      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,2U);
-      return false;
-    }
-    if (speed_safe && current_safe)
-    {
-      if (!stable_started)
-      {
-        stable_start=motor_timebase_cycles_get();
-        stable_started=true;
-      }
-      else if (motor_timebase_cycles_elapsed(stable_start)>=stable_time)
-      {
-        LOGI("Commissioning standstill: PASS wait=%lu ms frequency=%lu mHz current=%ld/%ld/%ld mA\r\n",
-          (unsigned long)(motor_timebase_cycles_elapsed(start)/
-                          (system_core_clock/1000U)),
-          rotor_feedback.valid ?
-            (unsigned long)rotor_feedback.electrical_frequency_millihz : 0UL,
-          current.phase_a_ma,current.phase_b_ma,current.phase_c_ma);
-        return true;
-      }
-    }
-    else
-    {
-      stable_started=false;
-    }
-    wk_delay_ms(1U);
-  }
-  if (!commissioning_abort_requested)
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_STANDSTILL,1U);
-  return false;
 }
 
 /** @brief 按当前活动参数和原始Hall状态重载运行时解码器。 @param 无。 @return 成功返回true。 */
@@ -573,39 +484,6 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
   return true;
 }
 
-/** @brief 使用候选参数完成低功率Iq验证后无条件恢复原活动参数。 @param q_result Iq测试结果。 @return 测试及恢复均成功时返回true。 */
-static bool commissioning_candidate_trial_run(
-  commissioning_iq_result_t *q_result)
-{
-  motor_parameter_t backup;
-  motor_parameter_t trial;
-  bool tests_ok = false;
-  bool restore_ok;
-
-  if (!motor_parameter_trial_begin(&backup)) {
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 2U);
-    return false;
-  }
-  if (motor_parameter_active_read(&trial) &&
-      commissioning_hall_decoder_reload())
-  {
-    tests_ok = commissioning_iq_measure(
-        q_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
-        trial.current_ki_q15);
-    if (!tests_ok)
-    {
-      commissioning_current_q_failure_print(q_result);
-      commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
-                              (uint32_t)q_result->status);
-    }
-  }
-  motor_control_stop();
-  restore_ok=motor_parameter_trial_end(&backup) &&
-             commissioning_hall_decoder_reload();
-  if (!restore_ok)
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 2U);
-  return tests_ok && restore_ok;
-}
 
 void motor_commissioning_init(void)
 {
@@ -793,41 +671,6 @@ static bool commissioning_hall_offset_run(
     result.candidate_offset_u16, input.direct_voltage_mv,
     input.quadrature_voltage_mv);
   return true;
-}
-
-/** @brief 打印Iq和接管测试结果。@param result 测试结果，不允许为空。@return 无。 */
-static void commissioning_current_q_result_print(
-  const commissioning_iq_result_t *result)
-{
-  LOGI("Commissioning Iq/handover: PASS average=%ld/%ld mA peak=%ld/%ld mA voltage=%ld/%ld mV frequency=%lu mHz samples=%lu\r\n",
-    result->direct_average_ma, result->quadrature_average_ma,
-    result->direct_peak_ma, result->quadrature_peak_ma,
-    result->final_direct_voltage_mv, result->final_quadrature_voltage_mv,
-    result->final_frequency_millihz, result->sample_count);
-}
-
-/**
- * @brief 打印Iq接管测试失败时的控制、电流及转子反馈快照。
- * @param result 测试失败结果，不允许为空。
- * @return 无。
- */
-static void commissioning_current_q_failure_print(
-  const commissioning_iq_result_t *result)
-{
-  LOGE("Commissioning Iq/handover diag: status=%u samples=%lu hall=%u frequency=%lu mHz angle=%u phase=%ld/%ld/%ld mA id/iq=%ld/%ld mA vd/vq=%ld/%ld mV pwm_sw/gate/moe/bif/nfault=%u/%u/%u/%u/%u\r\n",
-    (unsigned int)result->status, (unsigned long)result->sample_count,
-    (unsigned int)result->final_hall_state,
-    (unsigned long)result->final_frequency_millihz,
-    (unsigned int)result->final_electrical_angle_u16,
-    result->final_phase_a_ma, result->final_phase_b_ma,
-    result->final_phase_c_ma, result->final_direct_current_ma,
-    result->final_quadrature_current_ma, result->final_direct_voltage_mv,
-    result->final_quadrature_voltage_mv,
-    result->final_pwm_software_enabled ? 1U : 0U,
-    result->final_gate_driver_enabled ? 1U : 0U,
-    result->final_pwm_moe_enabled ? 1U : 0U,
-    result->final_pwm_break_active ? 1U : 0U,
-    result->final_nfault_high ? 1U : 0U);
 }
 
 void motor_commissioning_hall_edge_process(void)
@@ -1078,34 +921,6 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     ok=commissioning_offset_measurement_run(&q_result);
     if(ok) ok=commissioning_flux_result_print(&q_result);
     else commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 1U);
-  }
-  else if(task==MOTOR_COMMISSIONING_TASK_FULL)
-  {
-    ok=commissioning_offset_run();
-    if (ok) { commissioning_step_set(2U); ok=commissioning_resistance_run(); }
-    if (ok) { commissioning_step_set(3U); ok=commissioning_inductance_run(); }
-    if (ok) { commissioning_step_set(4U); ok=commissioning_hall_run(); }
-    if (ok) { commissioning_step_set(5U); ok=commissioning_pi_run(); }
-    if (ok)
-    {
-      commissioning_step_set(6U);
-      ok=commissioning_hall_offset_run(&q_result);
-      if(ok) ok=commissioning_flux_result_print(&q_result);
-    }
-    if (ok)
-    {
-      commissioning_step_set(7U);
-      ok=commissioning_standstill_wait();
-    }
-    if (ok)
-    {
-      commissioning_step_set(8U);
-      ok=commissioning_candidate_trial_run(&q_result);
-      if(ok)
-      {
-        commissioning_current_q_result_print(&q_result);
-      }
-    }
   }
   motor_control_stop(); commissioning_hall_collecting=false;
   commissioning_status.run_count++;

@@ -362,7 +362,7 @@ static void motor_cli_command_execute(char *line)
     printf("  speed start|set <signed_rpm> | speed stop\r\n");
     printf("  motor params active|candidate|load|defaults|storage\r\n");
     printf("  motor param set <name> <value>\r\n");
-    printf("  motor commissioning start|status|abort|diff|accept|discard|save\r\n");
+    printf("  motor commissioning status|abort|diff|accept|discard|save\r\n");
     printf("  calibrate current_offset\r\n");
     printf("  calibrate hall sequence|angle|offset\r\n");
     printf("  identify resistance|inductance | calculate current_pi\r\n");
@@ -525,10 +525,6 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "motor commissioning abort") == 0)
   {
     printf(motor_commissioning_abort()?"OK commissioning abort requested\r\n":"ERR commissioning_not_running\r\n");
-  }
-  else if (strcmp(line, "motor commissioning start") == 0)
-  {
-    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_FULL);
   }
   else if (strcmp(line, "calibrate current_offset") == 0)
   {

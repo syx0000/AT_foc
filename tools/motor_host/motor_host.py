@@ -164,6 +164,8 @@ class MotorHost(QMainWindow):
         stop_button.clicked.connect(self.stop_motor)
         quick.addWidget(stop_button, 0, 4)
         quick.addWidget(self._command_button("帮助", "help"), 0, 5)
+        quick.addWidget(self._command_button(
+            "辨识状态", "motor commissioning status"), 0, 6)
         layout.addLayout(quick)
 
         open_group = QGroupBox("开环控制")
@@ -211,8 +213,6 @@ class MotorHost(QMainWindow):
         tab = QWidget()
         grid = QGridLayout(tab)
         items = [
-            ("完整自动辨识", "motor commissioning start"),
-            ("辨识状态", "motor commissioning status"),
             ("参数差异", "motor commissioning diff"),
             ("接受候选", "motor commissioning accept"),
             ("保存参数", "motor commissioning save"),
@@ -222,12 +222,9 @@ class MotorHost(QMainWindow):
             ("Hall角度", "calibrate hall angle"),
             ("Hall补偿", "calibrate hall offset"),
             ("计算电流PI", "calculate current_pi"),
-            ("测试Id", "test current_d"),
-            ("测试Iq", "test current_q"),
-            ("测试接管", "test current_handover"),
             ("丢弃候选", "motor commissioning discard"),
         ]
-        passive = {"motor commissioning status", "motor commissioning diff"}
+        passive = {"motor commissioning diff"}
         for index, item in enumerate(items):
             grid.addWidget(self._command_button(
                 *item, commissioning=item[1] not in passive), index // 5, index % 5)
@@ -239,7 +236,6 @@ class MotorHost(QMainWindow):
         grid = QGridLayout()
         items = [
             ("活动参数", "motor params active"),
-            ("候选参数", "motor params candidate"),
             ("存储状态", "motor params storage"),
             ("加载Flash", "motor params load"),
             ("恢复默认", "motor params defaults"),
@@ -329,8 +325,8 @@ class MotorHost(QMainWindow):
             QMessageBox.critical(self, "发送失败", str(exc))
             return
         self.append_console(f"> {command.strip()}\n")
-        if command.startswith(("motor commissioning start", "calibrate ",
-                               "identify ", "calculate current_pi", "test ")):
+        if command.startswith(("calibrate ",
+                               "identify ", "calculate current_pi")):
             self.set_commissioning_busy(True)
 
     def send_entry(self) -> None:
