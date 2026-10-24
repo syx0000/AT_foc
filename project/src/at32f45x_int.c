@@ -84,7 +84,7 @@
  * @brief 捕获一次Hall边沿并分发给下游模块。
  * @param sample 输出本次捕获后的端口快照，不允许为空。
  * @return 无。
- * @details EXINT与TMR4 XOR两种捕获方式共用。只有解码器确认的相邻合法跳变
+ * @details 由TMR4 XOR捕获中断调用。只有解码器确认的相邻合法跳变
  *          才会传给标定、观测器和角度估算器；重复、000/111毛刺或跳扇区的
  *          跳变不会被当作新的转子角度边界。
  */
@@ -383,18 +383,6 @@ void CAN1_ERR_IRQHandler(void)
   /* add user code begin CAN1_ERR_IRQ 1 */
 
   /* add user code end CAN1_ERR_IRQ 1 */
-}
-
-/**
-  * @brief  this function handles EXINT Line [9:5] handler.
-  * @param  none
-  * @retval none
-  */
-void EXINT9_5_IRQHandler(void)
-{
-  /* Hall由TMR4 XOR捕获处理，EXINT 6/7/8在motor_hall_port_init中关闭，
-   * 此处仅清除残留标志。 */
-  exint_flag_clear(EXINT_LINE_6 | EXINT_LINE_7 | EXINT_LINE_8);
 }
 
 /**

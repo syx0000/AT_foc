@@ -43,7 +43,7 @@ static uint8_t motor_hall_port_state_get(void)
  * @brief 将Hall输入切换为TMR4 XOR捕获并使能滤波后的边沿中断。
  * @param 无。
  * @return 无。
- * @details 关闭WorkBench生成的EXINT 6/7/8中断，三路引脚改为TMR4复用输入；
+ * @details 三路Hall引脚配置为TMR4复用输入；
  *          CH1/CH2/CH3异或后经数字滤波送入C1，C1INC作为触发输入，每个
  *          滤波后的Hall边沿产生一次TRIGGER中断。计数器仅作为滤波时基，
  *          边沿间隔仍使用DWT时间戳。
@@ -53,8 +53,6 @@ static void motor_hall_port_timer_xor_init(void)
   gpio_init_type gpio_init_struct;
   tmr_input_config_type tmr_input_struct;
 
-  exint_interrupt_enable(EXINT_LINE_6 | EXINT_LINE_7 | EXINT_LINE_8, FALSE);
-  exint_flag_clear(EXINT_LINE_6 | EXINT_LINE_7 | EXINT_LINE_8);
 
   crm_periph_clock_enable(MOTOR_HALL_CAPTURE_CRM_CLK, TRUE);
 

@@ -449,11 +449,6 @@
               <FileType>1</FileType>
               <FilePath>..\src\flash_port.c</FilePath>
             </File>
-            <File>
-              <FileName>wk_exint.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\src\wk_exint.c</FilePath>
-            </File>
           </Files>
         </Group>
         <Group>

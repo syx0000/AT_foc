@@ -28,7 +28,6 @@
 #include "at32f45x_wk_config.h"
 #include "wk_adc.h"
 #include "wk_can.h"
-#include "wk_exint.h"
 #include "wk_tmr.h"
 #include "wk_usart.h"
 #include "wk_dma.h"
@@ -255,8 +254,6 @@ int main(void)
                         DMA1_CHANNEL5_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL5, TRUE);
 
-  /* init exint function. */
-  wk_exint_config();
   motor_hall_port_init();
   (void)motor_parameter_active_read(&motor_parameter);
   (void)motor_hall_port_sample_read(&hall_port_sample);

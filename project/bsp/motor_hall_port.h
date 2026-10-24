@@ -23,7 +23,7 @@ typedef struct
  * @brief 初始化Hall硬件端口状态。
  * @param 无。
  * @return 无。
- * @details 读取PB8/PB6/PB7初始电平并清零边沿计数。关闭WorkBench生成的EXINT，
+ * @details 读取PB8/PB6/PB7初始电平并清零边沿计数。Hall边沿
  *          改由TMR4滤波后的触发中断提供边沿。
  */
 void motor_hall_port_init(void);
