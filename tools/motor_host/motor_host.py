@@ -164,8 +164,6 @@ class MotorHost(QMainWindow):
         stop_button.clicked.connect(self.stop_motor)
         quick.addWidget(stop_button, 0, 4)
         quick.addWidget(self._command_button("帮助", "help"), 0, 5)
-        quick.addWidget(self._command_button(
-            "辨识状态", "motor commissioning status"), 0, 6)
         layout.addLayout(quick)
 
         open_group = QGroupBox("开环控制")
