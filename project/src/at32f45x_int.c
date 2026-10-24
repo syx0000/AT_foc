@@ -28,8 +28,6 @@
 #include "at32f45x_int.h"
 /* private includes ----------------------------------------------------------*/
 /* add user code begin private includes */
-#include "interrupt_monitor.h"
-#include "motor_performance_monitor.h"
 #include "motor_adc_port.h"
 #include "motor_current_calibration.h"
 #include "motor_current_sample.h"
@@ -260,7 +258,6 @@ void PendSV_Handler(void)
 void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
-  interrupt_monitor_counters.systick++;
   motor_current_startup_process_1khz();
   motor_rotor_feedback_process_1khz();
   motor_speed_feedback_process_1khz();
@@ -289,7 +286,6 @@ void DMA1_Channel3_IRQHandler(void)
     /* add user code begin DMA1_FDT3_FLAG */
     /* handle full data transfer and clear flag */
     dma_flag_clear(DMA1_FDT3_FLAG);
-    interrupt_monitor_counters.adc_slow_dma_complete++;
     motor_adc_port_slow_sample_capture();
     /* add user code end DMA1_FDT3_FLAG */ 
   }
@@ -307,8 +303,6 @@ void DMA1_Channel3_IRQHandler(void)
 void ADC1_2_IRQHandler(void)
 {
   /* add user code begin ADC1_2_IRQ 0 */
-  uint32_t start_cycles = motor_performance_monitor_begin();
-  uint32_t adc_fast_handled = 0U;
   motor_adc_fast_sample_t adc_fast_sample;
 
   /* add user code end ADC1_2_IRQ 0 */
@@ -318,7 +312,6 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_PCCE_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
-    interrupt_monitor_counters.adc_fast_complete++;
     motor_adc_port_fast_sample_capture(&adc_fast_sample);
     motor_current_calibration_sample_process(&adc_fast_sample);
     if (motor_current_sample_process(&adc_fast_sample))
@@ -333,7 +326,6 @@ void ADC1_2_IRQHandler(void)
     motor_current_loop_test_fast_process();
     motor_current_control_fast_process();
     motor_torque_loop_test_fast_process();
-    adc_fast_handled = 1U;
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
 
@@ -342,16 +334,10 @@ void ADC1_2_IRQHandler(void)
     /* add user code begin ADC1_ADC_TCF_FLAG */
     /* clear flag */
     adc_flag_clear(ADC1, ADC_TCF_FLAG);
-    interrupt_monitor_counters.adc_trigger_fail++;
     /* add user code end ADC1_ADC_TCF_FLAG */ 
   }
 
   /* add user code begin ADC1_2_IRQ 1 */
-  if (adc_fast_handled != 0U)
-  {
-    (void)motor_performance_monitor_end(&adc_fast_performance_counter,
-                                        start_cycles);
-  }
 
   /* add user code end ADC1_2_IRQ 1 */
 }
@@ -375,7 +361,6 @@ void CAN1_RX_IRQHandler(void)
     /* clear flag and receive buffer release */
     can_flag_clear(CAN1, CAN_RIF_FLAG);
     can_rxbuf_read(CAN1, &can_rxbuf_struct);
-    interrupt_monitor_counters.can1_rx++;
     /* add user code end CAN1_CAN_RIF_FLAG */
   }
 
@@ -392,7 +377,6 @@ void CAN1_RX_IRQHandler(void)
 void CAN1_ERR_IRQHandler(void)
 {
   /* add user code begin CAN1_ERR_IRQ 0 */
-  interrupt_monitor_counters.can1_error++;
 
   /* add user code end CAN1_ERR_IRQ 0 */
 
@@ -430,7 +414,6 @@ void TMR1_CH_IRQHandler(void)
     /* add user code begin TMR1_TMR_C4_FLAG */
     /* clear flag */
     tmr_flag_clear(TMR1, TMR_C4_FLAG);
-    interrupt_monitor_counters.tmr1_channel4++;
     /* add user code end TMR1_TMR_C4_FLAG */
   }
 
@@ -465,7 +448,6 @@ void USART1_IRQHandler(void)
     /* add user code begin USART1_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART1, USART_IDLEF_FLAG);
-    interrupt_monitor_counters.usart1_idle++;
     motor_uart_port_idle_capture();
     /* add user code end USART1_USART_IDLEF_FLAG */ 
   }
@@ -501,7 +483,6 @@ void USART3_IRQHandler(void)
     /* add user code begin USART3_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART3, USART_IDLEF_FLAG);
-    interrupt_monitor_counters.usart3_idle++;
     /* add user code end USART3_USART_IDLEF_FLAG */ 
   }
 
@@ -534,25 +515,17 @@ void TMR1_BRK_TMR9_IRQHandler(void)
  * @param 无。
  * @return 无。
  * @details 三路Hall异或并经数字滤波后，每个边沿置位TRIGGER标志。按前后两次
- *          端口状态的差异更新HA/HB/HC边沿计数。
+ *          端口状态并分发Hall边沿。
  */
 void TMR4_GLOBAL_IRQHandler(void)
 {
-  motor_hall_port_sample_t previous_sample;
   motor_hall_port_sample_t hall_port_sample;
-  uint8_t changed;
 
   if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG) !=
       RESET)
   {
     tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG);
-    previous_sample.state = 0U;
-    (void)motor_hall_port_sample_read(&previous_sample);
     hall_edge_dispatch(&hall_port_sample);
-    changed = (uint8_t)(previous_sample.state ^ hall_port_sample.state);
-    if ((changed & 0x01U) != 0U) interrupt_monitor_counters.hall_a_edge++;
-    if ((changed & 0x02U) != 0U) interrupt_monitor_counters.hall_b_edge++;
-    if ((changed & 0x04U) != 0U) interrupt_monitor_counters.hall_c_edge++;
   }
 }
 

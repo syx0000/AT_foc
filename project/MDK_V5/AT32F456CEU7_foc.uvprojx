@@ -410,11 +410,6 @@
               <FilePath>..\src\motor_cli.c</FilePath>
             </File>
             <File>
-              <FileName>interrupt_monitor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\src\interrupt_monitor.c</FilePath>
-            </File>
-            <File>
               <FileName>wk_system.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\wk_system.c</FilePath>
@@ -453,11 +448,6 @@
               <FileName>flash_port.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\flash_port.c</FilePath>
-            </File>
-            <File>
-              <FileName>motor_performance_monitor.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\src\motor_performance_monitor.c</FilePath>
             </File>
             <File>
               <FileName>wk_exint.c</FileName>

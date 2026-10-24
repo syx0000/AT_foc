@@ -40,7 +40,6 @@
 #include <stdio.h>
 #include "product_version.h"
 #include "motor_log.h"
-#include "interrupt_monitor.h"
 #include "motor_pwm_port.h"
 #include "motor_board_config.h"
 #include "motor_timebase.h"
