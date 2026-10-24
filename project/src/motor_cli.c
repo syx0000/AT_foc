@@ -99,7 +99,10 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
   {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16},
   {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US},
-  {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB}
+  {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB},
+  {"speed_maximum_rpm", MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM},
+  {"speed_acceleration_rpm_per_s",
+   MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S}
 };
 
 #define MOTOR_CLI_PARAMETER_FIELD_COUNT \
@@ -154,6 +157,9 @@ static void motor_cli_parameter_print(const char *label,
          (unsigned int)parameter->hall_rotor_offset_u16,
          (unsigned int)parameter->hall_delay_compensation_us,
          (unsigned long)parameter->flux_linkage_uwb);
+  printf("speed_maximum_rpm=%lu speed_acceleration_rpm_per_s=%lu\r\n",
+         (unsigned long)parameter->speed_maximum_rpm,
+         (unsigned long)parameter->speed_acceleration_rpm_per_s);
   printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
          (unsigned int)parameter->hall_positive_next[1],
          (unsigned int)parameter->hall_positive_next[2],
@@ -669,9 +675,12 @@ static void motor_cli_command_execute(char *line)
   }
   else if (sscanf(line, "speed start %ld", &speed_rpm) == 1)
   {
-    if ((speed_rpm == 0) ||
-        ((int64_t)speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
-        ((int64_t)speed_rpm < -MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    /* 超出最高转速时按最高转速执行，不报错。 */
+    if (speed_rpm > (long)motor_speed_control_maximum_rpm_get())
+      speed_rpm = (long)motor_speed_control_maximum_rpm_get();
+    else if (speed_rpm < -(long)motor_speed_control_maximum_rpm_get())
+      speed_rpm = -(long)motor_speed_control_maximum_rpm_get();
+    if (speed_rpm == 0)
     {
       printf("ERR 3 invalid_parameter\r\n");
       return;
@@ -683,9 +692,12 @@ static void motor_cli_command_execute(char *line)
   }
   else if (sscanf(line, "speed set %ld", &speed_rpm) == 1)
   {
-    if ((speed_rpm == 0) ||
-        ((int64_t)speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
-        ((int64_t)speed_rpm < -MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM))
+    /* 超出最高转速时按最高转速执行，不报错。 */
+    if (speed_rpm > (long)motor_speed_control_maximum_rpm_get())
+      speed_rpm = (long)motor_speed_control_maximum_rpm_get();
+    else if (speed_rpm < -(long)motor_speed_control_maximum_rpm_get())
+      speed_rpm = -(long)motor_speed_control_maximum_rpm_get();
+    if (speed_rpm == 0)
     {
       printf("ERR 3 invalid_parameter\r\n");
       return;

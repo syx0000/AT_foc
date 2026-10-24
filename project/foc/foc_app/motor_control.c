@@ -96,7 +96,7 @@ static bool motor_control_speed_command_valid(int32_t target_speed_rpm)
     -(int64_t)target_speed_rpm : (int64_t)target_speed_rpm;
 
   if ((target_speed_rpm == 0) ||
-      (absolute_speed_rpm > MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM) ||
+      (absolute_speed_rpm > motor_speed_control_maximum_rpm_get()) ||
       (absolute_speed_rpm > (INT32_MAX / 1000)) ||
       (!motor_direction_transform_s32(
         target_speed_rpm, motor_parameter_direction_inverted_get(),

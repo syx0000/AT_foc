@@ -105,4 +105,11 @@ void motor_speed_control_process_1khz(void);
  */
 bool motor_speed_control_status_read(motor_speed_control_status_t *status);
 
+/**
+ * @brief 读取当前生效的速度指令绝对值上限。
+ * @param 无。
+ * @return 最高转速，单位rpm；来自活动参数speed_maximum_rpm。
+ */
+int32_t motor_speed_control_maximum_rpm_get(void);
+
 #endif /* MOTOR_SPEED_CONTROL_H */

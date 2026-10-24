@@ -10,12 +10,17 @@
 #include <string.h>
 #include "flash_port.h"
 #include "motor_control.h"
+#include "motor_control_config.h"
 #include "motor_parameter.h"
 #include "motor_parameter_storage.h"
 #include "motor_pwm_port.h"
 
 #define MOTOR_PARAMETER_STORAGE_MAGIC          0x4D50524DU
-#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 2U
+#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 3U
+/* v2记录不含速度上限/加速度；其参数区是v3参数结构的前缀。 */
+#define MOTOR_PARAMETER_STORAGE_LEGACY_VERSION 2U
+#define MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH  \
+  offsetof(motor_parameter_t, speed_maximum_rpm)
 #define MOTOR_PARAMETER_STORAGE_COMMIT_MARKER  0x434F4D54U
 #define MOTOR_PARAMETER_STORAGE_SLOT_A_ADDR    FLASH_USER_START_ADDR
 #define MOTOR_PARAMETER_STORAGE_SLOT_B_ADDR    \
@@ -31,6 +36,20 @@ typedef struct
   uint32_t crc32;
   uint32_t commit_marker;
 } motor_parameter_storage_record_t;
+
+typedef struct
+{
+  uint32_t magic;
+  uint16_t format_version;
+  uint16_t length;
+  uint32_t sequence;
+  uint8_t parameter[MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH];
+  uint32_t crc32;
+  uint32_t commit_marker;
+} motor_parameter_storage_legacy_record_t;
+
+typedef char motor_parameter_legacy_length_must_be_word_aligned[
+  ((MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH % 4U) == 0U) ? 1 : -1];
 
 typedef char motor_parameter_record_must_fit_one_sector[
   (sizeof(motor_parameter_storage_record_t) <= FLASH_SECTOR_SIZE) ? 1 : -1];
@@ -62,8 +81,33 @@ static bool motor_parameter_storage_record_valid(
 static bool motor_parameter_storage_slot_read(
   uint32_t address, motor_parameter_storage_record_t *record)
 {
+  motor_parameter_storage_legacy_record_t legacy;
+
   flash_port_read(address, record, sizeof(*record));
-  return motor_parameter_storage_record_valid(record);
+  if (motor_parameter_storage_record_valid(record)) return true;
+
+  /* 兼容v2：校验旧布局CRC后，新字段补编译默认值再整体校验。 */
+  flash_port_read(address, &legacy, sizeof(legacy));
+  if ((legacy.magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
+      (legacy.format_version != MOTOR_PARAMETER_STORAGE_LEGACY_VERSION) ||
+      (legacy.length != MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH) ||
+      (legacy.commit_marker != MOTOR_PARAMETER_STORAGE_COMMIT_MARKER) ||
+      (flash_port_crc32(&legacy,
+        offsetof(motor_parameter_storage_legacy_record_t, crc32)) !=
+       legacy.crc32)) return false;
+  (void)memset(record, 0, sizeof(*record));
+  record->magic = legacy.magic;
+  record->format_version = MOTOR_PARAMETER_STORAGE_FORMAT_VERSION;
+  record->length = sizeof(motor_parameter_t);
+  record->sequence = legacy.sequence;
+  (void)memcpy(&record->parameter, legacy.parameter,
+               MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH);
+  record->parameter.speed_maximum_rpm =
+    (uint32_t)MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
+  record->parameter.speed_acceleration_rpm_per_s =
+    MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
+  record->commit_marker = MOTOR_PARAMETER_STORAGE_COMMIT_MARKER;
+  return motor_parameter_validate(&record->parameter);
 }
 
 /** @brief 扫描双槽并返回最新记录。@param record 输出最新有效记录。@return 存在有效槽返回true。 */

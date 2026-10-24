@@ -73,9 +73,9 @@ void motor_speed_control_init(void)
   motor_speed_control_config.current_limit_ma =
     MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
   motor_speed_control_config.maximum_speed_rpm =
-    MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
+    (int32_t)parameter.speed_maximum_rpm;
   motor_speed_control_config.acceleration_rpm_per_s =
-    MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
+    parameter.speed_acceleration_rpm_per_s;
   (void)motor_speed_pi_init(
     &motor_speed_controller,
     motor_speed_control_config.proportional_gain_q20,
@@ -102,6 +102,8 @@ bool motor_speed_control_parameter_reload(void)
   if (!motor_parameter_active_read(&parameter)) return false;
   config.proportional_gain_q20 = parameter.speed_kp_q20;
   config.integral_gain_q20 = parameter.speed_ki_q20;
+  config.maximum_speed_rpm = (int32_t)parameter.speed_maximum_rpm;
+  config.acceleration_rpm_per_s = parameter.speed_acceleration_rpm_per_s;
   return motor_speed_control_config_set(&config);
 }
 
@@ -328,4 +330,9 @@ bool motor_speed_control_status_read(motor_speed_control_status_t *status)
     __enable_irq();
   }
   return true;
+}
+
+int32_t motor_speed_control_maximum_rpm_get(void)
+{
+  return motor_speed_control_config.maximum_speed_rpm;
 }

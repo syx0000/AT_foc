@@ -20,6 +20,7 @@
 #define MOTOR_PARAMETER_FLUX_LINKAGE_UWB_MAX    1000000U
 #define MOTOR_PARAMETER_CURRENT_BANDWIDTH_HZ_MAX   2000U
 #define MOTOR_PARAMETER_HALL_DELAY_US_MAX           1000U
+#define MOTOR_PARAMETER_SPEED_ACCELERATION_MAX   100000U
 
 static volatile motor_parameter_t motor_parameter_active;
 static motor_parameter_t motor_parameter_candidate;
@@ -69,6 +70,9 @@ static void motor_parameter_default_build(motor_parameter_t *parameter)
   parameter->current_ki_q15 = MOTOR_CURRENT_PI_KI_Q15;
   parameter->speed_kp_q20 = MOTOR_SPEED_PI_KP_Q20;
   parameter->speed_ki_q20 = MOTOR_SPEED_PI_KI_Q20;
+  parameter->speed_maximum_rpm = (uint32_t)MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
+  parameter->speed_acceleration_rpm_per_s =
+    MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
   parameter->hall_rotor_offset_u16 = MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16;
   (void)memcpy(parameter->hall_positive_next, hall_positive_next,
                sizeof(hall_positive_next));
@@ -229,6 +233,11 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->current_ki_q15 >= 0) &&
     (parameter->speed_kp_q20 >= 0) &&
     (parameter->speed_ki_q20 >= 0) &&
+    (parameter->speed_maximum_rpm > 0U) &&
+    (parameter->speed_maximum_rpm < (uint32_t)MOTOR_SPEED_OVERSPEED_RPM) &&
+    (parameter->speed_acceleration_rpm_per_s > 0U) &&
+    (parameter->speed_acceleration_rpm_per_s <=
+     MOTOR_PARAMETER_SPEED_ACCELERATION_MAX) &&
     (parameter->hall_positive_next[0] == 0U) &&
     (parameter->hall_positive_next[7] == 0U) &&
     (parameter->hall_entry_angle_u16[0] == 0U) &&
@@ -307,6 +316,14 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
         return false;
       updated.flux_linkage_uwb = (uint32_t)value;
       break;
+    case MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM:
+      if (value <= 0) return false;
+      updated.speed_maximum_rpm = (uint32_t)value;
+      break;
+    case MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S:
+      if (value <= 0) return false;
+      updated.speed_acceleration_rpm_per_s = (uint32_t)value;
+      break;
     default:
       return false;
   }
@@ -366,6 +383,12 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
       break;
     case MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB:
       *value = (int32_t)parameter->flux_linkage_uwb;
+      break;
+    case MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM:
+      *value = (int32_t)parameter->speed_maximum_rpm;
+      break;
+    case MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S:
+      *value = (int32_t)parameter->speed_acceleration_rpm_per_s;
       break;
     default:
       return false;

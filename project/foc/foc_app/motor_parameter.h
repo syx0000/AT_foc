@@ -30,6 +30,8 @@ typedef enum
   MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16,
   MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US,
   MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB,
+  MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM,
+  MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S,
   MOTOR_PARAMETER_FIELD_COUNT
 } motor_parameter_field_t;
 
@@ -51,6 +53,8 @@ typedef struct
   uint8_t hall_positive_next[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint16_t hall_entry_angle_u16[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint32_t flux_linkage_uwb;
+  uint32_t speed_maximum_rpm;            /**< 速度指令绝对值上限，单位rpm。 */
+  uint32_t speed_acceleration_rpm_per_s; /**< 速度斜坡加速度，单位rpm/s。 */
 } motor_parameter_t;
 
 typedef struct
