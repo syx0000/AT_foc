@@ -7,6 +7,7 @@
  */
 
 #include <stddef.h>
+#include <string.h>
 #include "at32f45x.h"
 #include "motor_board_config.h"
 #include "motor_commissioning.h"
@@ -28,7 +29,6 @@
 #include "motor_resistance_identification.h"
 #include "motor_rotor_feedback.h"
 #include "motor_timebase.h"
-#include "motor_torque_loop_test.h"
 #include "wk_system.h"
 
 #define MOTOR_COMMISSIONING_HALL_VOLTAGE_MV 1200L
@@ -52,10 +52,54 @@ static volatile bool commissioning_hall_collecting;
 static volatile uint8_t commissioning_hall_previous_state;
 static motor_hall_calibration_t commissioning_hall;
 
+/* 低功率Iq测量状态码，数值与error_detail名称表一一对应。 */
+typedef enum
+{
+  COMMISSIONING_IQ_STATUS_OK = 0,
+  COMMISSIONING_IQ_STATUS_INVALID_ARGUMENT,
+  COMMISSIONING_IQ_STATUS_PWM_BUSY,
+  COMMISSIONING_IQ_STATUS_CONFIG_FAILED,
+  COMMISSIONING_IQ_STATUS_START_FAILED,
+  COMMISSIONING_IQ_STATUS_STARTUP_TIMEOUT,
+  COMMISSIONING_IQ_STATUS_CONTROL_LOST,
+  COMMISSIONING_IQ_STATUS_HALL_LOST,
+  COMMISSIONING_IQ_STATUS_OVERCURRENT,
+  COMMISSIONING_IQ_STATUS_PWM_FAULT,
+  COMMISSIONING_IQ_STATUS_ABORTED
+} commissioning_iq_status_t;
+
+/* 经正式启动路径进入Hall电流闭环后的稳态统计结果。 */
+typedef struct
+{
+  commissioning_iq_status_t status;
+  int32_t direct_average_ma;
+  int32_t quadrature_average_ma;
+  int32_t direct_peak_ma;
+  int32_t quadrature_peak_ma;
+  int32_t final_direct_voltage_mv;
+  int32_t final_quadrature_voltage_mv;
+  int32_t direct_voltage_average_mv;
+  int32_t quadrature_voltage_average_mv;
+  uint32_t final_frequency_millihz;
+  int32_t final_phase_a_ma;
+  int32_t final_phase_b_ma;
+  int32_t final_phase_c_ma;
+  int32_t final_direct_current_ma;
+  int32_t final_quadrature_current_ma;
+  uint16_t final_electrical_angle_u16;
+  uint8_t final_hall_state;
+  bool final_pwm_software_enabled;
+  bool final_gate_driver_enabled;
+  bool final_pwm_moe_enabled;
+  bool final_pwm_break_active;
+  bool final_nfault_high;
+  uint32_t sample_count;
+} commissioning_iq_result_t;
+
 static void commissioning_error_set(motor_commissioning_error_t error,
                                     uint32_t detail);
 static bool commissioning_flux_result_print(
-  const motor_torque_loop_test_result_t *measurement)
+  const commissioning_iq_result_t *measurement)
 {
   motor_parameter_t candidate;
   int64_t resistive_drop_uv;
@@ -124,7 +168,7 @@ static bool commissioning_flux_result_print(
 }
 
 static void commissioning_current_q_failure_print(
-  const motor_torque_loop_test_result_t *result);
+  const commissioning_iq_result_t *result);
 
 /** @brief 锁存当前辨识失败阶段及底层状态码。 @param error 失败阶段。 @param detail 模块原始状态码。 @return 无。 */
 static void commissioning_error_set(motor_commissioning_error_t error,
@@ -205,9 +249,8 @@ const char *motor_commissioning_error_detail_name_get(
   if (error == MOTOR_COMMISSIONING_ERROR_CURRENT_Q)
   {
     static const char *const names[] = {"ok", "invalid_argument",
-      "pwm_busy", "open_loop_start_failed", "bootstrap_failed",
-      "bootstrap_timeout", "sensor_invalid", "hall_lost",
-      "overcurrent", "pwm_fault"};
+      "pwm_busy", "config_failed", "start_failed", "startup_timeout",
+      "control_lost", "hall_lost", "overcurrent", "pwm_fault", "aborted"};
     return (detail < (sizeof(names) / sizeof(names[0]))) ? names[detail] : "unknown";
   }
   if (error == MOTOR_COMMISSIONING_ERROR_CURRENT_PI)
@@ -322,9 +365,217 @@ static bool commissioning_hall_decoder_reload(void)
     motor_current_control_parameter_reload();
 }
 
+/** @brief 保存退出时的电流环、相电流、转子和PWM快照。 @param result 结果。 @return 无。 */
+static void commissioning_iq_snapshot(commissioning_iq_result_t *result)
+{
+  motor_current_control_status_t control;
+  motor_current_sample_state_t current;
+  motor_rotor_feedback_t rotor;
+  motor_pwm_port_status_t pwm;
+
+  if (motor_current_control_status_read(&control))
+  {
+    result->final_direct_current_ma = control.direct_feedback_ma;
+    result->final_quadrature_current_ma = control.quadrature_feedback_ma;
+    result->final_direct_voltage_mv = control.direct_voltage_mv;
+    result->final_quadrature_voltage_mv = control.quadrature_voltage_mv;
+    result->final_electrical_angle_u16 = control.electrical_angle_u16;
+  }
+  if (motor_current_sample_state_read(&current))
+  {
+    result->final_phase_a_ma = current.phase_a_ma;
+    result->final_phase_b_ma = current.phase_b_ma;
+    result->final_phase_c_ma = current.phase_c_ma;
+  }
+  if (motor_rotor_feedback_read(&rotor))
+  {
+    result->final_frequency_millihz = rotor.electrical_frequency_millihz;
+    result->final_hall_state = rotor.source_state;
+  }
+  if (motor_pwm_port_status_read(&pwm))
+  {
+    result->final_pwm_software_enabled = pwm.software_output_enabled;
+    result->final_gate_driver_enabled = pwm.gate_driver_enabled;
+    result->final_pwm_moe_enabled = pwm.timer_main_output_enabled;
+    result->final_pwm_break_active = pwm.break_flag_active;
+    result->final_nfault_high = pwm.nfault_high;
+  }
+}
+
+/** @brief 按电流环/电流采样故障归类测量失败原因。 @return 状态码。 */
+static commissioning_iq_status_t commissioning_iq_fault_status_get(void)
+{
+  motor_current_control_status_t control;
+  motor_current_sample_state_t current;
+
+  if (motor_current_sample_state_read(&current) && current.overcurrent_fault)
+    return COMMISSIONING_IQ_STATUS_OVERCURRENT;
+  if (motor_current_control_status_read(&control))
+  {
+    if (control.fault == MOTOR_CURRENT_CONTROL_FAULT_HALL)
+      return COMMISSIONING_IQ_STATUS_HALL_LOST;
+    if (control.fault == MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT)
+      return COMMISSIONING_IQ_STATUS_OVERCURRENT;
+    if (control.fault == MOTOR_CURRENT_CONTROL_FAULT_PWM)
+      return COMMISSIONING_IQ_STATUS_PWM_FAULT;
+  }
+  return COMMISSIONING_IQ_STATUS_CONTROL_LOST;
+}
+
+/**
+ * @brief 经正式电流启动路径进入Hall电流闭环，测量低Iq稳态平均值。
+ * @param result 输出统计及快照，不允许为空。
+ * @param direct_kp_q15 d轴比例增益。
+ * @param quadrature_kp_q15 q轴比例增益。
+ * @param integral_gain_q15 dq共用积分增益。
+ * @return 启动、稳定等待和统计全部完成返回true。
+ * @details 低功率限压/限流配置只在本次测量期间有效，退出时由调用方的
+ *          参数重载恢复正式限制。主循环1 ms轮询，所有等待均有超时。
+ */
+static bool commissioning_iq_measure(commissioning_iq_result_t *result,
+                                     int32_t direct_kp_q15,
+                                     int32_t quadrature_kp_q15,
+                                     int32_t integral_gain_q15)
+{
+  motor_current_control_config_t config;
+  motor_current_control_command_t command;
+  motor_current_control_status_t control;
+  motor_control_status_t status;
+  int64_t id_sum = 0, iq_sum = 0, vd_sum = 0, vq_sum = 0;
+  uint32_t elapsed_ms;
+  uint32_t count = 0U;
+  int32_t value;
+
+  if (result == NULL) return false;
+  (void)memset(result, 0, sizeof(*result));
+  if ((direct_kp_q15 <= 0) || (quadrature_kp_q15 <= 0) ||
+      (integral_gain_q15 <= 0))
+  {
+    result->status = COMMISSIONING_IQ_STATUS_INVALID_ARGUMENT;
+    return false;
+  }
+  if (motor_pwm_port_output_is_enabled())
+  {
+    result->status = COMMISSIONING_IQ_STATUS_PWM_BUSY;
+    return false;
+  }
+
+  config.direct_kp_q15 = direct_kp_q15;
+  config.quadrature_kp_q15 = quadrature_kp_q15;
+  config.integral_gain_q15 = integral_gain_q15;
+  config.voltage_limit_percent = MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT;
+  config.hard_voltage_limit_mv = MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV;
+  config.command_limit_ma = MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA;
+  config.abort_current_ma = MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA;
+  if (!motor_current_control_config_set(&config))
+  {
+    result->status = COMMISSIONING_IQ_STATUS_CONFIG_FAILED;
+    return false;
+  }
+
+  /* 逻辑方向的正Iq，与正式"current start 0 <iq>"同一条I/F→Hall路径。 */
+  command.direct_reference_ma = 0;
+  command.quadrature_reference_ma = MOTOR_COMMISSIONING_IQ_REFERENCE_MA;
+  if (!motor_control_current_control_start(&command))
+  {
+    result->status = COMMISSIONING_IQ_STATUS_START_FAILED;
+    commissioning_iq_snapshot(result);
+    return false;
+  }
+
+  for (elapsed_ms = 0U; ; elapsed_ms++)
+  {
+    motor_control_poll();
+    if (commissioning_abort_requested)
+    {
+      result->status = COMMISSIONING_IQ_STATUS_ABORTED;
+      break;
+    }
+    if ((!motor_control_status_read(&status)) ||
+        (status.state == MOTOR_CONTROL_STATE_FAULT) ||
+        (!motor_current_control_status_read(&control)))
+    {
+      result->status = commissioning_iq_fault_status_get();
+      break;
+    }
+    if (status.state == MOTOR_CONTROL_STATE_CURRENT_STARTING)
+    {
+      if (elapsed_ms >= MOTOR_COMMISSIONING_IQ_STARTUP_TIMEOUT_MS)
+      {
+        result->status = COMMISSIONING_IQ_STATUS_STARTUP_TIMEOUT;
+        break;
+      }
+      wk_delay_ms(1U);
+      continue;
+    }
+    if ((status.state != MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
+        (control.state != MOTOR_CURRENT_CONTROL_RUNNING))
+    {
+      result->status = commissioning_iq_fault_status_get();
+      break;
+    }
+    break; /* 已进入Hall电流闭环。 */
+  }
+  if (result->status != COMMISSIONING_IQ_STATUS_OK)
+  {
+    commissioning_iq_snapshot(result);
+    motor_control_stop();
+    return false;
+  }
+
+  /* 闭环稳定等待。 */
+  for (elapsed_ms = 0U; elapsed_ms < MOTOR_COMMISSIONING_IQ_SETTLE_MS +
+                                     MOTOR_COMMISSIONING_IQ_MEASURE_MS;
+       elapsed_ms++)
+  {
+    wk_delay_ms(1U);
+    motor_control_poll();
+    if (commissioning_abort_requested)
+    {
+      result->status = COMMISSIONING_IQ_STATUS_ABORTED;
+      break;
+    }
+    if ((!motor_control_status_read(&status)) ||
+        (status.state != MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
+        (!motor_current_control_status_read(&control)) ||
+        (control.state != MOTOR_CURRENT_CONTROL_RUNNING))
+    {
+      result->status = commissioning_iq_fault_status_get();
+      break;
+    }
+    if (elapsed_ms < MOTOR_COMMISSIONING_IQ_SETTLE_MS) continue;
+    id_sum += control.direct_feedback_ma;
+    iq_sum += control.quadrature_feedback_ma;
+    vd_sum += control.direct_voltage_mv;
+    vq_sum += control.quadrature_voltage_mv;
+    count++;
+    value = (control.direct_feedback_ma < 0) ?
+      -control.direct_feedback_ma : control.direct_feedback_ma;
+    if (value > result->direct_peak_ma) result->direct_peak_ma = value;
+    value = (control.quadrature_feedback_ma < 0) ?
+      -control.quadrature_feedback_ma : control.quadrature_feedback_ma;
+    if (value > result->quadrature_peak_ma) result->quadrature_peak_ma = value;
+  }
+
+  commissioning_iq_snapshot(result);
+  motor_control_stop();
+  result->sample_count = count;
+  if ((result->status != COMMISSIONING_IQ_STATUS_OK) || (count == 0U))
+  {
+    if (result->status == COMMISSIONING_IQ_STATUS_OK)
+      result->status = COMMISSIONING_IQ_STATUS_CONTROL_LOST;
+    return false;
+  }
+  result->direct_average_ma = (int32_t)(id_sum / (int64_t)count);
+  result->quadrature_average_ma = (int32_t)(iq_sum / (int64_t)count);
+  result->direct_voltage_average_mv = (int32_t)(vd_sum / (int64_t)count);
+  result->quadrature_voltage_average_mv = (int32_t)(vq_sum / (int64_t)count);
+  return true;
+}
+
 /** @brief 使用候选参数完成低功率Iq验证后无条件恢复原活动参数。 @param q_result Iq测试结果。 @return 测试及恢复均成功时返回true。 */
 static bool commissioning_candidate_trial_run(
-  motor_torque_loop_test_result_t *q_result)
+  commissioning_iq_result_t *q_result)
 {
   motor_parameter_t backup;
   motor_parameter_t trial;
@@ -338,7 +589,7 @@ static bool commissioning_candidate_trial_run(
   if (motor_parameter_active_read(&trial) &&
       commissioning_hall_decoder_reload())
   {
-    tests_ok = motor_torque_loop_test_run_with_gains(
+    tests_ok = commissioning_iq_measure(
         q_result, trial.current_d_kp_q15, trial.current_q_kp_q15,
         trial.current_ki_q15);
     if (!tests_ok)
@@ -470,7 +721,7 @@ static bool commissioning_pi_run(void)
  * @return 测试完成且原活动参数及Hall解码器均恢复时返回true。
  */
 static bool commissioning_offset_measurement_run(
-  motor_torque_loop_test_result_t *result)
+  commissioning_iq_result_t *result)
 {
   motor_parameter_t backup;
   motor_parameter_t trial;
@@ -481,7 +732,7 @@ static bool commissioning_offset_measurement_run(
   if (motor_parameter_active_read(&trial) &&
       commissioning_hall_decoder_reload())
   {
-    measurement_ok = motor_torque_loop_test_run_with_gains(
+    measurement_ok = commissioning_iq_measure(
       result, trial.current_d_kp_q15, trial.current_q_kp_q15,
       trial.current_ki_q15);
   }
@@ -497,7 +748,7 @@ static bool commissioning_offset_measurement_run(
  * @return 测量、角度求解和候选参数更新全部成功时返回true。
  */
 static bool commissioning_hall_offset_run(
-  motor_torque_loop_test_result_t *measurement)
+  commissioning_iq_result_t *measurement)
 {
   motor_parameter_t candidate;
   motor_hall_offset_identification_input_t input;
@@ -546,7 +797,7 @@ static bool commissioning_hall_offset_run(
 
 /** @brief 打印Iq和接管测试结果。@param result 测试结果，不允许为空。@return 无。 */
 static void commissioning_current_q_result_print(
-  const motor_torque_loop_test_result_t *result)
+  const commissioning_iq_result_t *result)
 {
   LOGI("Commissioning Iq/handover: PASS average=%ld/%ld mA peak=%ld/%ld mA voltage=%ld/%ld mV frequency=%lu mHz samples=%lu\r\n",
     result->direct_average_ma, result->quadrature_average_ma,
@@ -561,7 +812,7 @@ static void commissioning_current_q_result_print(
  * @return 无。
  */
 static void commissioning_current_q_failure_print(
-  const motor_torque_loop_test_result_t *result)
+  const commissioning_iq_result_t *result)
 {
   LOGE("Commissioning Iq/handover diag: status=%u samples=%lu hall=%u frequency=%lu mHz angle=%u phase=%ld/%ld/%ld mA id/iq=%ld/%ld mA vd/vq=%ld/%ld mV pwm_sw/gate/moe/bif/nfault=%u/%u/%u/%u/%u\r\n",
     (unsigned int)result->status, (unsigned long)result->sample_count,
@@ -804,7 +1055,7 @@ static bool commissioning_hall_run(void)
 bool motor_commissioning_run(motor_commissioning_task_t task)
 {
   bool ok=false;
-  motor_torque_loop_test_result_t q_result;
+  commissioning_iq_result_t q_result;
   if ((task==MOTOR_COMMISSIONING_TASK_NONE) || !commissioning_ready() ||
       (commissioning_status.state==MOTOR_COMMISSIONING_RUNNING)) return false;
   commissioning_status.state=MOTOR_COMMISSIONING_RUNNING;

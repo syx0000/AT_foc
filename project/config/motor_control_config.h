@@ -168,15 +168,15 @@
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
 #define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
 
-/* Hall角度闭环转矩测试参数：第三级使用1 A、5秒观察15%限压下的空载转速。 */
-#define MOTOR_TORQUE_TEST_QUADRATURE_REFERENCE_MA    1000L
-#define MOTOR_TORQUE_TEST_REFERENCE_RAMP_SAMPLES     3200U /* 200 ms @16 kHz */
-#define MOTOR_TORQUE_TEST_DURATION_SAMPLES          80000U /* 5 s @16 kHz */
-#define MOTOR_TORQUE_TEST_ABORT_CURRENT_MA           10000L
-#define MOTOR_TORQUE_TEST_BOOTSTRAP_TIMEOUT_MS        6000U
-#define MOTOR_TORQUE_TEST_HANDOVER_FREQUENCY_MILLIHZ 8000U
-#define MOTOR_TORQUE_TEST_BUS_VOLTAGE_LIMIT_PERCENT     15U
-#define MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV   7200L
+/* 辨识低Iq闭环测量（hall_offset/flux/候选验证）：经正式电流启动进入Hall闭环，
+ * 1 A、15%限压，稳定1 s后统计4 s。 */
+#define MOTOR_COMMISSIONING_IQ_REFERENCE_MA           1000L
+#define MOTOR_COMMISSIONING_IQ_STARTUP_TIMEOUT_MS     6000U
+#define MOTOR_COMMISSIONING_IQ_SETTLE_MS              1000U
+#define MOTOR_COMMISSIONING_IQ_MEASURE_MS             4000U
+#define MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA      10000L
+#define MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT 15U
+#define MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV 7200L
 
 /* Hall转子角度补偿辨识：正Iq低功率闭环平均电压的有效性和单次修正限制。 */
 #define MOTOR_HALL_OFFSET_MINIMUM_VQ_MV                 500U
@@ -197,8 +197,8 @@
 
 #if ((MOTOR_HALL_OFFSET_MINIMUM_VQ_MV == 0U) || \
      (MOTOR_HALL_OFFSET_MINIMUM_VQ_MV > \
-      MOTOR_TORQUE_TEST_ABSOLUTE_VOLTAGE_LIMIT_MV))
-#error "Hall offset minimum Vq must fit the torque-test voltage limit"
+      MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV))
+#error "Hall offset minimum Vq must fit the commissioning Iq voltage limit"
 #endif
 
 #if ((MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16 == 0U) || \

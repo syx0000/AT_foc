@@ -535,11 +535,6 @@
               <FilePath>..\foc\foc_app\motor_inductance_identification.c</FilePath>
             </File>
             <File>
-              <FileName>motor_torque_loop_test.c</FileName>
-              <FileType>1</FileType>
-              <FilePath>..\foc\foc_app\motor_torque_loop_test.c</FilePath>
-            </File>
-            <File>
               <FileName>motor_current_control.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\foc\foc_app\motor_current_control.c</FilePath>
