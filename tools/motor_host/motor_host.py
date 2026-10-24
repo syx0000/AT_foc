@@ -221,8 +221,13 @@ class MotorHost(QMainWindow):
             ("Hall补偿", "calibrate hall offset"),
             ("计算电流PI", "calculate current_pi"),
             ("丢弃候选", "motor commissioning discard"),
+            ("活动参数", "motor params active"),
+            ("存储状态", "motor params storage"),
+            ("加载Flash", "motor params load"),
+            ("恢复默认", "motor params defaults"),
         ]
-        passive = {"motor commissioning diff"}
+        passive = {"motor commissioning diff", "motor params active",
+                   "motor params storage"}
         for index, item in enumerate(items):
             grid.addWidget(self._command_button(
                 *item, commissioning=item[1] not in passive), index // 5, index % 5)
@@ -233,10 +238,6 @@ class MotorHost(QMainWindow):
         layout = QVBoxLayout(tab)
         grid = QGridLayout()
         items = [
-            ("活动参数", "motor params active"),
-            ("存储状态", "motor params storage"),
-            ("加载Flash", "motor params load"),
-            ("恢复默认", "motor params defaults"),
             ("正常方向", "motor direction normal"),
             ("反向方向", "motor direction reverse"),
             ("查询方向", "motor direction"),

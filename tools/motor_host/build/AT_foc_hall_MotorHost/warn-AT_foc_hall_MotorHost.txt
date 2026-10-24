@@ -14,13 +14,13 @@ Types of import:
 IMPORTANT: Do NOT post this list to the issue-tracker. Use it as a basis for
             tracking down the missing module yourself. Thanks!
 
-missing module named org - imported by copy (top-level)
+missing module named 'org.python' - imported by copy (top-level)
 missing module named _frozen_importlib_external - imported by importlib._bootstrap (top-level), importlib (top-level), importlib.abc (top-level)
 excluded module named _frozen_importlib - imported by importlib (top-level), importlib.abc (top-level)
 missing module named pep517 - imported by importlib.metadata (top-level)
 missing module named grp - imported by shutil (top-level), tarfile (top-level), pathlib (top-level), subprocess (top-level)
 missing module named pwd - imported by posixpath (top-level), shutil (top-level), tarfile (top-level), pathlib (top-level), subprocess (top-level)
-missing module named 'org.python' - imported by pickle (top-level)
+missing module named org - imported by pickle (top-level)
 missing module named posix - imported by os (top-level), shutil (top-level), importlib._bootstrap_external (top-level)
 missing module named resource - imported by posix (top-level)
 missing module named _posixsubprocess - imported by subprocess (top-level)
