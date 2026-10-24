@@ -498,39 +498,6 @@ static bool commissioning_current_d_run(
 }
 
 /**
- * @brief 使用候选参数中的PI增益执行开环到Hall电流环接管验证。
- * @param result 输出Iq及接管验证结果，不允许为空。
- * @return 候选参数有效且测试通过返回true。
- */
-static bool commissioning_current_q_run(
-  motor_torque_loop_test_result_t *result)
-{
-  motor_parameter_t parameter;
-  bool ok;
-
-  if (!motor_parameter_candidate_read(&parameter))
-  {
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U);
-    return false;
-  }
-  ok = motor_torque_loop_test_run_with_gains(
-      result, parameter.current_d_kp_q15, parameter.current_q_kp_q15,
-      parameter.current_ki_q15);
-  if (!motor_current_control_parameter_reload())
-  {
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 2U);
-    return false;
-  }
-  if (!ok)
-  {
-    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
-                            (uint32_t)result->status);
-    commissioning_current_q_failure_print(result);
-  }
-  return ok;
-}
-
-/**
  * @brief 临时应用候选参数并执行一次正Iq低功率闭环测量。
  * @param result 输出稳定段dq电压及电流统计，不允许为空。
  * @return 测试完成且原活动参数及Hall解码器均恢复时返回true。
@@ -909,11 +876,6 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
   {
     ok=commissioning_current_d_run(&d_result);
     if(ok) commissioning_current_d_result_print(&d_result);
-  }
-  else if((task==MOTOR_COMMISSIONING_TASK_CURRENT_Q)||(task==MOTOR_COMMISSIONING_TASK_CURRENT_HANDOVER))
-  {
-    ok=commissioning_current_q_run(&q_result);
-    if(ok) commissioning_current_q_result_print(&q_result);
   }
   else if(task==MOTOR_COMMISSIONING_TASK_FULL)
   {
