@@ -31,7 +31,28 @@ PARAMETER_NAMES = [
     "hall_rotor_offset_u16",
     "hall_delay_us",
     "flux_linkage_uwb",
+    "speed_maximum_rpm",
+    "speed_acceleration_rpm_per_s",
 ]
+# motor params active 回显字段 -> 参数名（多值字段按顺序拆分）。
+ACTIVE_FIELD_MAP = {
+    "pole_pairs": ["pole_pairs"],
+    "direction_inverted": ["direction_inverted"],
+    "rs_mohm": ["phase_resistance_mohm"],
+    "ld_uh": ["direct_inductance_uh"],
+    "lq_uh": ["quadrature_inductance_uh"],
+    "bandwidth_hz": ["current_loop_bandwidth_hz"],
+    "current_pi_q15": ["current_d_kp_q15", "current_q_kp_q15",
+                       "current_ki_q15"],
+    "speed_pi_q20": ["speed_kp_q20", "speed_ki_q20"],
+    "hall_offset_u16": ["hall_rotor_offset_u16"],
+    "hall_delay_us": ["hall_delay_us"],
+    "flux_linkage_uwb": ["flux_linkage_uwb"],
+    "speed_maximum_rpm": ["speed_maximum_rpm"],
+    "speed_acceleration_rpm_per_s": ["speed_acceleration_rpm_per_s"],
+}
+SILENT_QUERY = "motor params active"
+SILENT_TIMEOUT_MS = 500
 
 
 class HistoryLineEdit(QLineEdit):
@@ -80,6 +101,12 @@ class MotorHost(QMainWindow):
         self.debug_enabled = False
         self.mode_started = {"open": False, "current": False, "speed": False}
         self.mode_buttons: dict[str, QPushButton] = {}
+        self.active_values: dict[str, str] = {}
+        self.silent_active = False
+        self.silent_buffer = ""
+        self.silent_timer = QTimer(self)
+        self.silent_timer.setSingleShot(True)
+        self.silent_timer.timeout.connect(self.silent_query_timeout)
         self._build_ui()
         self.refresh_ports()
         self.rx_timer = QTimer(self)
@@ -108,13 +135,17 @@ class MotorHost(QMainWindow):
         reset_button = QPushButton("复位设备")
         reset_button.clicked.connect(self.reset_device)
         connection.addWidget(reset_button)
+        stop_button = QPushButton("停止电机")
+        stop_button.clicked.connect(self.stop_motor)
+        connection.addWidget(stop_button)
         connection.addStretch()
         layout.addLayout(connection)
 
         tabs = QTabWidget()
         tabs.addTab(self._control_tab(), "运行控制")
         tabs.addTab(self._commissioning_tab(), "自动辨识")
-        tabs.addTab(self._parameter_tab(), "参数与诊断")
+        self.parameter_tab_index = tabs.addTab(self._parameter_tab(), "参数与诊断")
+        tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(tabs)
 
         console_group = QGroupBox("串口日志")
@@ -160,10 +191,7 @@ class MotorHost(QMainWindow):
         for column, item in enumerate([
             ("故障", "fault"), ("清故障", "fault clear")], 2):
             quick.addWidget(self._command_button(*item), 0, column)
-        stop_button = QPushButton("停止电机")
-        stop_button.clicked.connect(self.stop_motor)
-        quick.addWidget(stop_button, 0, 4)
-        quick.addWidget(self._command_button("帮助", "help"), 0, 5)
+        quick.addWidget(self._command_button("帮助", "help"), 0, 4)
         layout.addLayout(quick)
 
         open_group = QGroupBox("开环控制")
@@ -209,28 +237,22 @@ class MotorHost(QMainWindow):
 
     def _commissioning_tab(self) -> QWidget:
         tab = QWidget()
-        grid = QGridLayout(tab)
-        items = [
-            ("参数差异", "motor commissioning diff"),
-            ("接受候选", "motor commissioning accept"),
-            ("保存参数", "motor commissioning save"),
+        layout = QVBoxLayout(tab)
+        identify_items = [
             ("ADC零偏", "calibrate current_offset"),
             ("辨识Rs", "identify resistance"),
             ("辨识Ld/Lq", "identify inductance"),
             ("Hall角度", "calibrate hall angle"),
             ("Hall补偿", "calibrate hall offset"),
             ("计算电流PI", "calculate current_pi"),
-            ("丢弃候选", "motor commissioning discard"),
-            ("活动参数", "motor params active"),
-            ("存储状态", "motor params storage"),
-            ("加载Flash", "motor params load"),
-            ("恢复默认", "motor params defaults"),
         ]
-        passive = {"motor commissioning diff", "motor params active",
-                   "motor params storage"}
-        for index, item in enumerate(items):
-            grid.addWidget(self._command_button(
-                *item, commissioning=item[1] not in passive), index // 5, index % 5)
+        group = QGroupBox("辨识步骤")
+        grid = QGridLayout(group)
+        for index, item in enumerate(identify_items):
+            grid.addWidget(self._command_button(*item, commissioning=True),
+                           index // 5, index % 5)
+        layout.addWidget(group)
+        layout.addStretch(1)
         return tab
 
     def _parameter_tab(self) -> QWidget:
@@ -251,12 +273,35 @@ class MotorHost(QMainWindow):
         self.parameter_name = QComboBox()
         self.parameter_name.addItems(PARAMETER_NAMES)
         self.parameter_value = QLineEdit()
+        self.parameter_name.currentTextChanged.connect(
+            self.on_parameter_name_changed)
         form.addRow("参数名", self.parameter_name)
         form.addRow("数值", self.parameter_value)
         set_button = QPushButton("设置候选参数")
         set_button.clicked.connect(self.send_parameter)
         form.addRow(set_button)
         layout.addLayout(form)
+
+        parameter_items = [
+            ("活动参数", "motor params active"),
+            ("存储状态", "motor params storage"),
+            ("加载Flash", "motor params load"),
+            ("恢复默认", "motor params defaults"),
+            ("丢弃候选", "motor commissioning discard"),
+            ("参数差异", "motor commissioning diff"),
+            ("接受候选", "motor commissioning accept"),
+            ("保存参数", "motor commissioning save"),
+        ]
+        passive = {"motor commissioning diff", "motor params active",
+                   "motor params storage"}
+        group = QGroupBox("参数管理")
+        manage = QGridLayout(group)
+        for index, item in enumerate(parameter_items):
+            manage.addWidget(self._command_button(
+                *item, commissioning=item[1] not in passive),
+                index // 5, index % 5)
+        layout.addWidget(group)
+        layout.addStretch(1)
         return tab
 
     def refresh_ports(self) -> None:
@@ -284,6 +329,8 @@ class MotorHost(QMainWindow):
         self.connect_button.setText("断开")
         self.connection_state.setText(f"已连接 {port}")
         self.append_console(f"[{datetime.now():%H:%M:%S}] 已连接 {port}\n")
+        self.active_values.clear()
+        self.request_active_parameters()
 
     def disconnect(self) -> None:
         if self.serial_port:
@@ -309,6 +356,10 @@ class MotorHost(QMainWindow):
             self.append_console(f"\n[串口错误] {exc}\n")
             self.disconnect()
             return
+        if self.silent_active:
+            text = self.consume_silent_reply(text)
+            if not text:
+                return
         self.append_console(text)
         if ("OK commissioning complete" in text or
                 "ERR commissioning rejected_or_failed" in text):
@@ -385,6 +436,71 @@ class MotorHost(QMainWindow):
             QMessageBox.warning(self, "提示", "请输入参数名和数值")
             return
         self.send_command(f"motor param set {name} {value}")
+
+    # ---- 参数当前值静默读取：不在串口日志中回显命令与应答 ----
+    def on_tab_changed(self, index: int) -> None:
+        if index == self.parameter_tab_index:
+            self.request_active_parameters()
+
+    def on_parameter_name_changed(self, _name: str) -> None:
+        self.show_current_parameter_value()
+        self.request_active_parameters()
+
+    def show_current_parameter_value(self) -> None:
+        name = self.parameter_name.currentText().strip()
+        if name in self.active_values:
+            self.parameter_value.setText(self.active_values[name])
+
+    def request_active_parameters(self) -> None:
+        if (self.silent_active or self.debug_enabled or
+                not self.serial_port or not self.serial_port.is_open):
+            return
+        try:
+            self.serial_port.write((SILENT_QUERY + "\r\n").encode("ascii"))
+        except serial.SerialException:
+            return
+        self.silent_active = True
+        self.silent_buffer = ""
+        self.silent_timer.start(SILENT_TIMEOUT_MS)
+
+    def consume_silent_reply(self, text: str) -> str:
+        """吞掉params active应答块，返回需要正常显示的其余文本。"""
+        self.silent_buffer += text
+        buffer = self.silent_buffer
+        start = buffer.find("OK params active")
+        if start < 0:
+            return ""
+        end_key = buffer.find("hall_angle=", start)
+        end = buffer.find("\n", end_key) if end_key >= 0 else -1
+        if end < 0:
+            return ""
+        self.parse_active_parameters(buffer[start:end])
+        self.finish_silent_query()
+        return buffer[:start] + buffer[end + 1:]
+
+    def parse_active_parameters(self, block: str) -> None:
+        for token in block.split():
+            if "=" not in token:
+                continue
+            key, value = token.split("=", 1)
+            names = ACTIVE_FIELD_MAP.get(key)
+            if not names:
+                continue
+            for name, part in zip(names, value.split("/")):
+                self.active_values[name] = part
+        self.show_current_parameter_value()
+
+    def silent_query_timeout(self) -> None:
+        # 无应答或格式不符：把缓存内容按原样补显示，避免丢日志。
+        rest = self.silent_buffer
+        self.finish_silent_query()
+        if rest:
+            self.append_console(rest)
+
+    def finish_silent_query(self) -> None:
+        self.silent_timer.stop()
+        self.silent_active = False
+        self.silent_buffer = ""
 
     def toggle_debug(self) -> None:
         self.send_command("debug 0" if self.debug_enabled else "debug 1")
