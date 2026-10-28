@@ -16,11 +16,12 @@
 #include "motor_pwm_port.h"
 
 #define MOTOR_PARAMETER_STORAGE_MAGIC          0x4D50524DU
-#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 3U
-/* v2记录不含速度上限/加速度；其参数区是v3参数结构的前缀。 */
-#define MOTOR_PARAMETER_STORAGE_LEGACY_VERSION 2U
-#define MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH  \
+#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 4U
+/* v2不含速度上限/加速度，v3不含速度Iq限幅；参数区均为v4结构的前缀。 */
+#define MOTOR_PARAMETER_STORAGE_V2_LENGTH  \
   offsetof(motor_parameter_t, speed_maximum_rpm)
+#define MOTOR_PARAMETER_STORAGE_V3_LENGTH  \
+  offsetof(motor_parameter_t, speed_current_limit_ma)
 #define MOTOR_PARAMETER_STORAGE_COMMIT_MARKER  0x434F4D54U
 #define MOTOR_PARAMETER_STORAGE_SLOT_A_ADDR    FLASH_USER_START_ADDR
 #define MOTOR_PARAMETER_STORAGE_SLOT_B_ADDR    \
@@ -36,20 +37,6 @@ typedef struct
   uint32_t crc32;
   uint32_t commit_marker;
 } motor_parameter_storage_record_t;
-
-typedef struct
-{
-  uint32_t magic;
-  uint16_t format_version;
-  uint16_t length;
-  uint32_t sequence;
-  uint8_t parameter[MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH];
-  uint32_t crc32;
-  uint32_t commit_marker;
-} motor_parameter_storage_legacy_record_t;
-
-typedef char motor_parameter_legacy_length_must_be_word_aligned[
-  ((MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH % 4U) == 0U) ? 1 : -1];
 
 typedef char motor_parameter_record_must_fit_one_sector[
   (sizeof(motor_parameter_storage_record_t) <= FLASH_SECTOR_SIZE) ? 1 : -1];
@@ -81,31 +68,47 @@ static bool motor_parameter_storage_record_valid(
 static bool motor_parameter_storage_slot_read(
   uint32_t address, motor_parameter_storage_record_t *record)
 {
-  motor_parameter_storage_legacy_record_t legacy;
+  /* 旧版记录：头(12B) + 参数前缀(length) + crc32 + commit_marker，
+   * CRC覆盖头和参数前缀。v2/v3的参数区都是当前结构的前缀。 */
+  uint8_t raw[sizeof(motor_parameter_storage_record_t)];
+  uint16_t version;
+  uint16_t length;
+  uint32_t header_length = offsetof(motor_parameter_storage_record_t, parameter);
+  uint32_t crc;
+  uint32_t marker;
 
   flash_port_read(address, record, sizeof(*record));
   if (motor_parameter_storage_record_valid(record)) return true;
 
-  /* 兼容v2：校验旧布局CRC后，新字段补编译默认值再整体校验。 */
-  flash_port_read(address, &legacy, sizeof(legacy));
-  if ((legacy.magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
-      (legacy.format_version != MOTOR_PARAMETER_STORAGE_LEGACY_VERSION) ||
-      (legacy.length != MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH) ||
-      (legacy.commit_marker != MOTOR_PARAMETER_STORAGE_COMMIT_MARKER) ||
-      (flash_port_crc32(&legacy,
-        offsetof(motor_parameter_storage_legacy_record_t, crc32)) !=
-       legacy.crc32)) return false;
-  (void)memset(record, 0, sizeof(*record));
-  record->magic = legacy.magic;
-  record->format_version = MOTOR_PARAMETER_STORAGE_FORMAT_VERSION;
-  record->length = sizeof(motor_parameter_t);
-  record->sequence = legacy.sequence;
-  (void)memcpy(&record->parameter, legacy.parameter,
-               MOTOR_PARAMETER_STORAGE_LEGACY_LENGTH);
+  version = record->format_version;
+  length = record->length;
+  if (version == 2U)
+  {
+    if (length != MOTOR_PARAMETER_STORAGE_V2_LENGTH) return false;
+  }
+  else if (version == 3U)
+  {
+    if (length != MOTOR_PARAMETER_STORAGE_V3_LENGTH) return false;
+  }
+  else return false;
+  if ((record->magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
+      ((length % 4U) != 0U)) return false;
+  flash_port_read(address, raw, header_length + length + 8U);
+  (void)memcpy(&crc, &raw[header_length + length], sizeof(crc));
+  (void)memcpy(&marker, &raw[header_length + length + 4U], sizeof(marker));
+  if ((marker != MOTOR_PARAMETER_STORAGE_COMMIT_MARKER) ||
+      (flash_port_crc32(raw, header_length + length) != crc)) return false;
+
+  /* 缺失字段补编译默认值，再整体校验。 */
   record->parameter.speed_maximum_rpm =
     (uint32_t)MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
   record->parameter.speed_acceleration_rpm_per_s =
     MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
+  record->parameter.speed_current_limit_ma =
+    (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+  (void)memcpy(&record->parameter, &raw[header_length], length);
+  record->format_version = MOTOR_PARAMETER_STORAGE_FORMAT_VERSION;
+  record->length = sizeof(motor_parameter_t);
   record->commit_marker = MOTOR_PARAMETER_STORAGE_COMMIT_MARKER;
   return motor_parameter_validate(&record->parameter);
 }

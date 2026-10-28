@@ -73,6 +73,8 @@ static void motor_parameter_default_build(motor_parameter_t *parameter)
   parameter->speed_maximum_rpm = (uint32_t)MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
   parameter->speed_acceleration_rpm_per_s =
     MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
+  parameter->speed_current_limit_ma =
+    (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
   parameter->hall_rotor_offset_u16 = MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16;
   (void)memcpy(parameter->hall_positive_next, hall_positive_next,
                sizeof(hall_positive_next));
@@ -238,6 +240,9 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->speed_acceleration_rpm_per_s > 0U) &&
     (parameter->speed_acceleration_rpm_per_s <=
      MOTOR_PARAMETER_SPEED_ACCELERATION_MAX) &&
+    (parameter->speed_current_limit_ma > 0U) &&
+    (parameter->speed_current_limit_ma <=
+     (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) &&
     (parameter->hall_positive_next[0] == 0U) &&
     (parameter->hall_positive_next[7] == 0U) &&
     (parameter->hall_entry_angle_u16[0] == 0U) &&
@@ -324,6 +329,10 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
       if (value <= 0) return false;
       updated.speed_acceleration_rpm_per_s = (uint32_t)value;
       break;
+    case MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA:
+      if (value <= 0) return false;
+      updated.speed_current_limit_ma = (uint32_t)value;
+      break;
     default:
       return false;
   }
@@ -389,6 +398,9 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
       break;
     case MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S:
       *value = (int32_t)parameter->speed_acceleration_rpm_per_s;
+      break;
+    case MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA:
+      *value = (int32_t)parameter->speed_current_limit_ma;
       break;
     default:
       return false;

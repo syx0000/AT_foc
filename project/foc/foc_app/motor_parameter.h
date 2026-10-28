@@ -32,6 +32,7 @@ typedef enum
   MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB,
   MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM,
   MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S,
+  MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA,
   MOTOR_PARAMETER_FIELD_COUNT
 } motor_parameter_field_t;
 
@@ -55,6 +56,7 @@ typedef struct
   uint32_t flux_linkage_uwb;
   uint32_t speed_maximum_rpm;            /**< 速度指令绝对值上限，单位rpm。 */
   uint32_t speed_acceleration_rpm_per_s; /**< 速度斜坡加速度，单位rpm/s。 */
+  uint32_t speed_current_limit_ma;       /**< 速度环Iq输出限幅，单位mA。 */
 } motor_parameter_t;
 
 typedef struct

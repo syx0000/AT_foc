@@ -71,7 +71,7 @@ void motor_speed_control_init(void)
   motor_speed_control_config.proportional_gain_q20 = parameter.speed_kp_q20;
   motor_speed_control_config.integral_gain_q20 = parameter.speed_ki_q20;
   motor_speed_control_config.current_limit_ma =
-    MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+    (int32_t)parameter.speed_current_limit_ma;
   motor_speed_control_config.maximum_speed_rpm =
     (int32_t)parameter.speed_maximum_rpm;
   motor_speed_control_config.acceleration_rpm_per_s =
@@ -104,6 +104,7 @@ bool motor_speed_control_parameter_reload(void)
   config.integral_gain_q20 = parameter.speed_ki_q20;
   config.maximum_speed_rpm = (int32_t)parameter.speed_maximum_rpm;
   config.acceleration_rpm_per_s = parameter.speed_acceleration_rpm_per_s;
+  config.current_limit_ma = (int32_t)parameter.speed_current_limit_ma;
   return motor_speed_control_config_set(&config);
 }
 
@@ -335,4 +336,24 @@ bool motor_speed_control_status_read(motor_speed_control_status_t *status)
 int32_t motor_speed_control_maximum_rpm_get(void)
 {
   return motor_speed_control_config.maximum_speed_rpm;
+}
+
+bool motor_speed_control_current_limit_set(int32_t limit_ma)
+{
+  uint32_t primask;
+
+  if (limit_ma <= 0) return false;
+  if (limit_ma > MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA)
+    limit_ma = MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+  /* 速度PI在SysTick中运行：限幅与积分钳位需原子更新。 */
+  primask = __get_PRIMASK();
+  __disable_irq();
+  motor_speed_control_config.current_limit_ma = limit_ma;
+  motor_speed_controller.output_limit_ma = limit_ma;
+  if (motor_speed_controller.integral_ma > limit_ma)
+    motor_speed_controller.integral_ma = limit_ma;
+  else if (motor_speed_controller.integral_ma < -limit_ma)
+    motor_speed_controller.integral_ma = -limit_ma;
+  __set_PRIMASK(primask);
+  return true;
 }

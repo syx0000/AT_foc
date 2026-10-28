@@ -28,6 +28,7 @@
 #include "at32f45x_wk_config.h"
 #include "wk_adc.h"
 #include "wk_can.h"
+#include "motor_can.h"
 #include "wk_tmr.h"
 #include "wk_usart.h"
 #include "wk_dma.h"
@@ -208,7 +209,7 @@ int main(void)
   wk_usart3_init();
 
   /* init can1 function. */
-  wk_can1_init();
+  motor_can_init();
 
   /* init dma1 channel1 */
   wk_dma1_channel1_init();
@@ -342,6 +343,7 @@ int main(void)
     (void)motor_slow_sensor_process();
     motor_cli_poll();
     motor_control_poll();
+    motor_can_task();
 
     /* add user code end 3 */
   }

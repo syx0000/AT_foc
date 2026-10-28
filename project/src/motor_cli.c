@@ -102,7 +102,8 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB},
   {"speed_maximum_rpm", MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM},
   {"speed_acceleration_rpm_per_s",
-   MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S}
+   MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S},
+  {"speed_current_limit_ma", MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA}
 };
 
 #define MOTOR_CLI_PARAMETER_FIELD_COUNT \
@@ -157,9 +158,10 @@ static void motor_cli_parameter_print(const char *label,
          (unsigned int)parameter->hall_rotor_offset_u16,
          (unsigned int)parameter->hall_delay_compensation_us,
          (unsigned long)parameter->flux_linkage_uwb);
-  printf("speed_maximum_rpm=%lu speed_acceleration_rpm_per_s=%lu\r\n",
+  printf("speed_maximum_rpm=%lu speed_acceleration_rpm_per_s=%lu speed_current_limit_ma=%lu\r\n",
          (unsigned long)parameter->speed_maximum_rpm,
-         (unsigned long)parameter->speed_acceleration_rpm_per_s);
+         (unsigned long)parameter->speed_acceleration_rpm_per_s,
+         (unsigned long)parameter->speed_current_limit_ma);
   printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
          (unsigned int)parameter->hall_positive_next[1],
          (unsigned int)parameter->hall_positive_next[2],

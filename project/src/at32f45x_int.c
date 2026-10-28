@@ -41,6 +41,7 @@
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
+#include "motor_can.h"
 #include "motor_current_transform.h"
 #include "motor_inductance_identification.h"
 #include "motor_current_control.h"
@@ -260,6 +261,7 @@ void SysTick_Handler(void)
   motor_rotor_feedback_process_1khz();
   motor_speed_feedback_process_1khz();
   motor_speed_control_process_1khz();
+  motor_can_tick();
 
   /* add user code end SysTick_IRQ 0 */
 

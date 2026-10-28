@@ -410,6 +410,11 @@
               <FilePath>..\src\motor_cli.c</FilePath>
             </File>
             <File>
+              <FileName>motor_can.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\motor_can.c</FilePath>
+            </File>
+            <File>
               <FileName>wk_system.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\wk_system.c</FilePath>
