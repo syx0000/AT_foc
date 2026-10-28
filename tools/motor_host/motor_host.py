@@ -33,6 +33,7 @@ PARAMETER_NAMES = [
     "flux_linkage_uwb",
     "speed_maximum_rpm",
     "speed_acceleration_rpm_per_s",
+    "speed_current_limit_ma",
 ]
 # motor params active 回显字段 -> 参数名（多值字段按顺序拆分）。
 ACTIVE_FIELD_MAP = {
@@ -50,6 +51,7 @@ ACTIVE_FIELD_MAP = {
     "flux_linkage_uwb": ["flux_linkage_uwb"],
     "speed_maximum_rpm": ["speed_maximum_rpm"],
     "speed_acceleration_rpm_per_s": ["speed_acceleration_rpm_per_s"],
+    "speed_current_limit_ma": ["speed_current_limit_ma"],
 }
 SILENT_QUERY = "motor params active"
 SILENT_TIMEOUT_MS = 500
