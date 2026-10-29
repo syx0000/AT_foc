@@ -14,6 +14,28 @@
 
 #define MOTOR_PARAMETER_HALL_STATE_COUNT 8U
 
+#define MOTOR_PARAMETER_DEBUG_FIELDS(X) \
+  X(STARTUP_ALIGN_MA, startup_align_ma, (MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA), 1U, 24999U) \
+  X(STARTUP_ALIGN_MS, startup_align_ms, (MOTOR_CURRENT_STARTUP_ALIGNMENT_TIME_MS), 10U, 2000U) \
+  X(STARTUP_IF_MAX_MA, startup_if_max_ma, (MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA), 1600U, 24999U) \
+  X(STARTUP_RAMP_MHZ_S, startup_ramp_mhz_s, (MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS * 1000U), 1000U, 100000U) \
+  X(STARTUP_TIMEOUT_MS, startup_timeout_ms, (MOTOR_CURRENT_STARTUP_TIMEOUT_MS), 500U, 15000U) \
+  X(OFFSET_IQ_MA, offset_iq_ma, (MOTOR_COMMISSIONING_IQ_REFERENCE_MA), 1U, 20000U) \
+  X(OFFSET_VOLTAGE_PCT, offset_voltage_pct, (MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT), 1U, 57U) \
+  X(OFFSET_VOLTAGE_MV, offset_voltage_mv, (MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV), 100U, 27700U) \
+  X(OFFSET_SETTLE_MS, offset_settle_ms, (MOTOR_COMMISSIONING_IQ_SETTLE_MS), 100U, 10000U) \
+  X(OFFSET_MEASURE_MS, offset_measure_ms, (MOTOR_COMMISSIONING_IQ_MEASURE_MS), 100U, 10000U) \
+  X(FLUX_IQ_MA, flux_iq_ma, (MOTOR_COMMISSIONING_IQ_REFERENCE_MA), 1U, 20000U) \
+  X(FLUX_VOLTAGE_PCT, flux_voltage_pct, (MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT), 1U, 57U) \
+  X(FLUX_VOLTAGE_MV, flux_voltage_mv, (MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV), 100U, 27700U) \
+  X(FLUX_SETTLE_MS, flux_settle_ms, (MOTOR_COMMISSIONING_IQ_SETTLE_MS), 100U, 10000U) \
+  X(FLUX_MEASURE_MS, flux_measure_ms, (MOTOR_COMMISSIONING_IQ_MEASURE_MS), 100U, 10000U) \
+  X(HALL_SCAN_MV, hall_scan_mv, (1200U), 100U, 4800U) \
+  X(HALL_SCAN_MHZ, hall_scan_mhz, (5000U), 1000U, 20000U) \
+  X(STALL_SPEED_RPM, stall_speed_rpm, (MOTOR_SPEED_STALL_SPEED_RPM), 1U, 500U) \
+  X(STALL_TIME_MS, stall_time_ms, (MOTOR_SPEED_STALL_TIME_MS), 100U, 10000U) \
+  X(CAN_NODE_ID, can_node_id, (MOTOR_CAN_NODE_ID), 1U, 127U)
+
 typedef enum
 {
   MOTOR_PARAMETER_FIELD_POLE_PAIRS = 0,
@@ -33,6 +55,9 @@ typedef enum
   MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM,
   MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S,
   MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA,
+#define MOTOR_PARAMETER_DEBUG_ENUM(id, name, def, low, high) MOTOR_PARAMETER_FIELD_##id,
+  MOTOR_PARAMETER_DEBUG_FIELDS(MOTOR_PARAMETER_DEBUG_ENUM)
+#undef MOTOR_PARAMETER_DEBUG_ENUM
   MOTOR_PARAMETER_FIELD_COUNT
 } motor_parameter_field_t;
 
@@ -57,11 +82,14 @@ typedef struct
   uint32_t speed_maximum_rpm;            /**< 速度指令绝对值上限，单位rpm。 */
   uint32_t speed_acceleration_rpm_per_s; /**< 速度斜坡加速度，单位rpm/s。 */
   uint32_t speed_current_limit_ma;       /**< 速度环Iq输出限幅，单位mA。 */
+#define MOTOR_PARAMETER_DEBUG_MEMBER(id, name, def, low, high) uint32_t name;
+  MOTOR_PARAMETER_DEBUG_FIELDS(MOTOR_PARAMETER_DEBUG_MEMBER)
+#undef MOTOR_PARAMETER_DEBUG_MEMBER
 } motor_parameter_t;
 
 typedef struct
 {
-  uint32_t scalar_fields;
+  uint64_t scalar_fields;
   bool hall_sequence_changed;
   bool hall_angle_changed;
   bool any_changed;
@@ -74,6 +102,9 @@ typedef struct
  * @details 初始化后活动参数与候选参数完全一致，不操作PWM、Flash或任何外设。
  */
 void motor_parameter_init(void);
+void motor_parameter_defaults_build(motor_parameter_t *parameter);
+/* Atomic scalar read; parameters change only while stopped. */
+uint32_t motor_parameter_debug_get(motor_parameter_field_t field);
 
 /**
  * @brief 在启动阶段用已校验的持久化参数替换活动值和候选值。
@@ -150,7 +181,7 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
  * @brief 将完整候选参数应用为活动参数。
  * @param 无。
  * @return 候选参数合法且统一电机状态为READY、PWM关闭时返回true，否则返回false。
- * @details 本阶段只更新RAM活动参数；现有控制模块尚未切换为读取该结构，也不会写Flash。
+ * @details 更新RAM活动参数；调用方重载控制器，Flash持久化须单独执行save。
  */
 bool motor_parameter_candidate_accept(void);
 

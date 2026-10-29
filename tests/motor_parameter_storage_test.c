@@ -83,6 +83,13 @@ bool motor_parameter_boot_load(const motor_parameter_t *parameter)
   return true;
 }
 bool motor_parameter_defaults_restore(void) { return true; }
+void motor_parameter_defaults_build(motor_parameter_t *parameter)
+{
+  memset(parameter, 0, sizeof(*parameter));
+  parameter->speed_maximum_rpm = MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
+  parameter->speed_acceleration_rpm_per_s = MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
+  parameter->speed_current_limit_ma = MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+}
 bool motor_parameter_validate(const motor_parameter_t *parameter)
 {
   return (parameter != NULL) && (parameter->pole_pairs > 0U);

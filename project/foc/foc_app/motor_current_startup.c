@@ -300,7 +300,7 @@ void motor_current_startup_process_1khz(void)
           hall.state, &motor_current_startup_hall_direct_angle_u16)))
     {
       if (motor_current_startup_status.elapsed_ms >=
-          MOTOR_CURRENT_STARTUP_TIMEOUT_MS)
+          ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_TIMEOUT_MS)))
         motor_current_startup_fault_set(
           MOTOR_CURRENT_STARTUP_FAULT_HALL_TIMEOUT);
       return;
@@ -362,7 +362,7 @@ void motor_current_startup_process_1khz(void)
         MOTOR_CURRENT_STARTUP_ANGLE_BLEND;
     }
     else if (motor_current_startup_status.elapsed_ms >=
-             MOTOR_CURRENT_STARTUP_TIMEOUT_MS)
+             ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_TIMEOUT_MS)))
     {
       motor_current_startup_fault_set(
         MOTOR_CURRENT_STARTUP_FAULT_HALL_TIMEOUT);
@@ -402,7 +402,7 @@ void motor_current_startup_process_1khz(void)
   {
     command.direct_reference_ma = motor_current_startup_ramp(
       command.direct_reference_ma,
-      MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA,
+      ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_ALIGN_MA)),
       MOTOR_CURRENT_STARTUP_CURRENT_RAMP_MA_PER_MS);
     command.quadrature_reference_ma = motor_current_startup_ramp(
       command.quadrature_reference_ma, 0,
@@ -414,7 +414,7 @@ void motor_current_startup_process_1khz(void)
       return;
     }
     if (motor_current_startup_status.elapsed_ms <
-        MOTOR_CURRENT_STARTUP_ALIGNMENT_TIME_MS) return;
+        ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_ALIGN_MS))) return;
     motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_IF_RAMP;
     motor_current_startup_status.elapsed_ms = 0U;
     motor_current_startup_frequency_millihz =
@@ -456,7 +456,7 @@ void motor_current_startup_process_1khz(void)
       (measured_frequency_millihz < commanded_frequency_millihz) ?
       (commanded_frequency_millihz - measured_frequency_millihz) : 0U;
     startup_current_boost_ma =
-      ((int64_t)(MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA -
+      ((int64_t)(((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_IF_MAX_MA)) -
                  startup_current_magnitude) * frequency_lag_millihz) /
       commanded_frequency_millihz;
   }
@@ -469,9 +469,9 @@ void motor_current_startup_process_1khz(void)
       MOTOR_CURRENT_STARTUP_IF_BOOST_MA_PER_MS;
   }
   if (startup_current_boost_ma >
-      (MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA -
+      (((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_IF_MAX_MA)) -
        startup_current_magnitude))
-    startup_current_boost_ma = MOTOR_CURRENT_STARTUP_IF_MAXIMUM_CURRENT_MA -
+    startup_current_boost_ma = ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_IF_MAX_MA)) -
                                startup_current_magnitude;
   startup_current_magnitude += (int32_t)startup_current_boost_ma;
   startup_quadrature_target = motor_current_startup_direction *
@@ -490,7 +490,7 @@ void motor_current_startup_process_1khz(void)
     (int32_t)MOTOR_CURRENT_STARTUP_HANDOVER_FREQUENCY_MILLIHZ;
   motor_current_startup_frequency_millihz = motor_current_startup_ramp(
     motor_current_startup_frequency_millihz, target_frequency,
-    MOTOR_CURRENT_STARTUP_FREQUENCY_RAMP_MILLIHZ_PER_MS);
+    (motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_RAMP_MHZ_S) / 1000U));
 
   if ((!motor_hall_decoder_sample_read(&hall)) ||
       (!motor_hall_angle_estimator_read(&estimator))) return;
@@ -538,7 +538,7 @@ void motor_current_startup_process_1khz(void)
     motor_current_startup_status.state = MOTOR_CURRENT_STARTUP_ANGLE_BLEND;
   }
   if ((motor_current_startup_status.elapsed_ms >=
-       MOTOR_CURRENT_STARTUP_TIMEOUT_MS) &&
+       ((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STARTUP_TIMEOUT_MS))) &&
       (motor_current_startup_status.state != MOTOR_CURRENT_STARTUP_ANGLE_BLEND))
     motor_current_startup_fault_set(MOTOR_CURRENT_STARTUP_FAULT_HALL_TIMEOUT);
 }

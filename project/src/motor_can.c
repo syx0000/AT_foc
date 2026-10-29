@@ -16,6 +16,7 @@
 
 #include "at32f45x.h"
 #include "motor_can.h"
+#include "motor_parameter.h"
 #include "motor_control.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
@@ -53,13 +54,13 @@ void motor_can_init(void)
   gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE12, GPIO_MUX_9);
 
   /* HEXT = 8 MHz；位时间 = div * (BTS1 + BTS2)。
-   * 8 MHz / (1 * (12 + 4)) = 500 kbit/s，采样点75%。 */
+   * 8 MHz / (1 * (6 + 2)) = 1 Mbit/s，采样点75%。 */
   crm_can_clock_select(CRM_CAN1, CRM_CAN_CLOCK_SOURCE_HEXT);
   can_software_reset(CAN1, TRUE);
   can_bittime_default_para_init(&timing);
   timing.bittime_div = 1;
-  timing.ac_bts1_size = 12;
-  timing.ac_bts2_size = 4;
+  timing.ac_bts1_size = 6;
+  timing.ac_bts2_size = 2;
   timing.ac_rsaw_size = 2;
   can_bittime_set(CAN1, &timing);
   can_software_reset(CAN1, FALSE);
@@ -122,7 +123,7 @@ static bool motor_can_command_apply(const can_rxbuf_type *rx)
 {
   uint32_t raw;
 
-  if ((rx->id_type != CAN_ID_STANDARD) || (rx->id != MOTOR_CAN_NODE_ID) ||
+  if ((rx->id_type != CAN_ID_STANDARD) || (rx->id != motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_CAN_NODE_ID)) ||
       (rx->frame_type != CAN_FRAME_DATA))
     return false;
 #ifdef SUPPORT_CAN_FD
@@ -159,7 +160,7 @@ static void motor_can_feedback_send(void)
   int32_t quadrature_ma;
 
   if (motor_can_feedback_pending == 0U) return;
-  tx.id = MOTOR_CAN_NODE_ID;
+  tx.id = motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_CAN_NODE_ID);
   tx.id_type = CAN_ID_STANDARD;
   tx.frame_type = CAN_FRAME_DATA;
   tx.data_length = CAN_DLC_BYTES_4;

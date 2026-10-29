@@ -31,6 +31,27 @@ static uint32_t motor_fault_history_newest;
 static uint32_t motor_fault_sequence;
 static volatile uint32_t motor_fault_pending_mask;
 
+/* Check before PWM startup and during each main-loop poll. */
+static bool motor_control_mos_temperature_check(void)
+{
+  motor_slow_sensor_state_t sensor;
+  (void)motor_slow_sensor_process();
+  if ((!motor_slow_sensor_state_read(&sensor)) ||
+      (!sensor.mos_temperature_valid))
+  {
+    motor_control_fault_set(MOTOR_FAULT_MOS_TEMPERATURE_SENSOR);
+    return false;
+  }
+  if (sensor.mos_temperature_c >= MOTOR_MOS_OVERTEMPERATURE_C)
+  {
+    LOGE("MOS overtemperature: temperature=%d C\r\n",
+         (int)sensor.mos_temperature_c);
+    motor_control_fault_set(MOTOR_FAULT_MOS_OVERTEMPERATURE);
+    return false;
+  }
+  return true;
+}
+
 static bool motor_control_open_command_to_physical(
   const motor_open_loop_command_t *logical_command,
   motor_open_loop_command_t *physical_command)
@@ -80,6 +101,8 @@ const char *motor_control_fault_name_get(motor_fault_code_t fault_code)
     case MOTOR_FAULT_STALL: return "stall";
     case MOTOR_FAULT_OVERSPEED: return "overspeed";
     case MOTOR_FAULT_HARDWARE_BREAK: return "hardware_break";
+    case MOTOR_FAULT_MOS_OVERTEMPERATURE: return "mos_overtemperature";
+    case MOTOR_FAULT_MOS_TEMPERATURE_SENSOR: return "mos_temperature_sensor";
     default: return "invalid";
   }
 }
@@ -140,6 +163,7 @@ bool motor_control_ready_set(void)
 bool motor_control_open_loop_start(const motor_open_loop_command_t *command)
 {
   motor_open_loop_command_t physical_command;
+  if (!motor_control_mos_temperature_check()) return false;
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_READY) ||
       (!motor_control_open_command_to_physical(command, &physical_command)) ||
       (!motor_open_loop_start(&physical_command))) return false;
@@ -168,6 +192,7 @@ bool motor_control_current_control_start(
   uint32_t primask;
   bool handover_ok;
 
+  if (!motor_control_mos_temperature_check()) return false;
   (void)motor_slow_sensor_process();
   if (!motor_control_current_command_to_physical(command, &physical_command))
     return false;
@@ -226,6 +251,7 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
   motor_current_transform_state_t current_transform;
   int32_t initial_quadrature_current_ma;
 
+  if (!motor_control_mos_temperature_check()) return false;
   if (!motor_control_speed_command_valid(target_speed_rpm))
   {
     return false;
@@ -325,7 +351,7 @@ void motor_control_fault_set(motor_fault_code_t fault_code)
   bool should_log = false;
 
   if ((fault_code <= MOTOR_FAULT_NONE) ||
-      (fault_code > MOTOR_FAULT_HARDWARE_BREAK))
+      (fault_code > MOTOR_FAULT_MOS_TEMPERATURE_SENSOR))
     fault_code = MOTOR_FAULT_UNKNOWN;
   motor_pwm_port_emergency_stop();
   bit = 1UL << (uint32_t)fault_code;
@@ -380,7 +406,7 @@ void motor_control_fault_notify_from_isr(motor_fault_code_t fault_code)
 
   motor_pwm_port_emergency_stop();
   if ((fault_code <= MOTOR_FAULT_NONE) ||
-      (fault_code > MOTOR_FAULT_HARDWARE_BREAK))
+      (fault_code > MOTOR_FAULT_MOS_TEMPERATURE_SENSOR))
   {
     fault_code = MOTOR_FAULT_UNKNOWN;
   }
@@ -399,16 +425,23 @@ const char *motor_control_fault_clear_result_name_get(
     case MOTOR_FAULT_CLEAR_RESET_REQUIRED: return "reset_required";
     case MOTOR_FAULT_CLEAR_CURRENT_UNSAFE: return "current_unsafe";
     case MOTOR_FAULT_CLEAR_DRIVER_ACTIVE: return "driver_fault_active";
+    case MOTOR_FAULT_CLEAR_MOS_TEMPERATURE_UNSAFE: return "mos_temperature_unsafe";
     default: return "invalid";
   }
 }
 
 motor_fault_clear_result_t motor_control_fault_clear_ex(void)
 {
+  motor_slow_sensor_state_t sensor;
   if (motor_control_status.state != MOTOR_CONTROL_STATE_FAULT)
     return MOTOR_FAULT_CLEAR_NOT_FAULTED;
   if (motor_pwm_port_output_is_enabled())
     return MOTOR_FAULT_CLEAR_PWM_ENABLED;
+  (void)motor_slow_sensor_process();
+  if ((!motor_slow_sensor_state_read(&sensor)) ||
+      (!sensor.mos_temperature_valid) ||
+      (sensor.mos_temperature_c > MOTOR_MOS_TEMPERATURE_RECOVERY_C))
+    return MOTOR_FAULT_CLEAR_MOS_TEMPERATURE_UNSAFE;
   if ((motor_control_status.fault_code == MOTOR_FAULT_READY_TRANSITION) ||
       (motor_control_status.fault_code == MOTOR_FAULT_CURRENT_OFFSET_INVALID) ||
       (motor_control_status.fault_code == MOTOR_FAULT_CURRENT_CALIBRATION_TIMEOUT) ||
@@ -447,7 +480,7 @@ void motor_control_poll(void)
   motor_fault_pending_mask = 0U;
   __set_PRIMASK(primask);
   for (fault_index = 1U;
-       fault_index <= (uint32_t)MOTOR_FAULT_HARDWARE_BREAK;
+       fault_index <= (uint32_t)MOTOR_FAULT_MOS_TEMPERATURE_SENSOR;
        fault_index++)
   {
     if ((pending_mask & (1UL << fault_index)) != 0U)
@@ -470,6 +503,9 @@ void motor_control_poll(void)
   /* A pending ISR fault is authoritative.  Do not inspect stale subsystem
      states in the same poll and append a secondary handover fault. */
   if (motor_control_status.state == MOTOR_CONTROL_STATE_FAULT) return;
+
+  if ((motor_control_status.state != MOTOR_CONTROL_STATE_STARTUP) &&
+      (!motor_control_mos_temperature_check())) return;
 
   (void)motor_open_loop_status_read(&open_loop);
   (void)motor_current_control_status_read(&current_control);

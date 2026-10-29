@@ -42,6 +42,7 @@
 #include "motor_log.h"
 #include "motor_pwm_port.h"
 #include "motor_board_config.h"
+#include "motor_control_config.h"
 #include "motor_timebase.h"
 #include "motor_adc_port.h"
 #include "motor_current_calibration.h"
@@ -303,6 +304,26 @@ int main(void)
         if (motor_control_ready_set())
         {
           LOGI("Motor control: READY, waiting for command\r\n");
+#if (MOTOR_TEST_AUTO_OPEN_LOOP != 0U)
+          {
+            /* 测试固件：上电校准完成后自动开环旋转，可用motor stop停止。 */
+            motor_open_loop_command_t open_command;
+
+            open_command.direct_voltage_mv = 0;
+            open_command.quadrature_voltage_mv =
+              MOTOR_TEST_AUTO_OPEN_LOOP_VQ_MV;
+            open_command.target_frequency_millihz =
+              MOTOR_TEST_AUTO_OPEN_LOOP_FREQUENCY_MILLIHZ;
+            open_command.acceleration_millihz_per_s =
+              MOTOR_TEST_AUTO_OPEN_LOOP_ACCELERATION_MILLIHZ_PER_S;
+            if (motor_control_open_loop_start(&open_command))
+              LOGI("TEST: auto open loop started vq=%ld mV freq=%ld mHz\r\n",
+                   (long)open_command.quadrature_voltage_mv,
+                   (long)open_command.target_frequency_millihz);
+            else
+              LOGE("TEST: auto open loop start failed\r\n");
+          }
+#endif
         }
         else
         {

@@ -31,8 +31,6 @@
 #include "motor_timebase.h"
 #include "wk_system.h"
 
-#define MOTOR_COMMISSIONING_HALL_VOLTAGE_MV 1200L
-#define MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ 5000L
 #define MOTOR_COMMISSIONING_HALL_TIMEOUT_MS 12000U
 #define MOTOR_COMMISSIONING_HALL_SAMPLES 3U
 #define MOTOR_COMMISSIONING_HALL_TARGET_TIMEOUT_MS 5000U
@@ -356,6 +354,10 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
   uint32_t elapsed_ms;
   uint32_t count = 0U;
   int32_t value;
+  bool flux_task = (commissioning_status.task == MOTOR_COMMISSIONING_TASK_FLUX);
+  motor_parameter_t measurement_parameter;
+  uint32_t settle_ms;
+  uint32_t measure_ms;
 
   if (result == NULL) return false;
   (void)memset(result, 0, sizeof(*result));
@@ -371,11 +373,18 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
     return false;
   }
 
+  if (!motor_parameter_active_read(&measurement_parameter)) return false;
+  settle_ms = flux_task ? measurement_parameter.flux_settle_ms :
+                         measurement_parameter.offset_settle_ms;
+  measure_ms = flux_task ? measurement_parameter.flux_measure_ms :
+                          measurement_parameter.offset_measure_ms;
   config.direct_kp_q15 = direct_kp_q15;
   config.quadrature_kp_q15 = quadrature_kp_q15;
   config.integral_gain_q15 = integral_gain_q15;
-  config.voltage_limit_percent = MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT;
-  config.hard_voltage_limit_mv = MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV;
+  config.voltage_limit_percent = flux_task ? measurement_parameter.flux_voltage_pct :
+                                           measurement_parameter.offset_voltage_pct;
+  config.hard_voltage_limit_mv = (int32_t)(flux_task ? measurement_parameter.flux_voltage_mv :
+                                                    measurement_parameter.offset_voltage_mv);
   config.command_limit_ma = MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA;
   config.abort_current_ma = MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA;
   if (!motor_current_control_config_set(&config))
@@ -386,7 +395,8 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
 
   /* 逻辑方向的正Iq，与正式"current start 0 <iq>"同一条I/F→Hall路径。 */
   command.direct_reference_ma = 0;
-  command.quadrature_reference_ma = MOTOR_COMMISSIONING_IQ_REFERENCE_MA;
+  command.quadrature_reference_ma = (int32_t)(flux_task ? measurement_parameter.flux_iq_ma :
+                                                       measurement_parameter.offset_iq_ma);
   if (!motor_control_current_control_start(&command))
   {
     result->status = COMMISSIONING_IQ_STATUS_START_FAILED;
@@ -435,8 +445,8 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
   }
 
   /* 闭环稳定等待。 */
-  for (elapsed_ms = 0U; elapsed_ms < MOTOR_COMMISSIONING_IQ_SETTLE_MS +
-                                     MOTOR_COMMISSIONING_IQ_MEASURE_MS;
+  for (elapsed_ms = 0U; elapsed_ms < settle_ms +
+                                     measure_ms;
        elapsed_ms++)
   {
     wk_delay_ms(1U);
@@ -454,7 +464,7 @@ static bool commissioning_iq_measure(commissioning_iq_result_t *result,
       result->status = commissioning_iq_fault_status_get();
       break;
     }
-    if (elapsed_ms < MOTOR_COMMISSIONING_IQ_SETTLE_MS) continue;
+    if (elapsed_ms < settle_ms) continue;
     id_sum += control.direct_feedback_ma;
     iq_sum += control.quadrature_feedback_ma;
     vd_sum += control.direct_voltage_mv;
@@ -716,15 +726,15 @@ static bool commissioning_hall_direction_run(int8_t direction)
       (uint32_t)commissioning_hall.error : 100U); return false;
   }
   /* 使用旋转的正Vd磁场，使开环命令角直接表示Hall标定的励磁轴。 */
-  command.direct_voltage_mv=MOTOR_COMMISSIONING_HALL_VOLTAGE_MV;
+  command.direct_voltage_mv=((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_HALL_SCAN_MV));
   command.quadrature_voltage_mv=0;
   physical_target_frequency_millihz=
-    direction*MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
+    direction*((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_HALL_SCAN_MHZ));
   command.target_frequency_millihz=physical_target_frequency_millihz;
   /* 统一入口接收逻辑方向；辨识流程中的direction指定物理扫描方向。 */
   if (motor_parameter_direction_inverted_get())
     command.target_frequency_millihz=-command.target_frequency_millihz;
-  command.acceleration_millihz_per_s=MOTOR_COMMISSIONING_HALL_FREQUENCY_MILLIHZ;
+  command.acceleration_millihz_per_s=((int32_t)motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_HALL_SCAN_MHZ));
   if (!motor_control_open_loop_start(&command)) {
     commissioning_hall_collecting=false;
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 101U);

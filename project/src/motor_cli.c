@@ -86,6 +86,9 @@ typedef struct
 
 static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
 {
+#define DEBUG_CLI(id, name, def, low, high) {#name, MOTOR_PARAMETER_FIELD_##id},
+  MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_CLI)
+#undef DEBUG_CLI
   {"pole_pairs", MOTOR_PARAMETER_FIELD_POLE_PAIRS},
   {"direction_inverted", MOTOR_PARAMETER_FIELD_DIRECTION_INVERTED},
   {"phase_resistance_mohm", MOTOR_PARAMETER_FIELD_PHASE_RESISTANCE_MOHM},
@@ -162,6 +165,9 @@ static void motor_cli_parameter_print(const char *label,
          (unsigned long)parameter->speed_maximum_rpm,
          (unsigned long)parameter->speed_acceleration_rpm_per_s,
          (unsigned long)parameter->speed_current_limit_ma);
+#define DEBUG_PRINT(id, name, def, low, high) printf(#name "=%lu\r\n", (unsigned long)parameter->name);
+  MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_PRINT)
+#undef DEBUG_PRINT
   printf("hall_next=%u/%u/%u/%u/%u/%u hall_angle=%u/%u/%u/%u/%u/%u\r\n",
          (unsigned int)parameter->hall_positive_next[1],
          (unsigned int)parameter->hall_positive_next[2],
@@ -203,7 +209,7 @@ static void motor_cli_parameter_diff_print(void)
   for (index = 0U; index < MOTOR_CLI_PARAMETER_FIELD_COUNT; index++)
   {
     if ((diff.scalar_fields &
-         (1UL << motor_cli_parameter_fields[index].field)) != 0U)
+         (1ULL << motor_cli_parameter_fields[index].field)) != 0U)
     {
       (void)motor_parameter_field_value_read(
         &active, motor_cli_parameter_fields[index].field, &active_value);
@@ -373,7 +379,7 @@ static void motor_cli_command_execute(char *line)
     printf("  motor commissioning status|abort|diff|accept|discard|save\r\n");
     printf("  calibrate current_offset\r\n");
     printf("  calibrate hall sequence|angle|offset\r\n");
-    printf("  identify resistance|inductance | calculate current_pi\r\n");
+    printf("  identify resistance|inductance|flux | calculate current_pi\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {

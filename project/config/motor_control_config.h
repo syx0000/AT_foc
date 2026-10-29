@@ -38,8 +38,15 @@
 
 /* 母线电压参数，保护阈值单位为0.1 V。 */
 #define MOTOR_BUS_VOLTAGE_DIVIDER_RATIO           21U
-#define MOTOR_BUS_UNDERVOLTAGE_0P1V               240U
+#define MOTOR_BUS_UNDERVOLTAGE_0P1V               180U
 #define MOTOR_BUS_OVERVOLTAGE_0P1V                600U
+
+/* MOS NTC保护：达到停机温度锁存故障，降至恢复温度后允许手动清除。 */
+#define MOTOR_MOS_OVERTEMPERATURE_C                 90
+#define MOTOR_MOS_TEMPERATURE_RECOVERY_C             80
+#if (MOTOR_MOS_TEMPERATURE_RECOVERY_C >= MOTOR_MOS_OVERTEMPERATURE_C)
+#error "MOS recovery temperature must be below trip temperature"
+#endif
 
 /* 10 Hz空载正向开环实测Hall状态进入边沿角度，U16一周制。 */
 #define MOTOR_HALL_POSITIVE_NEXT_STATE_1             5U
@@ -74,16 +81,15 @@
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
 /* 静止即以Iq=0启动电流环(Hall扇区角)，速度PI全程直接输出Iq。
- * 默认增益对应demo pid_spd Kp=2000/4096, Ki=50/32768 (CURRENT_BASE≈66 A)。 */
-#define MOTOR_SPEED_PI_KP_Q20                          800L
-#define MOTOR_SPEED_PI_KI_Q20                            3L
-/* 堵转保护：|Iq|≥阈值且转速低于门限持续超时则故障停机。 */
-#define MOTOR_SPEED_STALL_CURRENT_MA                 12000L
+ * 默认增益采用最后一次板上确认的活动参数4800/64。 */
+#define MOTOR_SPEED_PI_KP_Q20                         4800L
+#define MOTOR_SPEED_PI_KI_Q20                           64L
+/* 堵转保护：|Iq指令|达到当前速度模式电流上限，且转速低于门限持续1 s则故障停机。 */
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
-#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         15000L
+#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         35000L
 #define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
-#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S    3000U /* demo: 3 rpm/ms */
+#define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S   30000U /* 30 rpm/ms */
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
 
@@ -132,7 +138,7 @@
 #define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
 
 /* Independent current-mode I/F startup and Hall handover. */
-#define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA    1000L
+#define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA   10000L
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_VOLTAGE_MV       0L
 #define MOTOR_CURRENT_STARTUP_SAMPLE_SETTLE_CYCLES       8U /* 0.5 ms @16 kHz */
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_ANGLE_U16        0U
@@ -166,17 +172,26 @@
 #define MOTOR_CURRENT_STARTUP_BLEND_CYCLES              640U /* 40 ms @16 kHz */
 #define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
-#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            10000L
+#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            35000L
 
-/* 辨识低Iq闭环测量（hall_offset/flux/候选验证）：经正式电流启动进入Hall闭环，
- * 1 A、15%限压，稳定1 s后统计4 s。 */
-#define MOTOR_COMMISSIONING_IQ_REFERENCE_MA           1000L
+/* 测试固件开关：1 = 上电ADC校准进入READY后自动开环旋转（motor stop可停止）；
+ * 正式固件必须为0。参数与上位机开环默认值一致。 */
+#ifndef MOTOR_TEST_AUTO_OPEN_LOOP
+#define MOTOR_TEST_AUTO_OPEN_LOOP                         0U
+#endif
+#define MOTOR_TEST_AUTO_OPEN_LOOP_VQ_MV                1440L
+#define MOTOR_TEST_AUTO_OPEN_LOOP_FREQUENCY_MILLIHZ   10000L
+#define MOTOR_TEST_AUTO_OPEN_LOOP_ACCELERATION_MILLIHZ_PER_S 20000U
+
+/* 辨识Iq闭环测量（hall_offset/flux）：经正式电流启动进入Hall闭环，
+ * 10 A、30%/8.4 V限压，等待2 s后统计4 s；等待结束不代表已通过稳速检查。 */
+#define MOTOR_COMMISSIONING_IQ_REFERENCE_MA           10000L
 #define MOTOR_COMMISSIONING_IQ_STARTUP_TIMEOUT_MS     6000U
-#define MOTOR_COMMISSIONING_IQ_SETTLE_MS              1000U
+#define MOTOR_COMMISSIONING_IQ_SETTLE_MS              2000U
 #define MOTOR_COMMISSIONING_IQ_MEASURE_MS             4000U
-#define MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA      10000L
-#define MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT 15U
-#define MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV 7200L
+#define MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA      25000L
+#define MOTOR_COMMISSIONING_IQ_BUS_VOLTAGE_LIMIT_PERCENT 30U
+#define MOTOR_COMMISSIONING_IQ_ABSOLUTE_VOLTAGE_LIMIT_MV 8400L
 
 /* Hall转子角度补偿辨识：正Iq低功率闭环平均电压的有效性和单次修正限制。 */
 #define MOTOR_HALL_OFFSET_MINIMUM_VQ_MV                 500U

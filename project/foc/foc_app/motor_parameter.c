@@ -13,6 +13,7 @@
 #include "motor_control_config.h"
 #include "motor_parameter.h"
 #include "motor_pwm_port.h"
+#include "motor_can.h"
 
 #define MOTOR_PARAMETER_POLE_PAIRS_MAX             64U
 #define MOTOR_PARAMETER_RESISTANCE_MOHM_MAX     100000U
@@ -31,7 +32,7 @@ static bool motor_parameter_trial_active;
  * @param parameter 输出默认参数，不允许为空。
  * @return 无。
  */
-static void motor_parameter_default_build(motor_parameter_t *parameter)
+void motor_parameter_defaults_build(motor_parameter_t *parameter)
 {
   static const uint8_t hall_positive_next[8] =
   {
@@ -56,6 +57,10 @@ static void motor_parameter_default_build(motor_parameter_t *parameter)
     0U
   };
 
+  memset(parameter, 0, sizeof(*parameter));
+#define DEBUG_DEFAULT(id, name, def, low, high) parameter->name = def;
+  MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_DEFAULT)
+#undef DEBUG_DEFAULT
   parameter->pole_pairs = MOTOR_POLE_PAIRS;
   parameter->direction_inverted = MOTOR_DIRECTION_INVERTED;
   parameter->hall_delay_compensation_us =
@@ -141,7 +146,7 @@ void motor_parameter_init(void)
 {
   motor_parameter_t defaults;
 
-  motor_parameter_default_build(&defaults);
+  motor_parameter_defaults_build(&defaults);
   motor_parameter_active = defaults;
   motor_parameter_candidate = defaults;
   motor_parameter_trial_active = false;
@@ -166,7 +171,7 @@ bool motor_parameter_defaults_restore(void)
   motor_parameter_t defaults;
 
   if (motor_parameter_trial_active) return false;
-  motor_parameter_default_build(&defaults);
+  motor_parameter_defaults_build(&defaults);
   return motor_parameter_boot_load(&defaults);
 }
 
@@ -243,6 +248,16 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->speed_current_limit_ma > 0U) &&
     (parameter->speed_current_limit_ma <=
      (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) &&
+#define DEBUG_VALID(id, name, def, low, high) \
+    (parameter->name >= low) && (parameter->name <= high) &&
+    MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_VALID)
+#undef DEBUG_VALID
+    (parameter->startup_timeout_ms > parameter->startup_align_ms) &&
+    ((parameter->startup_ramp_mhz_s % 1000U) == 0U) &&
+    (parameter->startup_align_ma < MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA) &&
+    (parameter->offset_iq_ma < MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA) &&
+    (parameter->flux_iq_ma < MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA) &&
+    (parameter->startup_if_max_ma < MOTOR_COMMISSIONING_IQ_ABORT_CURRENT_MA) &&
     (parameter->hall_positive_next[0] == 0U) &&
     (parameter->hall_positive_next[7] == 0U) &&
     (parameter->hall_entry_angle_u16[0] == 0U) &&
@@ -333,6 +348,12 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
       if (value <= 0) return false;
       updated.speed_current_limit_ma = (uint32_t)value;
       break;
+#define DEBUG_SET(id, name, def, low, high) \
+    case MOTOR_PARAMETER_FIELD_##id: \
+      if (value < 0) return false; \
+      updated.name = (uint32_t)value; break;
+    MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_SET)
+#undef DEBUG_SET
     default:
       return false;
   }
@@ -402,10 +423,26 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
     case MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA:
       *value = (int32_t)parameter->speed_current_limit_ma;
       break;
+#define DEBUG_READ(id, name, def, low, high) \
+    case MOTOR_PARAMETER_FIELD_##id: *value = (int32_t)parameter->name; break;
+    MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_READ)
+#undef DEBUG_READ
     default:
       return false;
   }
   return true;
+}
+
+uint32_t motor_parameter_debug_get(motor_parameter_field_t field)
+{
+  switch (field)
+  {
+#define DEBUG_GET(id, name, def, low, high) \
+    case MOTOR_PARAMETER_FIELD_##id: return motor_parameter_active.name;
+    MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_GET)
+#undef DEBUG_GET
+    default: return 0U;
+  }
 }
 
 bool motor_parameter_candidate_accept(void)
@@ -492,7 +529,7 @@ bool motor_parameter_diff_read(motor_parameter_diff_t *diff)
       &candidate_value);
     if (active_value != candidate_value)
     {
-      diff->scalar_fields |= (1UL << field);
+      diff->scalar_fields |= (1ULL << field);
     }
   }
   diff->hall_sequence_changed =

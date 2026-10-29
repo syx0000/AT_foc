@@ -34,6 +34,23 @@ PARAMETER_NAMES = [
     "speed_maximum_rpm",
     "speed_acceleration_rpm_per_s",
     "speed_current_limit_ma",
+    "startup_timeout_ms",
+    "offset_iq_ma",
+    "offset_voltage_pct",
+    "offset_voltage_mv",
+    "offset_settle_ms",
+    "offset_measure_ms",
+    "flux_iq_ma",
+    "flux_voltage_pct",
+    "flux_voltage_mv",
+    "flux_settle_ms",
+    "flux_measure_ms",
+    "hall_scan_mv",
+    "hall_scan_mhz",
+    "stall_speed_rpm",
+    "stall_time_ms",
+    "can_node_id",
+
 ]
 # motor params active 回显字段 -> 参数名（多值字段按顺序拆分）。
 ACTIVE_FIELD_MAP = {
@@ -53,8 +70,28 @@ ACTIVE_FIELD_MAP = {
     "speed_acceleration_rpm_per_s": ["speed_acceleration_rpm_per_s"],
     "speed_current_limit_ma": ["speed_current_limit_ma"],
 }
+ACTIVE_FIELD_MAP.update({name: [name] for name in PARAMETER_NAMES if name not in ACTIVE_FIELD_MAP})
+PARAMETER_RANGES = {'startup_align_ma': (1, 24999), 'startup_align_ms': (10, 2000), 'startup_if_max_ma': (1600, 24999), 'startup_ramp_mhz_s': (1000, 100000), 'startup_timeout_ms': (500, 15000), 'offset_iq_ma': (1, 20000), 'offset_voltage_pct': (1, 57), 'offset_voltage_mv': (100, 27700), 'offset_settle_ms': (100, 10000), 'offset_measure_ms': (100, 10000), 'flux_iq_ma': (1, 20000), 'flux_voltage_pct': (1, 57), 'flux_voltage_mv': (100, 27700), 'flux_settle_ms': (100, 10000), 'flux_measure_ms': (100, 10000), 'hall_scan_mv': (100, 4800), 'hall_scan_mhz': (1000, 20000), 'stall_speed_rpm': (1, 500), 'stall_time_ms': (100, 10000), 'can_node_id': (1, 127)}
 SILENT_QUERY = "motor params active"
-SILENT_TIMEOUT_MS = 500
+PARAMETER_HELP = {
+    "startup_timeout_ms": "电流启动超时，ms；必须大于对齐时间",
+    "offset_iq_ma": "Hall补偿测量Iq，mA",
+    "offset_voltage_pct": "Hall补偿电压上限占母线百分比",
+    "offset_voltage_mv": "Hall补偿电压硬上限，mV，与百分比限制取较小值",
+    "offset_settle_ms": "Hall补偿采样前等待，ms；不是自动稳速检测",
+    "offset_measure_ms": "Hall补偿采样时间，ms",
+    "flux_iq_ma": "磁链辨识测量Iq，mA",
+    "flux_voltage_pct": "磁链辨识电压上限占母线百分比",
+    "flux_voltage_mv": "磁链辨识电压硬上限，mV，与百分比限制取较小值",
+    "flux_settle_ms": "磁链采样前等待，ms；不是自动稳速检测",
+    "flux_measure_ms": "磁链采样时间，ms",
+    "hall_scan_mv": "Hall角度标定开环扫描电压，mV；不是闭环限流",
+    "hall_scan_mhz": "Hall角度标定电频率，mHz；4对极时5000对应75 rpm",
+    "stall_speed_rpm": "堵转低速门槛，rpm；Iq指令同时达到当前限幅才开始计时",
+    "stall_time_ms": "堵转条件连续成立时间，ms",
+    "can_node_id": "标准CAN节点ID；接受候选后立即切换，需同步修改对端ID",
+}
+SILENT_TIMEOUT_MS = 1500
 
 
 class HistoryLineEdit(QLineEdit):
@@ -247,6 +284,7 @@ class MotorHost(QMainWindow):
             ("Hall角度", "calibrate hall angle"),
             ("Hall补偿", "calibrate hall offset"),
             ("计算电流PI", "calculate current_pi"),
+            ("辨识磁链", "identify flux"),
         ]
         group = QGroupBox("辨识步骤")
         grid = QGridLayout(group)
@@ -437,6 +475,15 @@ class MotorHost(QMainWindow):
         if not name or not value:
             QMessageBox.warning(self, "提示", "请输入参数名和数值")
             return
+        if name in PARAMETER_RANGES:
+            try:
+                number = int(value)
+                low, high = PARAMETER_RANGES[name]
+                if not low <= number <= high:
+                    raise ValueError
+            except ValueError:
+                QMessageBox.warning(self, "参数范围", f"{name}: {PARAMETER_RANGES[name]}")
+                return
         self.send_command(f"motor param set {name} {value}")
 
     # ---- 参数当前值静默读取：不在串口日志中回显命令与应答 ----
@@ -450,6 +497,12 @@ class MotorHost(QMainWindow):
 
     def show_current_parameter_value(self) -> None:
         name = self.parameter_name.currentText().strip()
+        hint = PARAMETER_HELP.get(name, name)
+        if name in PARAMETER_RANGES:
+            low, high = PARAMETER_RANGES[name]
+            hint += f"；范围 {low}..{high}"
+        self.parameter_value.setToolTip(hint)
+        self.parameter_name.setToolTip(hint)
         if name in self.active_values:
             self.parameter_value.setText(self.active_values[name])
 

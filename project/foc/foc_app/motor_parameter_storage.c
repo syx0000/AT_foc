@@ -16,12 +16,13 @@
 #include "motor_pwm_port.h"
 
 #define MOTOR_PARAMETER_STORAGE_MAGIC          0x4D50524DU
-#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 4U
-/* v2不含速度上限/加速度，v3不含速度Iq限幅；参数区均为v4结构的前缀。 */
+#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 5U
+/* v2不含速度上限/加速度，v3不含速度Iq限幅，v4不含新增调试参数；均为前缀。 */
 #define MOTOR_PARAMETER_STORAGE_V2_LENGTH  \
   offsetof(motor_parameter_t, speed_maximum_rpm)
 #define MOTOR_PARAMETER_STORAGE_V3_LENGTH  \
   offsetof(motor_parameter_t, speed_current_limit_ma)
+#define MOTOR_PARAMETER_STORAGE_V4_LENGTH offsetof(motor_parameter_t, startup_align_ma)
 #define MOTOR_PARAMETER_STORAGE_COMMIT_MARKER  0x434F4D54U
 #define MOTOR_PARAMETER_STORAGE_SLOT_A_ADDR    FLASH_USER_START_ADDR
 #define MOTOR_PARAMETER_STORAGE_SLOT_B_ADDR    \
@@ -69,7 +70,7 @@ static bool motor_parameter_storage_slot_read(
   uint32_t address, motor_parameter_storage_record_t *record)
 {
   /* 旧版记录：头(12B) + 参数前缀(length) + crc32 + commit_marker，
-   * CRC覆盖头和参数前缀。v2/v3的参数区都是当前结构的前缀。 */
+   * CRC覆盖头和参数前缀。v2/v3/v4的参数区都是当前结构的前缀。 */
   uint8_t raw[sizeof(motor_parameter_storage_record_t)];
   uint16_t version;
   uint16_t length;
@@ -90,6 +91,10 @@ static bool motor_parameter_storage_slot_read(
   {
     if (length != MOTOR_PARAMETER_STORAGE_V3_LENGTH) return false;
   }
+  else if (version == 4U)
+  {
+    if (length != MOTOR_PARAMETER_STORAGE_V4_LENGTH) return false;
+  }
   else return false;
   if ((record->magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
       ((length % 4U) != 0U)) return false;
@@ -100,12 +105,7 @@ static bool motor_parameter_storage_slot_read(
       (flash_port_crc32(raw, header_length + length) != crc)) return false;
 
   /* 缺失字段补编译默认值，再整体校验。 */
-  record->parameter.speed_maximum_rpm =
-    (uint32_t)MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM;
-  record->parameter.speed_acceleration_rpm_per_s =
-    MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
-  record->parameter.speed_current_limit_ma =
-    (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+  motor_parameter_defaults_build(&record->parameter);
   (void)memcpy(&record->parameter, &raw[header_length], length);
   record->format_version = MOTOR_PARAMETER_STORAGE_FORMAT_VERSION;
   record->length = sizeof(motor_parameter_t);

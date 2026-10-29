@@ -275,11 +275,11 @@ void motor_speed_control_process_1khz(void)
   /* PI输出直接作为Iq指令，不做额外斜率限制。 */
   quadrature_current_ma = motor_speed_control_pi_target_ma;
   if ((motor_speed_control_abs(quadrature_current_ma) >=
-       MOTOR_SPEED_STALL_CURRENT_MA) &&
+       motor_speed_control_config.current_limit_ma) &&
       (motor_speed_control_abs(speed_feedback.filtered_speed_millirpm) <
-       (int32_t)(MOTOR_SPEED_STALL_SPEED_RPM * 1000U)))
+       (int32_t)(motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STALL_SPEED_RPM) * 1000U)))
   {
-    if (++motor_speed_control_stall_ms >= MOTOR_SPEED_STALL_TIME_MS)
+    if (++motor_speed_control_stall_ms >= motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_STALL_TIME_MS))
     {
       motor_speed_control_fault_set(MOTOR_SPEED_CONTROL_FAULT_STALL);
       return;

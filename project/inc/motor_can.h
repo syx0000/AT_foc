@@ -9,7 +9,7 @@
 #ifndef MOTOR_CAN_H
 #define MOTOR_CAN_H
 
-/* ZXQ标准帧ID：一台电机编译为1（左），另一台为2（右）。 */
+/* ZXQ标准帧ID编译默认值；运行时can_node_id候选接受后生效，可保存Flash。 */
 #ifndef MOTOR_CAN_NODE_ID
 #define MOTOR_CAN_NODE_ID 1
 #endif
@@ -22,7 +22,7 @@
 #define MOTOR_CAN_FEEDBACK_MS   10U
 
 /**
- * @brief 初始化CAN1：PA11/PA12，HEXT 8 MHz，经典CAN 500 kbit/s，采样点75%。
+ * @brief 初始化CAN1：PA11/PA12，HEXT 8 MHz，经典CAN 1 Mbit/s，采样点75%。
  * @param 无。
  * @return 无。
  */

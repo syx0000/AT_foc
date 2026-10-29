@@ -37,9 +37,29 @@ E:\src\foc_tuner\tools\python3\python.exe motor_host.py
 7. 辨识成功后依次查看“参数差异”，再执行“接受候选”和“保存参数”。
 8. 电机运行中不要断开串口代替停机；应先点击“停止电机”。
 
-如需修改磁链，使用参数页对应字段 `flux_linkage_uwb`，再在电机 READY 且 PWM 关闭时执行候选参数接受和保存；Flash 记录格式当前为 v2。
+磁链辨识使用“自动辨识”页的“辨识磁链”按钮（`identify flux`），应先确认Rs、Ld/Lq与Hall标定参数。成功后查看参数差异，再接受候选并保存；也可在参数页手动设置 `flux_linkage_uwb`。
 
 参数设置区域的参数名下拉框与固件当前支持的 `motor param set` 字段保持一致。
+
+新增调试参数支持“设置候选参数 → 参数差异 → 接受候选 → 保存参数”。接受要求READY且PWM关闭，接受后RAM生效；保存后下次上电加载。Flash为v5，兼容v2/v3/v4：原字段保留，新字段补固件默认值。修改CAN ID后对端应立即改用新ID。
+
+正常Hall启动用不到的对齐电流、对齐时间、I/F最大电流和频率爬升率已从上位机参数列表隐藏；下位机和Flash字段保留兼容，启动超时仍可设置。
+
+| 参数 | 单位 | 默认值 | 可设范围 |
+|---|---|---:|---:|
+| `startup_timeout_ms` | ms | 3000 | 500..15000，且大于对齐时间 |
+| `offset_iq_ma` / `flux_iq_ma` | mA | 10000 | 1..20000 |
+| `offset_voltage_pct` / `flux_voltage_pct` | %母线电压 | 30 | 1..57 |
+| `offset_voltage_mv` / `flux_voltage_mv` | mV | 8400 | 100..27700 |
+| `offset_settle_ms` / `flux_settle_ms` | ms | 2000 | 100..10000 |
+| `offset_measure_ms` / `flux_measure_ms` | ms | 4000 | 100..10000 |
+| `hall_scan_mv` | mV | 1200 | 100..4800 |
+| `hall_scan_mhz` | 电频率mHz | 5000 | 1000..20000 |
+| `stall_speed_rpm` | rpm | 30 | 1..500 |
+| `stall_time_ms` | ms | 1000 | 100..10000 |
+| `can_node_id` | 标准帧ID，十进制 | 1 | 1..127 |
+
+`offset_*`只影响Hall补偿，`flux_*`只影响磁链辨识；辨识会临时使用候选参数，结束后恢复原活动值，再由用户接受和保存。两种电压限制取较小值。对齐和I/F启动电流还必须低于固件的辨识中止阈值（当前25000 mA）。对齐参数属于电流启动路径，不改变速度模式的直接启动。固定等待时间不等于已通过稳速检查，Hall开环扫描仍不具备专用闭环限流。硬件保护阈值仍由固件约束。
 
 本工具只封装现有文本协议，不绕过固件中的状态检查与安全保护。
 
