@@ -45,6 +45,7 @@
 #include "motor_current_transform.h"
 #include "motor_inductance_identification.h"
 #include "motor_current_control.h"
+#include "motor_trace.h"
 #include "motor_current_startup.h"
 #include "motor_uart_port.h"
 #include "motor_control.h"
@@ -337,6 +338,7 @@ void ADC1_2_IRQHandler(void)
     motor_current_transform_fast_process();
     motor_inductance_identification_fast_process();
     motor_current_control_fast_process();
+    motor_trace_fast_sample();
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }
 

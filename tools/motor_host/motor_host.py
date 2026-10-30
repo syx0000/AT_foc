@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QPlainTextEdit, QTabWidget, QVBoxLayout, QWidget,
 )
 
+from trace_view import TraceView
+
 BAUDRATE = 921600
 PARAMETER_NAMES = [
     "pole_pairs",
@@ -161,6 +163,7 @@ class MotorHost(QMainWindow):
     def _build_ui(self) -> None:
         root = QWidget()
         layout = QVBoxLayout(root)
+        self.main_layout = layout
         self.setCentralWidget(root)
 
         connection = QHBoxLayout()
@@ -187,13 +190,17 @@ class MotorHost(QMainWindow):
         layout.addLayout(connection)
 
         tabs = QTabWidget()
+        self.tabs = tabs
         tabs.addTab(self._control_tab(), "运行控制")
         tabs.addTab(self._commissioning_tab(), "自动辨识")
         self.parameter_tab_index = tabs.addTab(self._parameter_tab(), "参数与诊断")
+        self.trace_view = TraceView(self.send_command)
+        self.trace_tab_index = tabs.addTab(self.trace_view, "调试曲线")
         tabs.currentChanged.connect(self.on_tab_changed)
         layout.addWidget(tabs)
 
         console_group = QGroupBox("串口日志")
+        self.console_group = console_group
         console_layout = QVBoxLayout(console_group)
         self.console = QPlainTextEdit()
         self.console.setReadOnly(True)
@@ -203,7 +210,9 @@ class MotorHost(QMainWindow):
         console_layout.addWidget(self.console)
         layout.addWidget(console_group, 1)
 
-        command_layout = QHBoxLayout()
+        self.command_bar = QWidget()
+        command_layout = QHBoxLayout(self.command_bar)
+        command_layout.setContentsMargins(0, 0, 0, 0)
         self.command_entry = HistoryLineEdit()
         self.command_entry.setPlaceholderText("输入原始CLI命令，按回车发送")
         self.command_entry.returnPressed.connect(self.send_entry)
@@ -214,7 +223,7 @@ class MotorHost(QMainWindow):
         clear = QPushButton("清屏")
         clear.clicked.connect(self.console.clear)
         command_layout.addWidget(clear)
-        layout.addLayout(command_layout)
+        layout.addWidget(self.command_bar)
 
     def _command_button(self, text: str, command: str,
                         commissioning: bool = False) -> QPushButton:
@@ -385,6 +394,9 @@ class MotorHost(QMainWindow):
             except serial.SerialException:
                 pass
         self.serial_port = None
+        self.debug_enabled = False
+        self.debug_button.setText("打开调试")
+        self.trace_view.reset_connection()
         self.connect_button.setText("连接")
         self.connection_state.setText("未连接")
         self.set_commissioning_busy(False)
@@ -406,24 +418,33 @@ class MotorHost(QMainWindow):
             text = self.consume_silent_reply(text)
             if not text:
                 return
+        text = self.trace_view.consume(text)
+        for line in text.splitlines():
+            if line.startswith("OK logid="):
+                self.debug_enabled = "enabled=1" in line
+            elif line == "OK debug 0" or line.startswith("OK capture armed"):
+                self.debug_enabled = False
+            self.debug_button.setText("关闭调试" if self.debug_enabled else "打开调试")
         self.append_console(text)
         if ("OK commissioning complete" in text or
                 "ERR commissioning rejected_or_failed" in text):
             self.set_commissioning_busy(False)
 
-    def send_command(self, command: str) -> None:
+    def send_command(self, command: str) -> bool:
         if not self.serial_port or not self.serial_port.is_open:
             QMessageBox.warning(self, "提示", "请先连接串口")
-            return
+            return False
         try:
             self.serial_port.write((command.strip() + "\r\n").encode("ascii"))
         except (serial.SerialException, UnicodeEncodeError) as exc:
             QMessageBox.critical(self, "发送失败", str(exc))
-            return
+            return False
         self.append_console(f"> {command.strip()}\n")
         if command.startswith(("calibrate ",
                                "identify ", "calculate current_pi")):
             self.set_commissioning_busy(True)
+
+        return True
 
     def send_entry(self) -> None:
         command = self.command_entry.text().strip()
@@ -494,6 +515,10 @@ class MotorHost(QMainWindow):
 
     # ---- 参数当前值静默读取：不在串口日志中回显命令与应答 ----
     def on_tab_changed(self, index: int) -> None:
+        is_trace = index == self.trace_tab_index
+        self.console_group.setVisible(not is_trace)
+        self.command_bar.setVisible(not is_trace)
+        self.main_layout.setStretchFactor(self.tabs, 1 if is_trace else 0)
         if index == self.parameter_tab_index:
             self.request_active_parameters()
 
@@ -564,11 +589,10 @@ class MotorHost(QMainWindow):
         self.silent_buffer = ""
 
     def toggle_debug(self) -> None:
-        self.send_command("debug 0" if self.debug_enabled else "debug 1")
-        if self.serial_port and self.serial_port.is_open:
-            self.debug_enabled = not self.debug_enabled
-            self.debug_button.setText(
-                "关闭调试" if self.debug_enabled else "打开调试")
+        if self.debug_enabled:
+            self.trace_view.stop()
+        else:
+            self.send_command("debug 1")
 
     def set_commissioning_busy(self, busy: bool) -> None:
         for button in self.commissioning_buttons:

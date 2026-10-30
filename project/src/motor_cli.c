@@ -21,6 +21,7 @@
 #include "motor_control.h"
 #include "motor_direction.h"
 #include "motor_log.h"
+#include "motor_trace.h"
 #include "motor_open_loop.h"
 #include "motor_parameter.h"
 #include "motor_parameter_storage.h"
@@ -34,49 +35,8 @@
 #include "wk_system.h"
 
 #define MOTOR_CLI_LINE_SIZE 96U
-#define MOTOR_CLI_DEBUG_PERIOD_US 2000U
 static char motor_cli_line[MOTOR_CLI_LINE_SIZE];
 static uint16_t motor_cli_line_length;
-
-typedef enum
-{
-  MOTOR_CLI_DEBUG_STOPPED = 0,
-  MOTOR_CLI_DEBUG_STREAM
-} motor_cli_debug_mode_t;
-
-static motor_cli_debug_mode_t motor_cli_debug_mode;
-static uint32_t motor_cli_debug_last_us;
-
-static void motor_cli_debug_poll(void)
-{
-  motor_speed_feedback_t speed_feedback;
-  motor_speed_control_status_t speed_control;
-  uint32_t now_us;
-
-  if (motor_cli_debug_mode != MOTOR_CLI_DEBUG_STREAM) return;
-  now_us = motor_timebase_us_get();
-  if ((uint32_t)(now_us - motor_cli_debug_last_us) <
-      MOTOR_CLI_DEBUG_PERIOD_US) return;
-  motor_cli_debug_last_us = now_us;
-
-  if (!motor_speed_feedback_read(&speed_feedback))
-  {
-    speed_feedback.filtered_speed_millirpm = 0;
-    speed_feedback.display_speed_millirpm = 0;
-  }
-  if (!motor_speed_control_status_read(&speed_control))
-  {
-    speed_control.ramped_speed_millirpm = 0;
-  }
-
-  /* 高频调试通道只输出CSV数据，不增加标签、日志级别或时间戳。
-   * 字段顺序: speed_ref_mrpm(斜坡后速度参考),speed_mrpm(控制用速度反馈),
-   *          speed_filt_mrpm(8点滑动平均，仅观测，对应demo显示口径) */
-  printf("%ld,%ld,%ld\r\n",
-         (long)speed_control.ramped_speed_millirpm,
-         (long)speed_feedback.filtered_speed_millirpm,
-         (long)speed_feedback.display_speed_millirpm);
-}
 
 typedef struct
 {
@@ -369,7 +329,7 @@ static void motor_cli_command_execute(char *line)
   {
     printf("OK commands:\r\n");
     printf("  help | version | status | reset\r\n");
-    printf("  debug <0|1>\r\n");
+    printf("  debug <0|1> | logid [10|20|30|40] | lograte <1..500> | logdetail <0|1|2> | logcapture [1..128]\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
     printf("  open start|set <vd_mv> <vq_mv> <freq_mhz> <accel_mhz_s>\r\n");
@@ -407,17 +367,9 @@ static void motor_cli_command_execute(char *line)
     NVIC_SystemReset();
     while (1) { }
   }
-  else if (strcmp(line, "debug 1") == 0)
+  else if (motor_trace_command(line))
   {
-    motor_cli_debug_last_us = motor_timebase_us_get();
-    motor_cli_debug_mode = MOTOR_CLI_DEBUG_STREAM;
-    printf("OK debug 1 period_us=%u format=speed_ref_mrpm,speed_mrpm,speed_filt_mrpm\r\n",
-           (unsigned int)MOTOR_CLI_DEBUG_PERIOD_US);
-  }
-  else if (strcmp(line, "debug 0") == 0)
-  {
-    motor_cli_debug_mode = MOTOR_CLI_DEBUG_STOPPED;
-    printf("OK debug 0\r\n");
+    /* Trace command processed. */
   }
   else if (strcmp(line, "status") == 0)
   {
@@ -785,7 +737,7 @@ void motor_cli_poll(void)
   uint16_t index;
   char character;
 
-  motor_cli_debug_poll();
+  motor_trace_poll();
   if (!motor_uart_port_frame_read(&frame)) return;
   for (index = 0U; index < frame.length; index++)
   {

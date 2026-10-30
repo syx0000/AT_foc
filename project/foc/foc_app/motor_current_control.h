@@ -57,6 +57,8 @@ typedef struct
   uint16_t electrical_angle_u16;
   uint32_t electrical_frequency_millihz;
   uint32_t sample_count;
+  int32_t direct_p_mv, direct_i_mv, direct_request_mv;
+  int32_t quadrature_p_mv, quadrature_i_mv, quadrature_request_mv;
   bool voltage_limited;
 } motor_current_control_status_t;
 

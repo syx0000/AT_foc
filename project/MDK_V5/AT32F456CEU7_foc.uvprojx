@@ -405,6 +405,11 @@
               <FilePath>..\src\motor_log.c</FilePath>
             </File>
             <File>
+              <FileName>motor_trace.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\motor_trace.c</FilePath>
+            </File>
+            <File>
               <FileName>motor_cli.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\motor_cli.c</FilePath>

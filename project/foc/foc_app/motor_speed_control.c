@@ -415,13 +415,23 @@ void motor_speed_control_process_1khz(void)
     return;
   }
 
-  motor_speed_control_status.ramped_speed_millirpm =
-    ramped_speed_millirpm;
-  motor_speed_control_status.feedback_speed_millirpm =
-    speed_feedback.filtered_speed_millirpm;
-  motor_speed_control_status.quadrature_current_command_ma =
-    quadrature_current_ma;
-  motor_speed_control_status.update_count++;
+  {
+    uint32_t snapshot_primask = __get_PRIMASK();
+    __disable_irq();
+    motor_speed_control_status.ramped_speed_millirpm =
+      ramped_speed_millirpm;
+    motor_speed_control_status.feedback_speed_millirpm =
+      speed_feedback.filtered_speed_millirpm;
+    motor_speed_control_status.quadrature_current_command_ma =
+      quadrature_current_ma;
+    motor_speed_control_status.proportional_ma = (int32_t)((((int64_t)ramped_speed_millirpm - speed_feedback.filtered_speed_millirpm) * motor_speed_controller.proportional_gain_q20) >> 20);
+    motor_speed_control_status.integral_ma = motor_speed_controller.integral_ma;
+    motor_speed_control_status.pi_output_ma = motor_speed_controller.output_ma;
+    motor_speed_control_status.current_limit_ma = motor_speed_controller.output_limit_ma;
+    motor_speed_control_status.current_limited = motor_speed_control_abs(motor_speed_controller.output_ma) >= motor_speed_controller.output_limit_ma;
+    motor_speed_control_status.update_count++;
+    __set_PRIMASK(snapshot_primask);
+  }
 }
 
 bool motor_speed_control_status_read(motor_speed_control_status_t *status)

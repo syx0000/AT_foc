@@ -46,6 +46,8 @@ typedef struct
   int32_t ramped_speed_millirpm;
   int32_t feedback_speed_millirpm;
   int32_t quadrature_current_command_ma; /**< 速度PI输出的逻辑Iq指令，单位mA。 */
+  int32_t proportional_ma, integral_ma, pi_output_ma, current_limit_ma;
+  bool current_limited;
   uint32_t update_count;
 } motor_speed_control_status_t;
 

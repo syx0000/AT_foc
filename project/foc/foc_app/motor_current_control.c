@@ -361,6 +361,12 @@ void motor_current_control_fast_process(void)
         motor_current_control_command.direct_reference_ma, direct_ma);
       quadrature_mv = motor_current_pi_axis_process(&motor_current_control_q_pi,
         motor_current_control_command.quadrature_reference_ma, quadrature_ma);
+      motor_current_control_status.direct_p_mv = (int32_t)(((int64_t)(motor_current_control_command.direct_reference_ma - direct_ma) * motor_current_control_d_pi.proportional_gain_q15) >> 15);
+      motor_current_control_status.direct_i_mv = motor_current_control_d_pi.integral_mv;
+      motor_current_control_status.direct_request_mv = direct_mv;
+      motor_current_control_status.quadrature_p_mv = (int32_t)(((int64_t)(motor_current_control_command.quadrature_reference_ma - quadrature_ma) * motor_current_control_q_pi.proportional_gain_q15) >> 15);
+      motor_current_control_status.quadrature_i_mv = motor_current_control_q_pi.integral_mv;
+      motor_current_control_status.quadrature_request_mv = quadrature_mv;
       limited = motor_voltage_limit_apply(&direct_mv, &quadrature_mv,
                                            motor_current_control_voltage_limit_mv);
       if (limited)

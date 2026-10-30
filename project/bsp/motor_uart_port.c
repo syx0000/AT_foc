@@ -68,3 +68,41 @@ uint32_t motor_uart_port_overflow_count_get(void)
 {
   return motor_uart_port_overflow_count;
 }
+
+/* Single DMA-owned frame; caller keeps its sample queued while busy. */
+static char motor_uart_trace_buffer[320];
+static bool motor_uart_trace_busy;
+bool motor_uart_port_trace_ready(void)
+{
+  return !motor_uart_trace_busy ||
+    (dma_data_number_get(DMA1_CHANNEL5)==0U &&
+     usart_flag_get(USART1, USART_TDC_FLAG)!=RESET);
+}
+void motor_uart_port_trace_flush(void)
+{
+  if (!motor_uart_trace_busy) return;
+  while (dma_data_number_get(DMA1_CHANNEL5) != 0U) {}
+  while (usart_flag_get(USART1, USART_TDC_FLAG) == RESET) {}
+  dma_channel_enable(DMA1_CHANNEL5, FALSE);
+  usart_dma_transmitter_enable(USART1, FALSE);
+  motor_uart_trace_busy = false;
+}
+bool motor_uart_port_trace_write(const char *data, uint16_t length)
+{
+  uint16_t i;
+  if (!data || length==0U || length > sizeof(motor_uart_trace_buffer)) return false;
+  if (motor_uart_trace_busy)
+  {
+    if (!motor_uart_port_trace_ready()) return false;
+    motor_uart_port_trace_flush();
+  }
+  for (i=0; i<length; ++i) motor_uart_trace_buffer[i]=data[i];
+  dma_channel_enable(DMA1_CHANNEL5, FALSE);
+  dma_flag_clear(DMA1_FDT5_FLAG);
+  wk_dma_channel_config(DMA1_CHANNEL5, (uint32_t)&USART1->dt,
+    (uint32_t)motor_uart_trace_buffer, length);
+  motor_uart_trace_busy = true;
+  usart_dma_transmitter_enable(USART1, TRUE);
+  dma_channel_enable(DMA1_CHANNEL5, TRUE);
+  return true;
+}

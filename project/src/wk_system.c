@@ -25,6 +25,7 @@
 /* add user code end Header */
 
 #include "wk_system.h"
+#include "motor_uart_port.h"
 
 #define STEP_DELAY_MS                    (uint32_t)(50)
 #define TICK_COUNT_MAX                   (uint32_t)(0xFFFF)
@@ -215,6 +216,7 @@ PUTCHAR_PROTOTYPE
 #if !defined (__GNUC__) || defined (__clang__)
   UNUSED(f);
 #endif
+  motor_uart_port_trace_flush();
   while(usart_flag_get(USART1, USART_TDBE_FLAG) == RESET);
   usart_data_transmit(USART1, (uint16_t)ch);
   while(usart_flag_get(USART1, USART_TDC_FLAG) == RESET);
@@ -232,6 +234,7 @@ int __write(int fd, char *pbuffer, int size)
   UNUSED(fd);
   for(int i = 0; i < size; i ++)
   {
+    motor_uart_port_trace_flush();
     while(usart_flag_get(USART1, USART_TDBE_FLAG) == RESET);
     usart_data_transmit(USART1, (uint16_t)(*pbuffer++));
     while(usart_flag_get(USART1, USART_TDC_FLAG) == RESET);

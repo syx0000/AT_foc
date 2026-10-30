@@ -23,4 +23,9 @@ void motor_uart_port_idle_capture(void);
 bool motor_uart_port_frame_read(motor_uart_port_frame_t *frame);
 /** @brief 读取邮箱忙导致的丢帧数。 @param 无。 @return 累计丢帧数。 */
 uint32_t motor_uart_port_overflow_count_get(void);
+/* Main-loop-only trace TX; returns immediately while the previous frame is busy. */
+bool motor_uart_port_trace_ready(void);
+bool motor_uart_port_trace_write(const char *data, uint16_t length);
+/* Serialize printf after the current DMA frame (at most one frame to drain). */
+void motor_uart_port_trace_flush(void);
 #endif
