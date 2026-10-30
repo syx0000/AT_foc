@@ -83,6 +83,10 @@ int main(void)
   motor_parameter_init();
   assert(motor_parameter_active_read(&p));
   assert(motor_parameter_validate(&p));
+  assert(p.pole_pairs == 4 && p.phase_resistance_mohm == 80);
+  assert(p.direct_inductance_uh == 50 && p.quadrature_inductance_uh == 50);
+  assert(p.current_d_kp_q15 == 9141 && p.current_q_kp_q15 == 9141);
+  assert(p.current_ki_q15 == 914 && p.speed_maximum_rpm == 3000);
   assert(p.offset_iq_ma == 10000U && p.flux_iq_ma == 10000U);
   test_running=true;
   assert(!motor_parameter_candidate_24v_profile());

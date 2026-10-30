@@ -97,7 +97,7 @@
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         35000L
-#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
+#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         3000L
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S   30000U /* 30 rpm/ms */
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
@@ -130,15 +130,15 @@
 #define MOTOR_INDUCTANCE_IDENT_MEASURE_SAMPLES      16000U /* 1 s @16 kHz */
 #define MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA     10000L
 
-/* 电流PI：888 Hz带宽，参数来自Rs=268 mΩ、Ld=222 µH、Lq=206 µH。 */
-#define MOTOR_PHASE_RESISTANCE_MOHM                   268U
-#define MOTOR_DIRECT_INDUCTANCE_UH                    222U
-#define MOTOR_QUADRATURE_INDUCTANCE_UH                206U
+/* 60BLDC140-24030-14J30, 24 V: Rs=80 mOhm, Ld=Lq=50 uH; 888 Hz PI @16 kHz. */
+#define MOTOR_PHASE_RESISTANCE_MOHM                   80U
+#define MOTOR_DIRECT_INDUCTANCE_UH                    50U
+#define MOTOR_QUADRATURE_INDUCTANCE_UH                50U
 #define MOTOR_FLUX_LINKAGE_UWB                      19494U
 #define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               888U
-#define MOTOR_CURRENT_PI_D_KP_Q15                   40588L
-#define MOTOR_CURRENT_PI_Q_KP_Q15                   37663L
-#define MOTOR_CURRENT_PI_KI_Q15                      3063L /* 10 kHz时4900，按10/16缩放 */
+#define MOTOR_CURRENT_PI_D_KP_Q15                   9141L
+#define MOTOR_CURRENT_PI_Q_KP_Q15                   9141L
+#define MOTOR_CURRENT_PI_KI_Q15                      914L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
 /* 正式电流环放开到整数百分比下的线性SVPWM上限；理论边界为Vbus/sqrt(3)=57.735%。 */
 #define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    57U

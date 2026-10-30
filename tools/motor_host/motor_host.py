@@ -329,7 +329,6 @@ class MotorHost(QMainWindow):
         layout.addLayout(form)
 
         parameter_items = [
-            ("24V新电机初值（候选）", "motor params profile 60bldc140-24v"),
             ("活动参数", "motor params active"),
             ("存储状态", "motor params storage"),
             ("加载Flash", "motor params load"),
