@@ -153,14 +153,18 @@ class ScopeChartView(QChartView):
 
 
 # (wire index, label, engineering unit, raw-to-display scale)
-def channels(logid, detail):
+def channels(logid, detail, firmware='hall'):
     if logid == 10:
         if detail:
             axis = 'Id' if detail == 1 else 'Iq'
-            return [(i, label, unit, .001) for i, label, unit in (
+            result = [(i, label, unit, .001) for i, label, unit in (
                 (0, axis+'给定', 'A'), (1, axis+'反馈', 'A'), (2, axis+'误差', 'A'),
                 (3, 'P项', 'V'), (4, 'I项', 'V'), (5, '轴限幅后请求', 'V'),
                 (6, '矢量限幅后输出', 'V'), (7, '限幅前P+I', 'V'))]
+            if firmware == 'demo':
+                labels = {5: '原厂PI限幅前输出', 6: '实际电压指令', 7: 'P+I重建'}
+                result = [(i, labels.get(i, label), unit, scale) for i, label, unit, scale in result]
+            return result
         return [(i, label, unit, .001) for i, label, unit in (
             (0, 'Id给定', 'A'), (1, 'Id反馈', 'A'), (2, 'Iq给定', 'A'),
             (3, 'Iq反馈', 'A'), (4, 'Ud输出', 'V'), (5, 'Uq输出', 'V'))]
@@ -212,6 +216,7 @@ class TraceView(QWidget):
     def __init__(self, send, parent=None):
         super().__init__(parent)
         self.send = send
+        self.firmware = 'hall'
         self.pending = ''
         self.rows = deque(maxlen=100000)
         self.points = deque(maxlen=2000)
@@ -286,6 +291,12 @@ class TraceView(QWidget):
         self.capture_button.setEnabled(current)
         self.rate.setCurrentText('500' if self.group.currentData() in (10, 30) else '200')
         self.preview_selection()
+
+    def set_firmware(self, firmware):
+        self.firmware = firmware
+        self.reset_connection()
+        self.build_plots(self.group.currentData(),
+                          self.detail.currentIndex() if self.group.currentData() == 10 else 0)
 
     def preview_selection(self):
         if not self.points:
@@ -486,6 +497,13 @@ class TraceView(QWidget):
             30: '占空比为本周期写入、下一PWM更新点生效的预装载值；电流为本周期采样，Ic为重构值。',
             40: 'C=逻辑Iq，V=逻辑机械转速，P=选择40组后的Hall相对位置；当前分辨率15°，非绝对位置。',
         }[logid])
+        if self.firmware == 'demo':
+            self.note.setText({
+                10: 'demo原厂电流PI；高速抓取16 kHz、128点约8 ms。轴请求为原厂out_start，细节不套用hall限幅语义。',
+                20: 'demo原厂速度PI，速度rpm、电流A；显示原厂积分与输出，不包含hall启动Iq斜坡。',
+                30: 'demo PWM比较值换算占空比；相电流来自原厂采样，母线来自实际ADC。',
+                40: 'demo Hall插值角累计的相对机械位置，非绝对位置；停机重新识别或角度重定位可引入跳变。',
+            }[logid])
         for box in (self.legend, self.plots):
             while box.count():
                 item = box.takeAt(0)
@@ -504,7 +522,7 @@ class TraceView(QWidget):
             axis.setGridLinePen(QPen(QColor('#dfe4ea'), .6))
             axis.setMinorGridLinePen(QPen(QColor('#f0f2f5'), .5))
             return axis
-        for index, label, unit, scale in channels(logid, detail):
+        for index, label, unit, scale in channels(logid, detail, self.firmware):
             if unit not in plots and plots:
                 chart, x, _ = next(iter(plots.values()))
                 y = make_axis()
@@ -600,7 +618,7 @@ class TraceView(QWidget):
                     'drops', 'flags', 'capture', *[f'v{i}' for i in range(10)], 'fields'])
                 for elapsed, f in self.rows:
                     names = ';'.join(f'v{i}={name}[{unit}],scale={scale}'
-                                    for i, name, unit, scale in channels(f.logid, f.detail))
+                                    for i, name, unit, scale in channels(f.logid, f.detail, self.firmware))
                     writer.writerow([elapsed, f.logid, f.detail, f.seq, f.us, f.drops,
                                      f.flags, f.capture, *f.values, names])
         except OSError as exc:

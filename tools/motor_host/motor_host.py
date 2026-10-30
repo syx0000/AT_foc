@@ -101,6 +101,42 @@ PARAMETER_HELP = {
 }
 SILENT_TIMEOUT_MS = 1500
 
+# demo uses the vendor gains divided by 2**shift, not Hall's Q15/Q20 gains.
+DEMO_PARAMETER_NAMES = [
+    "demo_rs_mohm", "demo_ls_uh", "demo_bandwidth_rad_s", "demo_tune_bus_mv",
+    "demo_current_limit_ma", "demo_acc_rpm_ms", "demo_dec_rpm_ms",
+    *[f"demo_{axis}_{part}" for axis in ("id", "iq", "speed")
+      for part in ("kp", "ki", "kp_shift", "ki_shift")],
+    "demo_hall_scan_mv", "demo_hall_angle_inc",
+    "demo_hall_align_ms",
+]
+for _name in DEMO_PARAMETER_NAMES:
+    if _name.endswith("_shift"):
+        PARAMETER_RANGES[_name] = (0, 15)
+    elif _name.endswith(("_kp", "_ki")):
+        PARAMETER_RANGES[_name] = (0, 32767)
+    PARAMETER_HELP[_name] = "demo原厂参数；停机修改立即生效，保存沿用原厂Flash参数表"
+PARAMETER_RANGES.update({
+    "demo_rs_mohm": (1, 10000), "demo_ls_uh": (1, 100000),
+    "demo_bandwidth_rad_s": (1, 65535), "demo_tune_bus_mv": (18000, 60000),
+    "demo_current_limit_ma": (0, 50000), "demo_acc_rpm_ms": (1, 1000),
+    "demo_dec_rpm_ms": (1, 1000), "demo_hall_scan_mv": (100, 4800),
+    "demo_hall_angle_inc": (1, 100),
+    "demo_hall_align_ms": (10, 10000),
+})
+PARAMETER_HELP.update({
+    "demo_rs_mohm": "原厂Rs相参数，mΩ；线间测量需除以2",
+    "demo_ls_uh": "原厂Ls相参数，µH；线间测量需除以2，不是独立Ld/Lq",
+    "demo_bandwidth_rad_s": "原厂自动整定带宽rad/s，888 Hz约5579；算法可能调整实际带宽，本字段不写Flash",
+    "demo_tune_bus_mv": "原厂电流PI整定额定母线，mV；不改变硬件采样定标",
+    "demo_current_limit_ma": "运行电流限幅，mA；不代替学习/辨识电流约束",
+    "demo_acc_rpm_ms": "原厂加速斜率rpm/ms，30相当于30000 rpm/s",
+    "demo_dec_rpm_ms": "原厂减速斜率rpm/ms，30相当于30000 rpm/s",
+    "demo_id_ki": "原厂d轴Ki；现有Flash保存槽取q轴Ki，独立值仅在本次RAM运行有效",
+    "demo_hall_angle_inc": "原厂学习角度步长；沿用库角度单位，仅RAM生效",
+    "demo_hall_align_ms": "原厂Hall学习对齐时间ms，仅RAM生效",
+})
+
 
 class HistoryLineEdit(QLineEdit):
     """支持上下方向键浏览已发送命令的输入框。"""
@@ -144,9 +180,13 @@ class MotorHost(QMainWindow):
         self.setWindowTitle("AT_foc_hall 电机调试工具")
         self.resize(1120, 760)
         self.serial_port: serial.Serial | None = None
+        self.firmware_type = "unknown"
+        self.reply_pending = ""
+        self.command_buttons: list[tuple[QPushButton, str, str]] = []
         self.commissioning_buttons: list[QPushButton] = []
         self.debug_enabled = False
         self.mode_started = {"open": False, "current": False, "speed": False}
+        self.pending_mode_request: str | None = None
         self.mode_buttons: dict[str, QPushButton] = {}
         self.active_values: dict[str, str] = {}
         self.silent_active = False
@@ -155,6 +195,7 @@ class MotorHost(QMainWindow):
         self.silent_timer.setSingleShot(True)
         self.silent_timer.timeout.connect(self.silent_query_timeout)
         self._build_ui()
+        self.apply_firmware_profile("unknown")
         self.refresh_ports()
         self.rx_timer = QTimer(self)
         self.rx_timer.timeout.connect(self.read_serial)
@@ -180,6 +221,8 @@ class MotorHost(QMainWindow):
         connection.addWidget(QLabel(f"{BAUDRATE} 8N1"))
         self.connection_state = QLabel("未连接")
         connection.addWidget(self.connection_state)
+        self.firmware_label = QLabel("固件：未识别")
+        connection.addWidget(self.firmware_label)
         reset_button = QPushButton("复位设备")
         reset_button.clicked.connect(self.reset_device)
         connection.addWidget(reset_button)
@@ -228,8 +271,10 @@ class MotorHost(QMainWindow):
     def _command_button(self, text: str, command: str,
                         commissioning: bool = False) -> QPushButton:
         button = QPushButton(text)
-        button.clicked.connect(lambda _checked=False, value=command:
-                               self.send_command(value))
+        button.setProperty("command", command)
+        button.clicked.connect(lambda _checked=False, target=button:
+                               self.send_command(target.property("command")))
+        self.command_buttons.append((button, text, command))
         if commissioning:
             self.commissioning_buttons.append(button)
         return button
@@ -324,6 +369,9 @@ class MotorHost(QMainWindow):
         for index, item in enumerate(items):
             grid.addWidget(self._command_button(*item), index // 5, index % 5)
         layout.addLayout(grid)
+        self.parameter_note = QLabel("hall：编辑候选参数，检查差异后接受，再保存。")
+        self.parameter_note.setWordWrap(True)
+        layout.addWidget(self.parameter_note)
         form = QFormLayout()
         self.parameter_name = QComboBox()
         self.parameter_name.addItems(PARAMETER_NAMES)
@@ -333,6 +381,7 @@ class MotorHost(QMainWindow):
         form.addRow("参数名", self.parameter_name)
         form.addRow("数值", self.parameter_value)
         set_button = QPushButton("设置候选参数")
+        self.parameter_set_button = set_button
         set_button.clicked.connect(self.send_parameter)
         form.addRow(set_button)
         layout.addLayout(form)
@@ -385,7 +434,9 @@ class MotorHost(QMainWindow):
         self.connection_state.setText(f"已连接 {port}")
         self.append_console(f"[{datetime.now():%H:%M:%S}] 已连接 {port}\n")
         self.active_values.clear()
-        self.request_active_parameters()
+        self.reply_pending = ""
+        self.apply_firmware_profile("unknown")
+        self.send_command("version")
 
     def disconnect(self) -> None:
         if self.serial_port:
@@ -394,6 +445,10 @@ class MotorHost(QMainWindow):
             except serial.SerialException:
                 pass
         self.serial_port = None
+        self.finish_silent_query()
+        self.reply_pending = ""
+        self.active_values.clear()
+        self.apply_firmware_profile("unknown")
         self.debug_enabled = False
         self.debug_button.setText("打开调试")
         self.trace_view.reset_connection()
@@ -414,6 +469,7 @@ class MotorHost(QMainWindow):
             self.append_console(f"\n[串口错误] {exc}\n")
             self.disconnect()
             return
+        self.process_replies(text)
         if self.silent_active:
             text = self.consume_silent_reply(text)
             if not text:
@@ -431,20 +487,129 @@ class MotorHost(QMainWindow):
             self.set_commissioning_busy(False)
 
     def send_command(self, command: str) -> bool:
+        if not self.command_supported(command):
+            self.append_console(f"[当前固件不支持或尚未识别] {command}\n")
+            return False
         if not self.serial_port or not self.serial_port.is_open:
             QMessageBox.warning(self, "提示", "请先连接串口")
+            return False
+        parts = command.split()
+        run_mode = (parts[0] if len(parts) >= 2 and parts[0] in self.mode_buttons
+                    and parts[1] in ("start", "set") else None)
+        if run_mode and self.pending_mode_request is not None:
+            self.append_console("[等待运行命令回显，请勿重复发送]\n")
             return False
         try:
             self.serial_port.write((command.strip() + "\r\n").encode("ascii"))
         except (serial.SerialException, UnicodeEncodeError) as exc:
             QMessageBox.critical(self, "发送失败", str(exc))
             return False
+        if run_mode:
+            self.pending_mode_request = run_mode
         self.append_console(f"> {command.strip()}\n")
         if command.startswith(("calibrate ",
                                "identify ", "calculate current_pi")):
             self.set_commissioning_busy(True)
 
         return True
+
+    def command_supported(self, command: str) -> bool:
+        if command in ("version", "help", "motor stop", "debug 0"):
+            return True
+        if self.firmware_type == "unknown":
+            return False
+        if self.firmware_type == "hall":
+            return not command.startswith("identify winding")
+        if command.startswith("motor param set "):
+            parts = command.split()
+            return len(parts) == 5 and parts[3] in DEMO_PARAMETER_NAMES
+        if command.startswith(("identify ", "calibrate ", "calculate ")):
+            return command in ("identify winding", "calibrate current_offset",
+                               "calibrate hall angle", "calculate current_pi")
+        if command.startswith("motor "):
+            return command in ("motor stop", "motor params active", "motor params storage",
+                               "motor commissioning save", "motor commissioning abort")
+        if command in ("status", "fault", "fault clear", "reset"):
+            return True
+        return command.startswith(("speed start ", "speed set ", "speed stop",
+                                   "current start ", "current set ", "current stop",
+                                   "open start ", "open set ", "open stop",
+                                   "debug ", "logid ", "logdetail ", "lograte ", "logcapture "))
+
+    def apply_firmware_profile(self, firmware: str) -> None:
+        self.firmware_type = firmware
+        self.firmware_label.setText({"unknown": "固件：未识别", "hall": "固件：hall",
+                                     "demo": "固件：demo（停机直改）"}[firmware])
+        demo = firmware == "demo"
+        for button, label, command in self.command_buttons:
+            mapped, title = command, label
+            if demo and command == "identify resistance":
+                mapped, title = "identify winding", "绕组参数辨识Rs/Ls"
+            elif demo and command == "calibrate hall angle":
+                title = "原厂Hall学习（自动保存）"
+            elif demo and command == "calculate current_pi":
+                title = "原厂电流PI自动整定"
+            button.setProperty("command", mapped)
+            button.setText(title)
+            button.setVisible(not demo or self.command_supported(mapped))
+            button.setEnabled(firmware != "unknown" or mapped in ("version", "help"))
+        self.parameter_name.blockSignals(True)
+        self.parameter_name.clear()
+        self.parameter_name.addItems(DEMO_PARAMETER_NAMES if demo else PARAMETER_NAMES)
+        self.parameter_name.blockSignals(False)
+        self.parameter_set_button.setText("停机修改（立即生效）" if demo else "设置候选参数")
+        self.parameter_set_button.setEnabled(firmware != "unknown")
+        self.parameter_note.setText(
+            "demo：停机修改直接生效；保存沿用原厂Flash，Hall学习成功仍自动保存。"
+            "极对数、CAN ID、最高转速等编译项请修改宏后烧录；无候选、独立Hall补偿或磁链辨识。"
+            if demo else "hall：编辑候选参数，检查差异后接受，再保存。")
+        self.open_accel.setText("0" if demo else "20000")
+        self.open_accel.setEnabled(not demo)
+        self.trace_view.set_firmware(firmware)
+        self.reset_mode_buttons()
+        self.debug_enabled = False
+        self.debug_button.setText("打开调试")
+        for button in self.mode_buttons.values():
+            button.setEnabled(firmware != "unknown")
+        self.show_current_parameter_value()
+
+    def process_replies(self, text: str) -> None:
+        self.reply_pending += text
+        while "\n" in self.reply_pending:
+            line, self.reply_pending = self.reply_pending.split("\n", 1)
+            line = line.strip()
+            if line.startswith("OK fw="):
+                target = "demo" if "firmware=demo" in line else "hall"
+                if target != self.firmware_type:
+                    self.active_values.clear()
+                    self.apply_firmware_profile(target)
+                    self.request_active_parameters()
+            if (line.startswith("OK commissioning complete") or
+                    line.startswith("ERR commissioning") or line.startswith("ERR ")):
+                self.set_commissioning_busy(False)
+            acknowledged_mode = None
+            for mode in self.mode_buttons:
+                if line.startswith((f"OK {mode} started", f"OK {mode} updated",
+                                    f"OK {mode} requested")):
+                    acknowledged_mode = mode
+            if line.startswith("OK run requested"):
+                fields = dict(token.split("=", 1) for token in line.split() if "=" in token)
+                acknowledged_mode = fields.get("mode", self.pending_mode_request)
+            if acknowledged_mode in self.mode_buttons:
+                self.reset_mode_buttons()
+                self.mode_started[acknowledged_mode] = True
+                self.mode_buttons[acknowledged_mode].setText(
+                    {"open": "开环更新", "current": "电流更新", "speed": "速度更新"}[acknowledged_mode])
+            if line.startswith("ERR "):
+                # A rejected edit/update says nothing about whether the motor stopped.
+                self.pending_mode_request = None
+            if line in ("OK stopped", "OK motor stopped", "OK open stopped",
+                        "OK current stopped", "OK speed stopped", "OK resetting",
+                        "OK fault clear stopped"):
+                self.reset_mode_buttons()
+                self.set_commissioning_busy(False)
+        if len(self.reply_pending) > 8192:
+            self.reply_pending = ""
 
     def send_entry(self) -> None:
         command = self.command_entry.text().strip()
@@ -464,6 +629,8 @@ class MotorHost(QMainWindow):
         self.send_command(f"speed {action} {self.speed_rpm.text()}")
 
     def send_mode(self, mode: str) -> None:
+        if self.firmware_type == "unknown":
+            return
         action = "set" if self.mode_started[mode] else "start"
         if mode == "open":
             self.send_open(action)
@@ -471,25 +638,15 @@ class MotorHost(QMainWindow):
             self.send_current(action)
         else:
             self.send_speed(action)
-        if self.serial_port and self.serial_port.is_open:
-            if action == "start":
-                self.reset_mode_buttons()
-            self.mode_started[mode] = True
-            labels = {"open": "开环更新", "current": "电流更新",
-                      "speed": "速度更新"}
-            self.mode_buttons[mode].setText(labels[mode])
 
     def stop_motor(self) -> None:
         self.send_command("motor stop")
-        if self.serial_port and self.serial_port.is_open:
-            self.reset_mode_buttons()
 
     def reset_device(self) -> None:
         self.send_command("reset")
-        if self.serial_port and self.serial_port.is_open:
-            self.reset_mode_buttons()
 
     def reset_mode_buttons(self) -> None:
+        self.pending_mode_request = None
         self.mode_started = {"open": False, "current": False, "speed": False}
         labels = {"open": "开环启动", "current": "电流环启动",
                   "speed": "速度启动"}
@@ -538,7 +695,7 @@ class MotorHost(QMainWindow):
             self.parameter_value.setText(self.active_values[name])
 
     def request_active_parameters(self) -> None:
-        if (self.silent_active or self.debug_enabled or
+        if (self.firmware_type == "unknown" or self.silent_active or self.debug_enabled or
                 not self.serial_port or not self.serial_port.is_open):
             return
         try:
@@ -569,7 +726,7 @@ class MotorHost(QMainWindow):
             if "=" not in token:
                 continue
             key, value = token.split("=", 1)
-            names = ACTIVE_FIELD_MAP.get(key)
+            names = [key] if key in DEMO_PARAMETER_NAMES else ACTIVE_FIELD_MAP.get(key)
             if not names:
                 continue
             for name, part in zip(names, value.split("/")):
@@ -596,7 +753,7 @@ class MotorHost(QMainWindow):
 
     def set_commissioning_busy(self, busy: bool) -> None:
         for button in self.commissioning_buttons:
-            button.setEnabled(not busy)
+            button.setEnabled(not busy and self.firmware_type != "unknown")
 
     def append_console(self, text: str) -> None:
         self.console.moveCursor(QTextCursor.End)
