@@ -1,7 +1,7 @@
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
 
-#if defined(USE_UART_LOG) && defined(MOTOR_PARAM_IDENTIFY)
+#if defined(USE_HALL_HOST) && defined(MOTOR_PARAM_IDENTIFY)
 
 #define IDENT_DIAG_QUEUE_SIZE       (8U)
 #define IDENT_DIAG_QUEUE_MASK       (IDENT_DIAG_QUEUE_SIZE - 1U)
@@ -85,94 +85,6 @@ static const char *motor_ident_diag_event_name(uint8_t event)
   }
 }
 
-static flag_status motor_ident_diag_command_match(uint8_t *data, uint8_t length,
-                                                   const char *command, uint8_t command_length)
-{
-  uint8_t index;
-
-  while ((length > 0U) &&
-         ((data[length - 1U] == '\r') || (data[length - 1U] == '\n') ||
-          (data[length - 1U] == ' ') || (data[length - 1U] == '\t')))
-  {
-    length--;
-  }
-
-  if (length != command_length)
-  {
-    return RESET;
-  }
-
-  for (index = 0U; index < command_length; index++)
-  {
-    uint8_t received = data[index];
-    if ((received >= 'A') && (received <= 'Z'))
-    {
-      received = (uint8_t)(received + ('a' - 'A'));
-    }
-    if (received != (uint8_t)command[index])
-    {
-      return RESET;
-    }
-  }
-
-  return SET;
-}
-
-static void motor_ident_diag_command_task(void)
-{
-  uint8_t command[RCP_MAX_FRAME_SIZE + 1U];
-  uint8_t length;
-  uint32_t primask;
-
-  if (uart_log_rx_take(command, &length) == RESET)
-  {
-    return;
-  }
-
-  if (motor_ident_diag_command_match(command, length, "clear", 5U) != RESET)
-  {
-    if (esc_state != ESC_STATE_ERROR)
-    {
-      printf("ERR clear state=%u error=0x%08lX\r\n",
-             (unsigned int)esc_state, (unsigned long)error_code);
-      return;
-    }
-
-    if (gate_driver_fault_recover() == RESET)
-    {
-      printf("ERR clear driver_fault_active\r\n");
-      return;
-    }
-
-    /* Fault recovery always returns to a stopped state. */
-    start_stop_btn_flag = RESET;
-    error_code = MC_NO_ERROR;
-    esc_state = ESC_STATE_IDLE;
-    printf("OK clear\r\n");
-    return;
-  }
-
-  if (motor_ident_diag_command_match(command, length, "ident", 5U) == RESET)
-  {
-    printf("ERR command; use ident or clear\r\n");
-    return;
-  }
-
-  if (esc_state != ESC_STATE_SAFETY_READY)
-  {
-    printf("ERR ident state=%u error=0x%08lX\r\n",
-           (unsigned int)esc_state, (unsigned long)error_code);
-    return;
-  }
-
-  primask = __get_PRIMASK();
-  __disable_irq();
-  motor_param_ident.state_flag = PROCESSING;
-  esc_state = ESC_STATE_WINDING_PARAM_ID;
-  __set_PRIMASK(primask);
-  printf("OK ident\r\n");
-}
-
 void motor_ident_diag_task(void)
 {
   ident_diag_record_type record;
@@ -180,7 +92,6 @@ void motor_ident_diag_task(void)
   float_u32_union ls;
   uint32_t primask;
 
-  motor_ident_diag_command_task();
 
   primask = __get_PRIMASK();
   __disable_irq();

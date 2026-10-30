@@ -33,7 +33,7 @@ extern "C" {
 
 void dma_uart_configuration(void);
 void uart_rx_init(void);
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
 flag_status uart_log_rx_take(uint8_t *data, uint8_t *length);
 #endif
 

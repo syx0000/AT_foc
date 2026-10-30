@@ -24,6 +24,9 @@
 
 #include "stdarg.h"
 #include "mc_lib.h"
+#if defined USE_HALL_HOST
+#include "mc_host.h"
+#endif
 
 /** @addtogroup Motor_Control_Library
   * @{
@@ -35,12 +38,12 @@
   */
 
 uint8_t usart_rx_buffer[RCP_MAX_FRAME_SIZE];
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
 static uint8_t uart_log_rx_buffer[RCP_MAX_FRAME_SIZE + 1U];
 static volatile uint8_t uart_log_rx_length;
 static volatile flag_status uart_log_rx_ready;
 #endif
-#if defined USE_MOTOR_MONITOR || defined USE_UART_LOG
+#if defined USE_MOTOR_MONITOR || defined USE_HALL_HOST
 /* global variables definition */
 uint8_t sync_frame[10] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB};
 
@@ -106,6 +109,12 @@ void dma_uart_configuration()
   */
 void uart_rx_init(void)
 {
+#if defined USE_HALL_HOST
+  usart_dma_receiver_enable(COMM_UART, FALSE);
+  usart_interrupt_enable(COMM_UART, USART_IDLE_INT, FALSE);
+  usart_interrupt_enable(COMM_UART, USART_RDBF_INT, TRUE);
+  /* Host receives bounded CR/LF lines by RX interrupt. */
+#else
   /* Initialization of UART index */
   usart_data_idx.data_len = 0;
   usart_data_idx.frame_len = 0;
@@ -123,6 +132,7 @@ void uart_rx_init(void)
 
   /* usart2 rx begin DMA receiving */
   dma_channel_enable(DMA_UART_RX_CHANNEL, TRUE);
+#endif
 }
 
 /**
@@ -132,6 +142,13 @@ void uart_rx_init(void)
   */
 void COMM_UART_IRQHandler(void)
 {
+#if defined USE_HALL_HOST
+  if(usart_flag_get(COMM_UART,USART_ROERR_FLAG)!=RESET) {
+    usart_flag_clear(COMM_UART,USART_ROERR_FLAG); mc_host_rx_error();
+  }
+  if(usart_flag_get(COMM_UART,USART_RDBF_FLAG)!=RESET)
+    mc_host_rx_byte((uint8_t)usart_data_receive(COMM_UART));
+#else
 #if defined USE_MOTOR_MONITOR
   uint8_t bErrorCode;
   uint8_t* pErrorCode = &bErrorCode;
@@ -198,9 +215,10 @@ void COMM_UART_IRQHandler(void)
     /* enable DMA UART RX */
     dma_channel_enable(DMA_UART_RX_CHANNEL, TRUE);
   }
+#endif
 }
 
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
 flag_status uart_log_rx_take(uint8_t *data, uint8_t *length)
 {
   uint32_t primask;

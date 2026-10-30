@@ -108,18 +108,23 @@ extern "C" {
 /* Enable Winding parameter identification or not */
 #define MOTOR_PARAM_IDENTIFY
 
-/* Select one UART mode: binary Motor Monitor or ASCII log. */
-#define USE_MOTOR_MONITOR      /* CTRL_SOURCE should be changed to CTRL_SOURCE_EXTERNAL if no motor monitor is used. */
-//#define USE_UART_LOG
-
-#if defined(USE_MOTOR_MONITOR) && defined(USE_UART_LOG)
-#error "Select only one UART mode"
-#elif defined(USE_MOTOR_MONITOR)
-#define UI_UART_BAUDRATE                (1500000UL)
-#elif defined(USE_UART_LOG)
-#define UI_UART_BAUDRATE                (921600UL)
+/* Exactly two UI builds. Override MOTOR_UI_MODE=1 for the original Monitor. */
+#define MOTOR_UI_MONITOR 1
+#define MOTOR_UI_HALL_HOST 2
+#ifndef MOTOR_UI_MODE
+#define MOTOR_UI_MODE MOTOR_UI_HALL_HOST
+#endif
+#if defined(USE_UART_LOG) || defined(USE_MOTOR_MONITOR) || defined(USE_HALL_HOST)
+#error "Select MOTOR_UI_MODE only; do not define UI backends separately"
+#endif
+#if MOTOR_UI_MODE == MOTOR_UI_MONITOR
+#define USE_MOTOR_MONITOR
+#define UI_UART_BAUDRATE (1500000UL)
+#elif MOTOR_UI_MODE == MOTOR_UI_HALL_HOST
+#define USE_HALL_HOST
+#define UI_UART_BAUDRATE (921600UL)
 #else
-#error "Select USE_MOTOR_MONITOR or USE_UART_LOG"
+#error "MOTOR_UI_MODE must be 1 (Monitor) or 2 (Hall host)"
 #endif
 
 /********************************* Motor-related parameter *********************************/

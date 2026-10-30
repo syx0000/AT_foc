@@ -1246,7 +1246,7 @@ static void motor_parameter_id_hw_restore(void)
   */
 void motor_parameter_id_abort(void)
 {
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
   motor_ident_diag_fault_if_unset(IDENT_DIAG_EXTERNAL_ABORT);
 #endif
 #if defined USE_MOTOR_MONITOR
@@ -1277,7 +1277,7 @@ void motor_parameter_id_process(void)
   {
     if (motor_param_ident.Ls.f <= 0 || motor_param_ident.Rs.f <= 0)
     {
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
       motor_ident_diag_fault_if_unset(IDENT_DIAG_INVALID_RESULT);
 #endif
 #if defined USE_MOTOR_MONITOR
@@ -1292,7 +1292,7 @@ void motor_parameter_id_process(void)
     else
     {
       motor_param_ident.state_flag = SUCCEED;
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
       motor_ident_diag_capture(IDENT_DIAG_SUCCESS);
 #endif
       motor_param_ident.Rs_Old.f = motor_param_ident.Rs.f;
@@ -1303,7 +1303,7 @@ void motor_parameter_id_process(void)
   }
   else if (motor_param_ident.state_flag == FAILED)
   {
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
     motor_ident_diag_fault_if_unset(IDENT_DIAG_TIMEOUT);
 #endif
 #if defined USE_MOTOR_MONITOR

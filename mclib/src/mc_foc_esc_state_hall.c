@@ -24,6 +24,9 @@
 
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
+#if defined USE_HALL_HOST
+#include "mc_host.h"
+#endif
 
 /** @addtogroup Motor_Control_Library
   * @{
@@ -138,6 +141,12 @@ void ESC_State_Init(esc_state_type esc_state_handler)
                          TMR_TRIGGER_INT | TMR_C4_INT, TRUE);
 #endif
     charge_boot_cap(&pwm_duty);
+#if defined USE_HALL_HOST
+    if(mc_host_stop_requested()) {
+      gate_driver_emergency_shutdown(); foc_rdy=RESET; start_stop_btn_flag=RESET;
+      esc_state=ESC_STATE_FREE_RUN; break;
+    }
+#endif
     pwm_switch_on();
     foc_rdy = SET;
     break;
@@ -196,7 +205,7 @@ void ESC_State_Init(esc_state_type esc_state_handler)
 #endif
     motor_parameter_ID_config();
     motor_param_ident.timeout_count = 0;
-#if defined USE_UART_LOG
+#if defined USE_HALL_HOST
     motor_ident_diag_reset();
     motor_ident_diag_capture(IDENT_DIAG_START);
 #endif

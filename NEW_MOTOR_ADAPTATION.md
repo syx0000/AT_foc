@@ -12,7 +12,7 @@ demo 已适配板卡驱动、电流采样、Hall 运行和 ZXQ CAN，但电机�
 
 算法、定标及界面主要位于 `mclib/src/motor_control_foc.c`、`mclib/src/mc_foc_esc_state_hall.c`、`mclib/src/user_interface_foc.c`；Flash 初始化入口为该板工程 `src/main.c` 中的 `mc_param_init()`。
 
-当前串口选用 `USE_MOTOR_MONITOR`，波特率 1500000，使用厂商 Motor Monitor 的二进制协议；不是 hall 工程 921600 的文本 CLI。本工程不能发送 `motor params profile` 等 hall 命令，hall 的 PySide6 上位机也不能直接用来配置 demo。若切换到 `USE_UART_LOG`，日志波特率为 921600，两个宏只能开启一个；日志模式不等于获得 hall 的文本命令功能。
+当前增加两个互斥上位机模式：`MOTOR_UI_MODE=1` 保留原厂 Motor Monitor（1500000 二进制协议），`MOTOR_UI_MODE=2` 为共享 hall 新版上位机（921600 文本协议，默认）。新上位机识别 demo 后显示原生参数和辨识入口；不提供候选流程、独立 Hall offset 和磁链辨识。详见 [双上位机接口](DEMO_HOST_INTERFACE.md)。不支持 hall 的新电机 profile 命令。
 
 ## 2. 先修改并核对电机与控制参数
 
@@ -46,9 +46,9 @@ demo 已适配板卡驱动、电流采样、Hall 运行和 ZXQ CAN，但电机�
 
 ## 3. 处理 Flash 参数，防止旧参数覆盖新宏
 
-启动会调用 `mc_param_init()`，因此修改宏、重编译下载后，还需确认实际运行参数来源。通过 Motor Monitor 读取电机、Hall、PID 等运行参数并与目标值对照；已有 Flash 记录是否覆盖编译值，以该启动路径和回读结果为准。
+启动会调用 `mc_param_init()`，因此修改宏、重编译下载后，还需确认实际运行参数来源。通过 Motor Monitor 读取电机、Hall、PID 等运行参数并与目标值对照；运行时保存会改写这张表，启动直接读取它。当前下载镜像包含参数区全部2048字节，正常重新下载会覆盖为编译初值；普通重启保留上次保存值。
 
-需要恢复默认或清理旧参数时，使用与当前固件版本匹配的厂商参数管理流程，记录原始数据后再操作。不要未经核对整片擦除：可能影响其他固件或参数区域。Hall 学习成功后，主循环会在 `hall_learn.check_flag` 置位时调用 `write_flash_cmd()`；其他参数的保存也应按实际界面和 Flash 实现逐项确认。不能套用 hall 的“候选→接受→保存”流程，不能假设所有调参都已持久化。
+新接口不增加加载/恢复默认存储机制；恢复编译初值仍按当前工程重新编译下载，操作前记录原始数据。不要未经核对整片擦除：可能影响其他固件或参数区域。Hall 学习成功后，主循环会在 `hall_learn.check_flag` 置位时调用 `write_flash_cmd()`；其他参数的保存也应按实际界面和 Flash 实现逐项确认。不能套用 hall 的“候选→接受→保存”流程，不能假设所有调参都已持久化。
 
 ## 4. 上板适配顺序
 

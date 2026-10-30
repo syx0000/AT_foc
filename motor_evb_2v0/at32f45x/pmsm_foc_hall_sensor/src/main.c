@@ -25,6 +25,7 @@
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
 #include "mc_can_motor.h"
+#include "mc_host.h"
 
 /** @addtogroup motor_evb_2v0
   * @{
@@ -95,13 +96,13 @@ int main(void)
   crm_clocks_freq_get(&crm_clocks_freq_struct);
 
   /* uart initialization */
-#if defined USE_MOTOR_MONITOR || defined USE_UART_LOG
+#if defined USE_MOTOR_MONITOR || defined USE_HALL_HOST
   uart_init(&ui_usart);
   dma_uart_configuration();
   uart_rx_init();
 #endif
-#if defined USE_UART_LOG
-  printf("\r\nFOC UART log ready, baud=921600\r\n");
+#if defined USE_HALL_HOST
+  printf("\r\nFOC Hall host ready, baud=921600 firmware=demo\r\n");
 #endif
 
   /*delay for hardware stable */
@@ -143,7 +144,10 @@ int main(void)
   while(1)
   {
     mc_can_motor_task();
-#if defined USE_UART_LOG && defined MOTOR_PARAM_IDENTIFY
+#if defined USE_HALL_HOST
+    mc_host_task();
+#endif
+#if defined USE_HALL_HOST && defined MOTOR_PARAM_IDENTIFY
     motor_ident_diag_task();
 #endif
 
@@ -195,6 +199,9 @@ int main(void)
       {
         if (gate_driver_enable() == RESET)
         {
+#if defined USE_HALL_HOST
+          if(mc_host_stop_requested()) { esc_state=ESC_STATE_FREE_RUN; continue; }
+#endif
           gate_driver_fault_latch();
           continue;
         }
@@ -210,11 +217,19 @@ int main(void)
         }
       }
 
+#if defined USE_HALL_HOST
+      if(next_requires_driver && mc_host_stop_requested()) {
+        gate_driver_emergency_shutdown(); esc_state=ESC_STATE_FREE_RUN; continue;
+      }
+#endif
       if ((next_requires_driver != RESET) &&
           (esc_state_requires_gate_driver(esc_state_old) == RESET))
       {
         if (gate_driver_enable() == RESET)
         {
+#if defined USE_HALL_HOST
+          if(mc_host_stop_requested()) { esc_state=ESC_STATE_FREE_RUN; continue; }
+#endif
           gate_driver_fault_latch();
           continue;
         }
@@ -237,6 +252,11 @@ int main(void)
         continue;
       }
 
+#if defined USE_HALL_HOST
+      if(next_requires_driver && mc_host_stop_requested()) {
+        gate_driver_emergency_shutdown(); esc_state=ESC_STATE_FREE_RUN; continue;
+      }
+#endif
       ESC_State_Init(next_state);
       if (esc_state == next_state)
       {

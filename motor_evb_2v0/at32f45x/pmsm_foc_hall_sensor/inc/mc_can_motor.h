@@ -11,6 +11,7 @@
 /* ZXQ sends a query every 500 ms. Loss of all valid commands stops the motor. */
 #define MC_CAN_TIMEOUT_MS 1500U
 #define MC_CAN_FEEDBACK_MS 10U
+void mc_can_motor_serial_takeover(void);
 void mc_can_motor_init(void);
 void mc_can_motor_task(void);
 void mc_can_motor_tick(void);

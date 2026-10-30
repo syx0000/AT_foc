@@ -18,7 +18,7 @@ typedef enum
   IDENT_DIAG_SUCCESS
 } ident_diag_event_type;
 
-#if defined(USE_UART_LOG) && defined(MOTOR_PARAM_IDENTIFY)
+#if defined(USE_HALL_HOST) && defined(MOTOR_PARAM_IDENTIFY)
 void motor_ident_diag_reset(void);
 void motor_ident_diag_capture(ident_diag_event_type event);
 void motor_ident_diag_fault_if_unset(ident_diag_event_type event);

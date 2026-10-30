@@ -409,6 +409,11 @@
               <FilePath>..\src\mc_isr.c</FilePath>
             </File>
             <File>
+              <FileName>mc_host.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\src\mc_host.c</FilePath>
+            </File>
+            <File>
               <FileName>mc_ident_diag.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\src\mc_ident_diag.c</FilePath>

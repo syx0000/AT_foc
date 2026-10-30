@@ -25,6 +25,7 @@
 #include "mc_lib.h"
 #include "mc_ident_diag.h"
 #include "mc_can_motor.h"
+#include "mc_host.h"
 
 trig_components_type trig_components;
 int16_t Iq_cmd;
@@ -271,6 +272,9 @@ void ADVTMR_PWM_CYCLE_IRQ(void)
       {
         tmr_channel_enable(BRAKE_PWM_TIMER, BRAKE_PWM_TIMER_CH, FALSE);
       }
+#endif
+#if defined USE_HALL_HOST
+      mc_host_sample();
 #endif
       /* UI sample */
 #if defined USE_MOTOR_MONITOR
@@ -696,6 +700,9 @@ void SysTick_Handler(void)
   static uint16_t undervoltage_count = 0U;
 
   mc_can_motor_tick();
+#if defined USE_HALL_HOST
+  mc_host_tick();
+#endif
 
   rotor_speed_val = rotor_speed_hall.filtered >> rotor_speed_hall.shift;
   rotor_speed_val_filt = moving_average_shift(speed_ma_fliter, rotor_speed_val);

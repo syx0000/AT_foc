@@ -47,6 +47,9 @@ void mc_can_motor_init(void)
   can_rxbuf_overflow_mode_set(CAN1, CAN_RXBUF_OVERFLOW_BE_LOSE);
 }
 
+/* Release an old CAN watchdog when the serial host issues a new control request. */
+void mc_can_motor_serial_takeover(void) { can_controls_motor=0; }
+
 static void motor_stop(void)
 {
   start_stop_btn_flag = RESET;
