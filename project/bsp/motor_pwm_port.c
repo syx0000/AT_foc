@@ -82,7 +82,7 @@ bool motor_pwm_port_output_enable(void)
 {
   if ((!motor_pwm_gate_driver_enabled) ||
       (!motor_pwm_command_valid) ||
-      (!motor_pwm_port_fault_clear()))
+      (!motor_pwm_port_fault_check()))
   {
     return false;
   }
@@ -90,7 +90,7 @@ bool motor_pwm_port_output_enable(void)
   MOTOR_PWM_TIMER->brk_bit.brken = TRUE;
   __DSB();
 
-  if (!motor_pwm_port_fault_clear())
+  if (!motor_pwm_port_fault_check())
   {
     return false;
   }
@@ -98,6 +98,21 @@ bool motor_pwm_port_output_enable(void)
   tmr_output_enable(MOTOR_PWM_TIMER, TRUE);
   motor_pwm_output_enabled = (MOTOR_PWM_TIMER->brk_bit.oen != 0U);
   return motor_pwm_output_enabled;
+}
+
+void motor_pwm_port_recovery_prepare(void)
+{
+  motor_pwm_port_output_disable();
+  motor_pwm_port_gate_driver_set(false);
+  tmr_flag_clear(MOTOR_PWM_TIMER, TMR_BRK_FLAG);
+  tmr_interrupt_enable(MOTOR_PWM_TIMER, TMR_BRK_INT, TRUE);
+}
+
+bool motor_pwm_port_fault_check(void)
+{
+  return motor_pwm_gate_driver_enabled &&
+    gpio_input_data_bit_read(MOTOR_PWM_BREAK_PORT, MOTOR_PWM_BREAK_PIN) != RESET &&
+    tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) == RESET;
 }
 
 void motor_pwm_port_output_disable(void)

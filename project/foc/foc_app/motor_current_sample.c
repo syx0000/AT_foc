@@ -145,9 +145,9 @@ static int16_t motor_current_sample_ma_to_q15(int32_t current_ma)
   return (int16_t)current_q15;
 }
 
-bool motor_current_sample_process(const motor_adc_fast_sample_t *sample)
+bool motor_current_sample_process(const motor_adc_fast_sample_t *sample,
+                                  bool monitor_overcurrent)
 {
-  uint32_t max_absolute_current;
 
   if ((sample == 0) || (!motor_current_offsets_ready))
   {
@@ -168,21 +168,6 @@ bool motor_current_sample_process(const motor_adc_fast_sample_t *sample)
     motor_current_sample_ma_to_q15(motor_current_state.phase_c_ma);
   motor_current_state.sample_count++;
 
-  max_absolute_current = motor_current_sample_abs(
-    motor_current_state.phase_a_ma);
-  if (motor_current_sample_abs(motor_current_state.phase_b_ma) >
-      max_absolute_current)
-  {
-    max_absolute_current = motor_current_sample_abs(
-      motor_current_state.phase_b_ma);
-  }
-  if (motor_current_sample_abs(motor_current_state.phase_c_ma) >
-      max_absolute_current)
-  {
-    max_absolute_current = motor_current_sample_abs(
-      motor_current_state.phase_c_ma);
-  }
-
   /* EN_GATE is dropped after any fault, at which point the current-sense
      outputs collapse toward zero ADC codes.  Those samples are not physical
      phase currents and must not create a secondary software-overcurrent. */
@@ -190,7 +175,7 @@ bool motor_current_sample_process(const motor_adc_fast_sample_t *sample)
   {
     motor_current_state.overcurrent_count = 0U;
   }
-  else if (max_absolute_current >= (uint32_t)MOTOR_SOFTWARE_OVERCURRENT_MA)
+  else if (monitor_overcurrent)
   {
     if (motor_current_state.overcurrent_count <
         MOTOR_SOFTWARE_OVERCURRENT_SAMPLES)

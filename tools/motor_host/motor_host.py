@@ -33,6 +33,8 @@ PARAMETER_NAMES = [
     "flux_linkage_uwb",
     "speed_maximum_rpm",
     "speed_acceleration_rpm_per_s",
+    "speed_deceleration_rpm_per_s",
+    "speed_startup_iq_slew_ma_s",
     "speed_current_limit_ma",
     "startup_timeout_ms",
     "offset_iq_ma",
@@ -47,8 +49,6 @@ PARAMETER_NAMES = [
     "flux_measure_ms",
     "hall_scan_mv",
     "hall_scan_mhz",
-    "stall_speed_rpm",
-    "stall_time_ms",
     "can_node_id",
 
 ]
@@ -73,7 +73,13 @@ ACTIVE_FIELD_MAP = {
 ACTIVE_FIELD_MAP.update({name: [name] for name in PARAMETER_NAMES if name not in ACTIVE_FIELD_MAP})
 PARAMETER_RANGES = {'startup_align_ma': (1, 24999), 'startup_align_ms': (10, 2000), 'startup_if_max_ma': (1600, 24999), 'startup_ramp_mhz_s': (1000, 100000), 'startup_timeout_ms': (500, 15000), 'offset_iq_ma': (1, 20000), 'offset_voltage_pct': (1, 57), 'offset_voltage_mv': (100, 27700), 'offset_settle_ms': (100, 10000), 'offset_measure_ms': (100, 10000), 'flux_iq_ma': (1, 20000), 'flux_voltage_pct': (1, 57), 'flux_voltage_mv': (100, 27700), 'flux_settle_ms': (100, 10000), 'flux_measure_ms': (100, 10000), 'hall_scan_mv': (100, 4800), 'hall_scan_mhz': (1000, 20000), 'stall_speed_rpm': (1, 500), 'stall_time_ms': (100, 10000), 'can_node_id': (1, 127)}
 SILENT_QUERY = "motor params active"
+PARAMETER_RANGES.update({
+    "speed_deceleration_rpm_per_s": (1, 1000000),
+    "speed_startup_iq_slew_ma_s": (1000, 1000000),
+})
 PARAMETER_HELP = {
+    "speed_deceleration_rpm_per_s": "速度减速斜率，rpm/s，默认30000；换向先降至零，再等待实测零速确认",
+    "speed_startup_iq_slew_ma_s": "启动Iq幅值上升速率，mA/s，默认200000（200 A/s）；降低限流及零限流立即生效",
     "startup_timeout_ms": "电流启动超时，ms；必须大于对齐时间",
     "offset_iq_ma": "Hall补偿测量Iq，mA",
     "offset_voltage_pct": "Hall补偿电压上限占母线百分比",
@@ -323,6 +329,7 @@ class MotorHost(QMainWindow):
         layout.addLayout(form)
 
         parameter_items = [
+            ("24V新电机初值（候选）", "motor params profile 60bldc140-24v"),
             ("活动参数", "motor params active"),
             ("存储状态", "motor params storage"),
             ("加载Flash", "motor params load"),

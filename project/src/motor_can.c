@@ -102,7 +102,8 @@ static bool motor_can_speed_apply(int32_t rpm)
   {
     if (!motor_control_speed_control_start(rpm)) return false;
   }
-  else if (status.state == MOTOR_CONTROL_STATE_SPEED_CONTROL)
+  else if ((status.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
+           (status.state == MOTOR_CONTROL_STATE_SPEED_PREPARING))
   {
     if (!motor_control_speed_control_target_set(rpm)) return false;
   }

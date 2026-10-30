@@ -84,6 +84,26 @@ int main(void)
   assert(motor_parameter_active_read(&p));
   assert(motor_parameter_validate(&p));
   assert(p.offset_iq_ma == 10000U && p.flux_iq_ma == 10000U);
+  test_running=true;
+  assert(!motor_parameter_candidate_24v_profile());
+  test_running=false; test_pwm_enabled=true;
+  assert(!motor_parameter_candidate_24v_profile());
+  test_pwm_enabled=false;
+  assert(motor_parameter_candidate_24v_profile());
+  assert(motor_parameter_candidate_read(&loaded));
+  assert(loaded.phase_resistance_mohm==80 && loaded.direct_inductance_uh==50);
+  assert(loaded.quadrature_inductance_uh==50);
+  assert(loaded.current_loop_bandwidth_hz==888);
+  assert(loaded.current_d_kp_q15==9141 && loaded.current_q_kp_q15==9141);
+  assert(loaded.current_ki_q15==914 && loaded.speed_current_limit_ma==35000);
+  assert(loaded.speed_maximum_rpm==3000 && loaded.speed_acceleration_rpm_per_s==30000);
+  assert(loaded.speed_deceleration_rpm_per_s==30000);
+  assert(loaded.speed_startup_iq_slew_ma_s==200000);
+  assert(loaded.flux_linkage_uwb==p.flux_linkage_uwb && loaded.speed_kp_q20==p.speed_kp_q20 && loaded.speed_ki_q20==p.speed_ki_q20);
+  assert(memcmp(loaded.hall_entry_angle_u16,p.hall_entry_angle_u16,sizeof(p.hall_entry_angle_u16))==0);
+  assert(motor_parameter_active_read(&loaded));
+  assert(memcmp(&loaded,&p,sizeof(p))==0); /* never changes the running profile */
+  motor_parameter_candidate_discard();
   assert(!motor_parameter_candidate_field_set(MOTOR_PARAMETER_FIELD_CAN_NODE_ID, 128));
   assert(!motor_parameter_candidate_field_set(MOTOR_PARAMETER_FIELD_OFFSET_VOLTAGE_PCT, 58));
   assert(!motor_parameter_candidate_field_set(MOTOR_PARAMETER_FIELD_STARTUP_TIMEOUT_MS, 100));
@@ -122,10 +142,13 @@ int main(void)
   test_flash[FLASH_SECTOR_SIZE + offsetof(motor_parameter_storage_record_t, parameter)] ^= 1U;
   assert(motor_parameter_storage_init());
   assert(motor_parameter_debug_get(MOTOR_PARAMETER_FIELD_CAN_NODE_ID) == 7U);
-  for (uint16_t version=2U; version<=4U; version++)
+  for (uint16_t version=2U; version<=6U; version++)
   {
     uint16_t length = (uint16_t)(version==2U ? MOTOR_PARAMETER_STORAGE_V2_LENGTH :
-                      version==3U ? MOTOR_PARAMETER_STORAGE_V3_LENGTH : MOTOR_PARAMETER_STORAGE_V4_LENGTH);
+                      version==3U ? MOTOR_PARAMETER_STORAGE_V3_LENGTH :
+                      version==4U ? MOTOR_PARAMETER_STORAGE_V4_LENGTH :
+                      version==5U ? offsetof(motor_parameter_t, speed_deceleration_rpm_per_s) :
+                      offsetof(motor_parameter_t, speed_startup_iq_slew_ma_s));
     motor_parameter_storage_record_t old;
     uint32_t crc, marker=MOTOR_PARAMETER_STORAGE_COMMIT_MARKER;
     uint32_t header=offsetof(motor_parameter_storage_record_t, parameter);
@@ -144,9 +167,11 @@ int main(void)
     assert(motor_parameter_storage_init());
     assert(motor_parameter_active_read(&loaded));
     assert(loaded.hall_rotor_offset_u16 == 1234U && loaded.speed_kp_q20 == 4800);
-    assert(loaded.startup_align_ma == MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA);
-    assert(loaded.offset_iq_ma == MOTOR_COMMISSIONING_IQ_REFERENCE_MA);
-    assert(loaded.can_node_id == MOTOR_CAN_NODE_ID);
+    if (version < 5U) assert(loaded.startup_align_ma == MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA);
+    assert(loaded.speed_deceleration_rpm_per_s == 30000U);
+    assert(loaded.speed_startup_iq_slew_ma_s == 200000U);
+    assert(loaded.offset_iq_ma == (version < 5U ? MOTOR_COMMISSIONING_IQ_REFERENCE_MA : p.offset_iq_ma));
+    assert(loaded.can_node_id == (version < 5U ? MOTOR_CAN_NODE_ID : p.can_node_id));
     assert(motor_parameter_storage_save());
     assert(motor_parameter_storage_status_read(&status));
     assert(status.sequence == 43U);

@@ -35,6 +35,7 @@ typedef struct
   int32_t current_limit_ma;
   int32_t maximum_speed_rpm;
   uint32_t acceleration_rpm_per_s;
+  uint32_t deceleration_rpm_per_s;
 } motor_speed_control_config_t;
 
 typedef struct
@@ -115,7 +116,7 @@ int32_t motor_speed_control_maximum_rpm_get(void);
 /**
  * @brief 运行时设置速度环Iq输出限幅（CAN 0x14指令）。
  * @param limit_ma 限幅值，单位mA；超过MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA时按该值执行。
- * @return limit_ma大于0时返回true。
+ * @return limit_ma大于或等于0时返回true；0立即撤销速度模式的Iq指令。
  * @details 仅修改RAM，不写Flash；参数重载或复位后恢复编译默认值。
  */
 bool motor_speed_control_current_limit_set(int32_t limit_ma);

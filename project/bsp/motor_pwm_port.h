@@ -58,6 +58,10 @@ void motor_pwm_port_gate_driver_set(bool enable);
  * @note 调用者应在EN_GATE拉高并等待DRV8353唤醒至少2 ms后调用。本函数不会开启PWM。
  */
 bool motor_pwm_port_fault_clear(void);
+/* Clear only the previous latch with the stage disabled, before recovery wake. */
+void motor_pwm_port_recovery_prepare(void);
+/* Read-only check: never acknowledges a new Break. */
+bool motor_pwm_port_fault_check(void);
 
 /**
  * @brief 开启TMR1三相互补PWM输出。

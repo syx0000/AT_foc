@@ -10,6 +10,28 @@
 #include <stddef.h>
 #include "motor_hall_angle_math.h"
 
+bool motor_hall_direction_tables_build(const uint8_t positive_next[8],
+  const uint16_t entry_angle_u16[8], uint16_t offset,
+  uint16_t forward[8], uint16_t reverse[8])
+{
+  uint8_t state;
+  if (!forward || !reverse) return false;
+  forward[0]=forward[7]=reverse[0]=reverse[7]=0U;
+  for (state=1U; state<=6U; state++)
+    if (!motor_hall_angle_boundary_get(positive_next,entry_angle_u16,state,1,offset,&forward[state]) ||
+        !motor_hall_angle_boundary_get(positive_next,entry_angle_u16,state,-1,offset,&reverse[state])) return false;
+  return true;
+}
+
+int32_t motor_hall_correction_step(int32_t error_u16)
+{
+  int32_t step=error_u16/8;
+  if (!step && error_u16) step=error_u16>0 ? 1 : -1;
+  if (step>182) step=182;
+  if (step<-182) step=-182;
+  return step;
+}
+
 bool motor_hall_angle_boundary_get(const uint8_t positive_next[8],
                                    const uint16_t entry_angle_u16[8],
                                    uint8_t current_state,

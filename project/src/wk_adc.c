@@ -26,6 +26,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "wk_adc.h"
+#include "motor_control_config.h"
 
 /* add user code begin 0 */
 
@@ -137,6 +138,10 @@ void wk_adc1_init(void)
   adc_interrupt_enable(ADC1, ADC_TCF_INT, TRUE);
 
   /* add user code begin adc1_init 2 */
+  adc_voltage_monitor_enable(ADC1, ADC_VMONITOR_ALL_PREEMPT);
+  adc_voltage_monitor_threshold_value_set(ADC1,
+    MOTOR_ADC_OVERCURRENT_HIGH_COUNTS, MOTOR_ADC_OVERCURRENT_LOW_COUNTS);
+  adc_interrupt_enable(ADC1, ADC_VMOR_INT, TRUE);
 
   /* add user code end adc1_init 2 */
 
@@ -219,6 +224,10 @@ void wk_adc2_init(void)
   adc_preempt_conversion_trigger_set(ADC2, ADC_PREEMPT_TRIG_TMR1TRGOUT, ADC_PREEMPT_TRIG_EDGE_NONE);
 
   /* add user code begin adc2_init 2 */
+  adc_voltage_monitor_enable(ADC2, ADC_VMONITOR_ALL_PREEMPT);
+  adc_voltage_monitor_threshold_value_set(ADC2,
+    MOTOR_ADC_OVERCURRENT_HIGH_COUNTS, MOTOR_ADC_OVERCURRENT_LOW_COUNTS);
+  adc_interrupt_enable(ADC2, ADC_VMOR_INT, TRUE);
 
   /* add user code end adc2_init 2 */
 

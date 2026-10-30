@@ -25,7 +25,15 @@
 /* 电机能力、控制限幅与保护参数，单位均为mA。 */
 #define MOTOR_CURRENT_COMMAND_MAX_MA           50000L
 #define MOTOR_SOFTWARE_OVERCURRENT_MA          55000L
-#define MOTOR_SOFTWARE_OVERCURRENT_SAMPLES       800U /* 50 ms @16 kHz */
+#define MOTOR_SOFTWARE_OVERCURRENT_SAMPLES        30U /* ADC window: 1.875 ms @16 kHz */
+#define MOTOR_ADC_OVERCURRENT_DELTA_COUNTS \
+  ((MOTOR_SOFTWARE_OVERCURRENT_MA * 1ULL * MOTOR_ADC_FULL_SCALE_COUNTS * \
+    MOTOR_CURRENT_SHUNT_UOHM * MOTOR_CURRENT_CSA_GAIN) / \
+   (MOTOR_ADC_REFERENCE_UV * 1000ULL))
+#define MOTOR_ADC_OVERCURRENT_HIGH_COUNTS \
+  (MOTOR_CURRENT_OFFSET_NOMINAL_COUNTS + MOTOR_ADC_OVERCURRENT_DELTA_COUNTS)
+#define MOTOR_ADC_OVERCURRENT_LOW_COUNTS \
+  (MOTOR_CURRENT_OFFSET_NOMINAL_COUNTS - MOTOR_ADC_OVERCURRENT_DELTA_COUNTS)
 /* FOC定点标幺基准独立于指令限幅；128 A对应Q15的1.0，1 A正好对应256。 */
 #define MOTOR_CURRENT_Q15_BASE_MA             128000L
 
@@ -39,6 +47,7 @@
 /* 母线电压参数，保护阈值单位为0.1 V。 */
 #define MOTOR_BUS_VOLTAGE_DIVIDER_RATIO           21U
 #define MOTOR_BUS_UNDERVOLTAGE_0P1V               180U
+#define MOTOR_BUS_UNDERVOLTAGE_CONFIRM_MS          300U
 #define MOTOR_BUS_OVERVOLTAGE_0P1V                600U
 
 /* MOS NTC保护：达到停机温度锁存故障，降至恢复温度后允许手动清除。 */
@@ -84,7 +93,7 @@
  * 默认增益采用最后一次板上确认的活动参数4800/64。 */
 #define MOTOR_SPEED_PI_KP_Q20                         4800L
 #define MOTOR_SPEED_PI_KI_Q20                           64L
-/* 堵转保护：|Iq指令|达到当前速度模式电流上限，且转速低于门限持续1 s则故障停机。 */
+/* Legacy Flash parameter defaults only; speed-loop stall shutdown is removed. */
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         35000L

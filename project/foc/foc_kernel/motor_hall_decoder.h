@@ -20,6 +20,7 @@ typedef struct
   uint8_t state;              /**< Hall组合状态，bit0=HA、bit1=HB、bit2=HC。 */
   uint8_t previous_state;     /**< 最近一次合法跳变前的Hall状态。 */
   bool valid;                 /**< 状态为1..6时有效；0和7表示非法。 */
+  bool health_fault;          /**< Repeated rejected transitions; latched until reset. */
   uint32_t edge_count;        /**< 三路Hall任意边沿的累计捕获次数。 */
   uint32_t timestamp_cycles;  /**< 最近一次合法相邻跳变的周期时间戳。 */
   uint32_t interval_cycles;   /**< 最近完成扇区的持续CPU周期数；方向刚建立时为0。 */
@@ -73,5 +74,7 @@ bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample);
  *          the following same-direction edge establishes speed.
  */
 void motor_hall_decoder_motion_reset(uint32_t timestamp_cycles);
+bool motor_hall_decoder_edge_process_captured(uint8_t state, uint32_t edge_count,
+  uint32_t timestamp_cycles, uint32_t capture_us);
 
 #endif /* MOTOR_HALL_DECODER_H */

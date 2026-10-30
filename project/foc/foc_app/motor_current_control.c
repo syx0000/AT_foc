@@ -345,10 +345,7 @@ void motor_current_control_fast_process(void)
   else
   {
     motor_current_control_hall_invalid_cycles = 0U;
-    if (current.overcurrent_fault ||
-        (motor_current_control_abs(current.phase_a_ma) >= motor_current_control_config.abort_current_ma) ||
-        (motor_current_control_abs(current.phase_b_ma) >= motor_current_control_config.abort_current_ma) ||
-        (motor_current_control_abs(current.phase_c_ma) >= motor_current_control_config.abort_current_ma))
+    if (current.overcurrent_fault)
       motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_OVERCURRENT;
     else if (MOTOR_PWM_TIMER->brk_bit.oen == 0U)
       motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_PWM;

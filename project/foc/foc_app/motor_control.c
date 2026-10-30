@@ -24,12 +24,87 @@
 #include "motor_pwm_port.h"
 #include "motor_slow_sensor.h"
 #include "motor_speed_control.h"
+#include "motor_speed_feedback.h"
+#include "motor_board_config.h"
+#include "wk_system.h"
+#include "motor_flying_seed.h"
+#include "motor_hall_port.h"
+#include "motor_timebase.h"
 static volatile motor_control_status_t motor_control_status;
 static motor_fault_record_t motor_fault_history[MOTOR_FAULT_HISTORY_DEPTH];
 static uint32_t motor_fault_history_count;
 static uint32_t motor_fault_history_newest;
 static uint32_t motor_fault_sequence;
 static volatile uint32_t motor_fault_pending_mask;
+static bool motor_bus_undervoltage_pending;
+static uint32_t motor_bus_undervoltage_start_cycles;
+static int32_t motor_speed_prepare_target_rpm;
+static uint32_t motor_speed_prepare_cycles;
+static uint32_t motor_speed_prepare_sample_count;
+static uint8_t motor_speed_prepare_phase;
+
+static motor_fault_clear_result_t motor_control_driver_recover(void)
+{
+  motor_current_sample_state_t before;
+  motor_current_sample_state_t after;
+  bool had_sample = motor_current_sample_state_read(&before);
+  motor_pwm_port_recovery_prepare();
+  motor_pwm_port_gate_driver_set(true);
+  wk_delay_ms(MOTOR_GATE_DRIVER_WAKE_DELAY_MS);
+  if (!motor_pwm_port_fault_check())
+  {
+    motor_pwm_port_emergency_stop();
+    return MOTOR_FAULT_CLEAR_DRIVER_ACTIVE;
+  }
+  /* ADC triggering continues with MOE off. Require a fresh CSA sample after wake. */
+  (void)motor_current_sample_state_read(&before);
+  wk_delay_ms(1U);
+  if (!had_sample || !motor_current_sample_state_read(&after) ||
+      after.sample_count == before.sample_count || !motor_current_sample_fault_clear())
+  {
+    motor_pwm_port_emergency_stop();
+    return MOTOR_FAULT_CLEAR_CURRENT_UNSAFE;
+  }
+  if (motor_fault_pending_mask != 0U || !motor_pwm_port_fault_check())
+  {
+    motor_pwm_port_emergency_stop();
+    return MOTOR_FAULT_CLEAR_DRIVER_ACTIVE;
+  }
+  return MOTOR_FAULT_CLEAR_OK;
+}
+
+static bool motor_control_bus_voltage_check(void)
+{
+  motor_slow_sensor_state_t sensor;
+  if (!motor_slow_sensor_state_read(&sensor))
+  {
+    motor_bus_undervoltage_pending = false;
+    return true;
+  }
+  if (sensor.bus_voltage_0p1v < MOTOR_BUS_UNDERVOLTAGE_0P1V)
+  {
+    if (!motor_bus_undervoltage_pending)
+    {
+      motor_bus_undervoltage_start_cycles = motor_timebase_cycles_get();
+      motor_bus_undervoltage_pending = true;
+    }
+    if (motor_timebase_cycles_to_us(motor_timebase_cycles_elapsed(
+          motor_bus_undervoltage_start_cycles)) >=
+        MOTOR_BUS_UNDERVOLTAGE_CONFIRM_MS * 1000U)
+    {
+      motor_control_fault_set(MOTOR_FAULT_BUS_UNDERVOLTAGE);
+      return false;
+    }
+    return true;
+  }
+  motor_bus_undervoltage_pending = false;
+  if (sensor.bus_voltage_0p1v > MOTOR_BUS_OVERVOLTAGE_0P1V)
+  {
+    motor_control_fault_set(MOTOR_FAULT_BUS_OVERVOLTAGE);
+    return false;
+  }
+  return true;
+}
 
 /* Check before PWM startup and during each main-loop poll. */
 static bool motor_control_mos_temperature_check(void)
@@ -103,6 +178,8 @@ const char *motor_control_fault_name_get(motor_fault_code_t fault_code)
     case MOTOR_FAULT_HARDWARE_BREAK: return "hardware_break";
     case MOTOR_FAULT_MOS_OVERTEMPERATURE: return "mos_overtemperature";
     case MOTOR_FAULT_MOS_TEMPERATURE_SENSOR: return "mos_temperature_sensor";
+    case MOTOR_FAULT_BUS_UNDERVOLTAGE: return "bus_undervoltage";
+    case MOTOR_FAULT_BUS_OVERVOLTAGE: return "bus_overvoltage";
     default: return "invalid";
   }
 }
@@ -135,6 +212,7 @@ static bool motor_control_speed_command_valid(int32_t target_speed_rpm)
 
 void motor_control_init(void)
 {
+  motor_bus_undervoltage_pending = false;
   uint32_t index;
 
   motor_control_status.state = MOTOR_CONTROL_STATE_STARTUP;
@@ -244,12 +322,19 @@ bool motor_control_current_control_command_set(
   return (motor_control_status.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) &&
          motor_current_control_command_set(&physical_command);
 }
-bool motor_control_speed_control_start(int32_t target_speed_rpm)
+static bool motor_control_speed_control_start_now(int32_t target_speed_rpm)
 {
+  motor_hall_sample_t startup_hall;
+  uint32_t startup_primask;
   motor_current_control_command_t current_command;
   motor_current_control_status_t current_status;
   motor_current_transform_state_t current_transform;
   int32_t initial_quadrature_current_ma;
+  motor_rotor_feedback_t flying_rotor;
+  motor_parameter_t flying_parameter;
+  motor_slow_sensor_state_t flying_sensor;
+  int32_t flying_vq_mv;
+  int32_t flying_limit_mv;
 
   if (!motor_control_mos_temperature_check()) return false;
   if (!motor_control_speed_command_valid(target_speed_rpm))
@@ -259,17 +344,60 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
 
   if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
   {
+    startup_primask = __get_PRIMASK();
+    __disable_irq();
+    if (motor_hall_decoder_sample_read(&startup_hall) && startup_hall.valid &&
+        motor_speed_feedback_standstill_confirmed())
+    {
+      motor_hall_decoder_motion_reset(motor_timebase_cycles_get());
+      motor_hall_angle_estimator_motion_reset();
+      motor_speed_feedback_init();
+    }
+    __set_PRIMASK(startup_primask);
     /* Iq=0启动电流环(静止时转子反馈回退为Hall扇区中心角)，
      * 随后立即启动速度PI，由其积分建立启动转矩。 */
     current_command.direct_reference_ma = 0;
     current_command.quadrature_reference_ma = 0;
-    if (!motor_current_control_start(&current_command)) return false;
+    flying_vq_mv = 0;
+    if (!motor_rotor_feedback_read(&flying_rotor) ||
+        !motor_parameter_active_read(&flying_parameter) ||
+        !motor_slow_sensor_state_read(&flying_sensor)) return false;
+    if (flying_rotor.speed_valid)
+    {
+      if (((uint64_t)flying_rotor.electrical_frequency_millihz * 60U) >
+          ((uint64_t)MOTOR_SPEED_OVERSPEED_RPM * flying_parameter.pole_pairs * 1000U))
+        return false;
+      /* Configured flux gives a back-EMF feedforward seed; the current loop
+       * corrects it immediately. This is not a measured-voltage match. */
+      flying_limit_mv = (int32_t)((uint32_t)flying_sensor.bus_voltage_0p1v *
+        MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT);
+      if (flying_limit_mv > MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV)
+        flying_limit_mv = MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
+      if (!motor_flying_seed_mv(flying_parameter.flux_linkage_uwb,
+          flying_rotor.electrical_frequency_millihz, flying_rotor.direction,
+          flying_limit_mv, &flying_vq_mv)) return false;
+    }
+    startup_primask = __get_PRIMASK();
+    __disable_irq();
+    motor_speed_feedback_process_1khz();
+    __set_PRIMASK(startup_primask);
+    startup_primask = __get_PRIMASK();
+    __disable_irq();
+    if (motor_control_status.state != MOTOR_CONTROL_STATE_READY ||
+        motor_fault_pending_mask != 0U ||
+        !motor_current_control_start_seeded(&current_command, 0, flying_vq_mv, 0U))
+    {
+      __set_PRIMASK(startup_primask);
+      return false;
+    }
     if (!motor_speed_control_start(target_speed_rpm * 1000L, 0))
     {
       motor_current_control_stop();
+      __set_PRIMASK(startup_primask);
       return false;
     }
     motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
+    __set_PRIMASK(startup_primask);
     return true;
   }
 
@@ -319,29 +447,120 @@ bool motor_control_speed_control_start(int32_t target_speed_rpm)
   motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_CONTROL;
   return true;
 }
+bool motor_control_speed_control_start(int32_t target_speed_rpm)
+{
+  uint32_t primask;
+  if (motor_control_status.state != MOTOR_CONTROL_STATE_READY)
+    return motor_control_speed_control_start_now(target_speed_rpm);
+  if (!motor_control_speed_command_valid(target_speed_rpm) ||
+      !motor_control_mos_temperature_check() || !motor_control_bus_voltage_check()) return false;
+  primask = __get_PRIMASK();
+  __disable_irq();
+  if (motor_control_status.state != MOTOR_CONTROL_STATE_READY || motor_fault_pending_mask)
+  { __set_PRIMASK(primask); return false; }
+  motor_speed_prepare_target_rpm = target_speed_rpm;
+  motor_speed_prepare_phase = 0U;
+  motor_speed_prepare_cycles = motor_timebase_cycles_get();
+  motor_pwm_port_output_disable();
+  motor_pwm_port_gate_driver_set(true);
+  motor_control_status.state = MOTOR_CONTROL_STATE_SPEED_PREPARING;
+  __set_PRIMASK(primask);
+  return true;
+}
+
+static void motor_control_speed_prepare_poll(void)
+{
+  motor_current_sample_state_t sample;
+  motor_speed_feedback_t speed;
+  motor_pwm_compare_t low = {0U, 0U, 0U};
+  uint32_t elapsed = motor_timebase_cycles_to_us(
+    motor_timebase_cycles_elapsed(motor_speed_prepare_cycles));
+  if (motor_control_status.state != MOTOR_CONTROL_STATE_SPEED_PREPARING) return;
+  if (elapsed > (motor_speed_prepare_phase == 0U ? 1500000U : 100000U))
+  { motor_control_fault_set(MOTOR_FAULT_SPEED_START); return; }
+  if (motor_speed_prepare_phase == 0U)
+  {
+    if (elapsed < MOTOR_GATE_DRIVER_WAKE_DELAY_MS * 1000U) return;
+    if (!motor_pwm_port_fault_check() || !motor_current_sample_state_read(&sample))
+    { motor_control_fault_set(MOTOR_FAULT_SPEED_START); return; }
+    if (!motor_speed_feedback_standstill_confirmed() &&
+        (!motor_speed_feedback_read(&speed) || !speed.valid)) return;
+    motor_speed_prepare_sample_count = sample.sample_count;
+    if (motor_speed_feedback_standstill_confirmed())
+    {
+      motor_pwm_port_compare_set(&low);
+      motor_speed_prepare_phase = 1U;
+    }
+    else motor_speed_prepare_phase = 3U;
+    motor_speed_prepare_cycles = motor_timebase_cycles_get();
+    return;
+  }
+  if (elapsed < 1000U) return;
+  if (motor_speed_prepare_phase == 1U)
+  {
+    /* Let zero compare values latch with MOE off, then recheck standstill. */
+    if (!motor_speed_feedback_standstill_confirmed())
+      motor_speed_prepare_phase = 3U;
+    else if (!motor_pwm_port_fault_check() || !motor_pwm_port_output_enable())
+    { motor_control_fault_set(MOTOR_FAULT_PWM); return; }
+    else motor_speed_prepare_phase = 2U;
+    motor_speed_prepare_cycles = motor_timebase_cycles_get();
+    return;
+  }
+  if (motor_speed_prepare_phase == 2U)
+  {
+    motor_pwm_port_output_disable();
+    motor_speed_prepare_phase = 3U;
+    if (!motor_current_sample_state_read(&sample))
+    { motor_control_fault_set(MOTOR_FAULT_CURRENT_SAMPLE); return; }
+    motor_speed_prepare_sample_count = sample.sample_count;
+    motor_speed_prepare_cycles = motor_timebase_cycles_get();
+    return;
+  }
+  if (!motor_pwm_port_fault_check())
+  { motor_control_fault_set(MOTOR_FAULT_DRIVER_NOT_READY); return; }
+  if (!motor_current_sample_state_read(&sample) ||
+      sample.sample_count == motor_speed_prepare_sample_count) return;
+  motor_control_status.state = MOTOR_CONTROL_STATE_READY;
+  if (!motor_control_speed_control_start_now(motor_speed_prepare_target_rpm))
+    motor_control_fault_set(MOTOR_FAULT_SPEED_START);
+}
+
 bool motor_control_speed_control_target_set(int32_t target_speed_rpm)
 {
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_PREPARING)
+  {
+    if (!motor_control_speed_command_valid(target_speed_rpm)) return false;
+    motor_speed_prepare_target_rpm = target_speed_rpm;
+    return true;
+  }
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
       (!motor_control_speed_command_valid(target_speed_rpm)))
   {
     return false;
   }
 
-  /* 速度斜坡直接过零换向，PI输出Iq随之反号，电流环全程不中断。 */
+  /* The speed controller decelerates to zero and confirms standstill before reversal. */
   return motor_speed_control_target_set(target_speed_rpm * 1000L);
 }
 void motor_control_stop(void)
 {
-  motor_control_state_t previous_state = motor_control_status.state;
+  uint32_t primask = __get_PRIMASK();
+  motor_control_state_t previous_state;
+  __disable_irq();
+  previous_state = motor_control_status.state;
   motor_speed_control_stop();
   motor_current_startup_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
-  if ((previous_state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
+  motor_speed_prepare_phase = 0U;
+  if ((previous_state == MOTOR_CONTROL_STATE_SPEED_PREPARING) ||
+      (previous_state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
       (previous_state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (previous_state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
       (previous_state == MOTOR_CONTROL_STATE_SPEED_CONTROL))
     motor_control_status.state = MOTOR_CONTROL_STATE_READY;
+  __set_PRIMASK(primask);
 }
 void motor_control_fault_set(motor_fault_code_t fault_code)
 {
@@ -351,7 +570,7 @@ void motor_control_fault_set(motor_fault_code_t fault_code)
   bool should_log = false;
 
   if ((fault_code <= MOTOR_FAULT_NONE) ||
-      (fault_code > MOTOR_FAULT_MOS_TEMPERATURE_SENSOR))
+      (fault_code > MOTOR_FAULT_BUS_OVERVOLTAGE))
     fault_code = MOTOR_FAULT_UNKNOWN;
   motor_pwm_port_emergency_stop();
   bit = 1UL << (uint32_t)fault_code;
@@ -406,7 +625,7 @@ void motor_control_fault_notify_from_isr(motor_fault_code_t fault_code)
 
   motor_pwm_port_emergency_stop();
   if ((fault_code <= MOTOR_FAULT_NONE) ||
-      (fault_code > MOTOR_FAULT_MOS_TEMPERATURE_SENSOR))
+      (fault_code > MOTOR_FAULT_BUS_OVERVOLTAGE))
   {
     fault_code = MOTOR_FAULT_UNKNOWN;
   }
@@ -426,6 +645,8 @@ const char *motor_control_fault_clear_result_name_get(
     case MOTOR_FAULT_CLEAR_CURRENT_UNSAFE: return "current_unsafe";
     case MOTOR_FAULT_CLEAR_DRIVER_ACTIVE: return "driver_fault_active";
     case MOTOR_FAULT_CLEAR_MOS_TEMPERATURE_UNSAFE: return "mos_temperature_unsafe";
+    case MOTOR_FAULT_CLEAR_BUS_VOLTAGE_UNSAFE: return "bus_voltage_unsafe";
+    case MOTOR_FAULT_CLEAR_HALL_UNSAFE: return "hall_unsafe";
     default: return "invalid";
   }
 }
@@ -433,15 +654,24 @@ const char *motor_control_fault_clear_result_name_get(
 motor_fault_clear_result_t motor_control_fault_clear_ex(void)
 {
   motor_slow_sensor_state_t sensor;
+  motor_fault_clear_result_t recovery;
+  uint32_t recovery_primask;
+  motor_parameter_t hall_parameter;
+  uint8_t hall_raw;
   if (motor_control_status.state != MOTOR_CONTROL_STATE_FAULT)
     return MOTOR_FAULT_CLEAR_NOT_FAULTED;
   if (motor_pwm_port_output_is_enabled())
     return MOTOR_FAULT_CLEAR_PWM_ENABLED;
+  hall_raw=motor_hall_port_raw_state_get();
+  if (hall_raw<1U || hall_raw>6U) return MOTOR_FAULT_CLEAR_HALL_UNSAFE;
   (void)motor_slow_sensor_process();
   if ((!motor_slow_sensor_state_read(&sensor)) ||
       (!sensor.mos_temperature_valid) ||
       (sensor.mos_temperature_c > MOTOR_MOS_TEMPERATURE_RECOVERY_C))
     return MOTOR_FAULT_CLEAR_MOS_TEMPERATURE_UNSAFE;
+  if ((sensor.bus_voltage_0p1v < MOTOR_BUS_UNDERVOLTAGE_0P1V) ||
+      (sensor.bus_voltage_0p1v > MOTOR_BUS_OVERVOLTAGE_0P1V))
+    return MOTOR_FAULT_CLEAR_BUS_VOLTAGE_UNSAFE;
   if ((motor_control_status.fault_code == MOTOR_FAULT_READY_TRANSITION) ||
       (motor_control_status.fault_code == MOTOR_FAULT_CURRENT_OFFSET_INVALID) ||
       (motor_control_status.fault_code == MOTOR_FAULT_CURRENT_CALIBRATION_TIMEOUT) ||
@@ -451,11 +681,26 @@ motor_fault_clear_result_t motor_control_fault_clear_ex(void)
   motor_current_startup_stop();
   motor_current_control_stop();
   motor_open_loop_stop();
-  if (!motor_current_sample_fault_clear())
-    return MOTOR_FAULT_CLEAR_CURRENT_UNSAFE;
-  if (!motor_pwm_port_fault_clear()) return MOTOR_FAULT_CLEAR_DRIVER_ACTIVE;
+  recovery = motor_control_driver_recover();
+  if (recovery != MOTOR_FAULT_CLEAR_OK) return recovery;
+  recovery_primask = __get_PRIMASK();
+  __disable_irq();
+  if (motor_fault_pending_mask != 0U || !motor_pwm_port_fault_check())
+  {
+    motor_pwm_port_emergency_stop();
+    __set_PRIMASK(recovery_primask);
+    return MOTOR_FAULT_CLEAR_DRIVER_ACTIVE;
+  }
   motor_control_status.fault_code = MOTOR_FAULT_NONE;
+  if (motor_parameter_active_read(&hall_parameter))
+  {
+    (void)motor_hall_decoder_init(hall_parameter.hall_positive_next,system_core_clock,
+      motor_hall_port_raw_state_get(),motor_timebase_cycles_get());
+    motor_hall_angle_estimator_motion_reset();
+    motor_speed_feedback_init();
+  }
   motor_control_status.state = MOTOR_CONTROL_STATE_READY;
+  __set_PRIMASK(recovery_primask);
   return MOTOR_FAULT_CLEAR_OK;
 }
 
@@ -480,7 +725,7 @@ void motor_control_poll(void)
   motor_fault_pending_mask = 0U;
   __set_PRIMASK(primask);
   for (fault_index = 1U;
-       fault_index <= (uint32_t)MOTOR_FAULT_MOS_TEMPERATURE_SENSOR;
+       fault_index <= (uint32_t)MOTOR_FAULT_BUS_OVERVOLTAGE;
        fault_index++)
   {
     if ((pending_mask & (1UL << fault_index)) != 0U)
@@ -506,6 +751,10 @@ void motor_control_poll(void)
 
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_STARTUP) &&
       (!motor_control_mos_temperature_check())) return;
+  if ((motor_control_status.state != MOTOR_CONTROL_STATE_STARTUP) &&
+      (!motor_control_bus_voltage_check())) return;
+  if (motor_control_status.state == MOTOR_CONTROL_STATE_SPEED_PREPARING)
+  { motor_control_speed_prepare_poll(); return; }
 
   (void)motor_open_loop_status_read(&open_loop);
   (void)motor_current_control_status_read(&current_control);

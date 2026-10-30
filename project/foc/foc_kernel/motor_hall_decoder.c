@@ -21,6 +21,19 @@ static uint8_t motor_hall_decoder_interval_index;
 static uint8_t motor_hall_decoder_interval_count;
 static int8_t motor_hall_decoder_last_direction;
 static bool motor_hall_decoder_initialized;
+static uint32_t motor_hall_last_capture_us;
+static bool motor_hall_capture_baseline;
+static uint32_t motor_hall_bad_window;
+static uint8_t motor_hall_bad_count;
+
+static void motor_hall_bad_transition(uint32_t now)
+{
+  motor_hall_decoder_sample.invalid_transition_count++;
+  if ((uint32_t)(now-motor_hall_bad_window)>motor_hall_decoder_core_clock_hz/50U)
+  { motor_hall_bad_window=now; motor_hall_bad_count=0U; }
+  if (motor_hall_bad_count<6U) motor_hall_bad_count++;
+  if (motor_hall_bad_count>=6U) motor_hall_decoder_sample.health_fault=true;
+}
 
 /**
  * @brief 校验正向Hall表是否构成状态1..6的唯一闭环。
@@ -125,6 +138,9 @@ bool motor_hall_decoder_init(const uint8_t *positive_next,
                              uint32_t initial_timestamp_cycles)
 {
   motor_hall_decoder_initialized = false;
+  motor_hall_capture_baseline = false;
+  motor_hall_bad_count=0U;
+  motor_hall_bad_window=initial_timestamp_cycles;
   motor_hall_decoder_sequence = 0U;
   (void)memset((void *)&motor_hall_decoder_sample, 0,
                sizeof(motor_hall_decoder_sample));
@@ -147,8 +163,9 @@ bool motor_hall_decoder_init(const uint8_t *positive_next,
   return true;
 }
 
-bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
-                                     uint32_t timestamp_cycles)
+static bool motor_hall_decoder_edge_process_internal(uint8_t state, uint32_t edge_count,
+                                     uint32_t timestamp_cycles, uint32_t timing_cycles,
+                                     bool restart_timing)
 {
   uint8_t previous_state;
   bool state_valid;
@@ -173,7 +190,7 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
     /* Reject a transient 000/111 sample without destroying the last valid
        sector, direction, or speed window.  A real disconnected/stalled Hall
        input is still caught by the estimator's edge timeout. */
-    motor_hall_decoder_sample.invalid_transition_count++;
+    motor_hall_bad_transition(timestamp_cycles);
     motor_hall_decoder_sequence++;
     return false;
   }
@@ -206,7 +223,7 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
     /* Reject a skipped/non-adjacent transition and continue from the last
        accepted sector.  This prevents one noisy edge from forcing a complete
        Hall speed re-acquisition. */
-    motor_hall_decoder_sample.invalid_transition_count++;
+    motor_hall_bad_transition(timestamp_cycles);
     motor_hall_decoder_sequence++;
     return false;
   }
@@ -217,22 +234,42 @@ bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
   motor_hall_decoder_sample.direction = direction;
   motor_hall_decoder_sample.previous_state = previous_state;
   motor_hall_decoder_sample.timestamp_cycles = timestamp_cycles;
-  if (direction != motor_hall_decoder_last_direction)
+  if (direction != motor_hall_decoder_last_direction || restart_timing)
   {
     motor_hall_decoder_last_direction = direction;
     motor_hall_decoder_sample.electrical_frequency_millihz = 0U;
     motor_hall_decoder_sample.interval_cycles = 0U;
-    motor_hall_decoder_speed_reset(timestamp_cycles);
+    motor_hall_decoder_speed_reset(timing_cycles);
   }
   else
   {
-    interval_cycles = timestamp_cycles - motor_hall_decoder_last_edge_cycles;
-    motor_hall_decoder_last_edge_cycles = timestamp_cycles;
+    interval_cycles = timing_cycles - motor_hall_decoder_last_edge_cycles;
+    motor_hall_decoder_last_edge_cycles = timing_cycles;
     motor_hall_decoder_sample.interval_cycles = interval_cycles;
     motor_hall_decoder_speed_push(interval_cycles);
   }
   motor_hall_decoder_sequence++;
   return true;
+}
+
+bool motor_hall_decoder_edge_process(uint8_t state, uint32_t edge_count,
+                                     uint32_t timestamp_cycles)
+{
+  return motor_hall_decoder_edge_process_internal(state, edge_count, timestamp_cycles,
+                                                 timestamp_cycles, false);
+}
+
+bool motor_hall_decoder_edge_process_captured(uint8_t state, uint32_t edge_count,
+  uint32_t timestamp_cycles, uint32_t capture_us)
+{
+  bool restart = !motor_hall_capture_baseline ||
+    (uint32_t)(capture_us - motor_hall_last_capture_us) >= 1000000U;
+  uint32_t timing = (uint32_t)((uint64_t)capture_us *
+    motor_hall_decoder_core_clock_hz / 1000000U);
+  bool accepted = motor_hall_decoder_edge_process_internal(state, edge_count,
+    timestamp_cycles, timing, restart);
+  if (accepted) { motor_hall_last_capture_us = capture_us; motor_hall_capture_baseline = true; }
+  return accepted;
 }
 
 bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample)
@@ -261,6 +298,9 @@ bool motor_hall_decoder_sample_read(motor_hall_sample_t *sample)
 void motor_hall_decoder_motion_reset(uint32_t timestamp_cycles)
 {
   if (!motor_hall_decoder_initialized) return;
+  motor_hall_capture_baseline = false;
+  motor_hall_bad_count=0U;
+  motor_hall_bad_window=timestamp_cycles;
 
   motor_hall_decoder_sequence++;
   motor_hall_decoder_sample.previous_state = motor_hall_decoder_sample.state;

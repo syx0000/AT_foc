@@ -38,7 +38,7 @@ void motor_speed_feedback_init(void);
  * @details 读取Hall物理电频率和方向，按活动极对数换算机械milli-rpm，再按逻辑方向配置变换符号；
  *          仅当Hall边沿产生新测速结果时更新IIR滤波，边沿之间保持最近结果；
  *          Hall无效、频率为0、方向未知或边沿超时时立即将反馈置为无效并归零。
- * @note 仅供1 kHz SysTick中断调用。
+ * @note 通常由1 kHz SysTick调用；启动同步可在关闭中断后调用，防止重入。
  */
 void motor_speed_feedback_process_1khz(void);
 
@@ -48,5 +48,6 @@ void motor_speed_feedback_process_1khz(void);
  * @return 参数有效时返回true；传入NULL时返回false。
  */
 bool motor_speed_feedback_read(motor_speed_feedback_t *feedback);
+bool motor_speed_feedback_standstill_confirmed(void);
 
 #endif /* MOTOR_SPEED_FEEDBACK_H */

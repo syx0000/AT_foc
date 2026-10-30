@@ -11,6 +11,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+bool motor_hall_direction_tables_build(const uint8_t positive_next[8],
+  const uint16_t entry_angle_u16[8], uint16_t offset,
+  uint16_t forward[8], uint16_t reverse[8]);
+int32_t motor_hall_correction_step(int32_t error_u16);
 
 /**
  * @brief 根据Hall物理方向解析本次边沿对应的转子电角度。

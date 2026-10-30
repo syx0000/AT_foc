@@ -17,6 +17,7 @@ typedef struct
   uint8_t state;              /**< 原始Hall组合，bit0=HA、bit1=HB、bit2=HC。 */
   uint32_t edge_count;        /**< 三路Hall任意边沿的累计捕获次数。 */
   uint32_t timestamp_cycles;  /**< 本次原始边沿对应的DWT周期时间戳。 */
+  uint32_t capture_us;        /**< Hardware-latched 1 MHz timestamp (modulo 2^32). */
 } motor_hall_port_sample_t;
 
 /**
@@ -32,10 +33,13 @@ void motor_hall_port_init(void);
  * @brief 在Hall外部中断中捕获最新三路电平。
  * @param 无。
  * @return 无。
- * @details 同时读取HA/HB/HC，生成3位状态，记录DWT时间戳并递增统一边沿计数。
+ * @details 读取C1硬件时标和HA/HB/HC，保留DWT事件时间并递增统一边沿计数。
  * @note 仅供TMR4_GLOBAL_IRQHandler调用，函数不清除中断标志。
  */
 void motor_hall_port_edge_capture(void);
+void motor_hall_port_overflow_capture(void);
+uint8_t motor_hall_port_raw_state_get(void);
+uint32_t motor_hall_port_quiet_us(void);
 
 /**
  * @brief 原子读取最近一次原始Hall采样快照。

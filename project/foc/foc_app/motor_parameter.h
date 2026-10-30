@@ -34,7 +34,9 @@
   X(HALL_SCAN_MHZ, hall_scan_mhz, (5000U), 1000U, 20000U) \
   X(STALL_SPEED_RPM, stall_speed_rpm, (MOTOR_SPEED_STALL_SPEED_RPM), 1U, 500U) \
   X(STALL_TIME_MS, stall_time_ms, (MOTOR_SPEED_STALL_TIME_MS), 100U, 10000U) \
-  X(CAN_NODE_ID, can_node_id, (MOTOR_CAN_NODE_ID), 1U, 127U)
+  X(CAN_NODE_ID, can_node_id, (MOTOR_CAN_NODE_ID), 1U, 127U) \
+  X(SPEED_DECELERATION_RPM_PER_S, speed_deceleration_rpm_per_s, (30000U), 1U, 1000000U) \
+  X(SPEED_STARTUP_IQ_SLEW_MA_S, speed_startup_iq_slew_ma_s, (200000U), 1000U, 1000000U)
 
 typedef enum
 {
@@ -103,6 +105,9 @@ typedef struct
  */
 void motor_parameter_init(void);
 void motor_parameter_defaults_build(motor_parameter_t *parameter);
+/* Stage only the 24 V motor's electrical initial values. Keeps active
+ * Hall/flux/speed PI as unverified placeholders; never activates or saves. */
+bool motor_parameter_candidate_24v_profile(void);
 /* Atomic scalar read; parameters change only while stopped. */
 uint32_t motor_parameter_debug_get(motor_parameter_field_t field);
 

@@ -106,7 +106,9 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"speed_maximum_rpm", MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM},
   {"speed_acceleration_rpm_per_s",
    MOTOR_PARAMETER_FIELD_SPEED_ACCELERATION_RPM_PER_S},
-  {"speed_current_limit_ma", MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA}
+  {"speed_current_limit_ma", MOTOR_PARAMETER_FIELD_SPEED_CURRENT_LIMIT_MA},
+  {"speed_deceleration_rpm_per_s", MOTOR_PARAMETER_FIELD_SPEED_DECELERATION_RPM_PER_S},
+  {"speed_startup_iq_slew_ma_s", MOTOR_PARAMETER_FIELD_SPEED_STARTUP_IQ_SLEW_MA_S}
 };
 
 #define MOTOR_CLI_PARAMETER_FIELD_COUNT \
@@ -375,6 +377,7 @@ static void motor_cli_command_execute(char *line)
     printf("  current start|set <id_ma> <iq_ma> | current stop\r\n");
     printf("  speed start|set <signed_rpm> | speed stop\r\n");
     printf("  motor params active|candidate|load|defaults|storage\r\n");
+    printf("  motor params profile 60bldc140-24v (candidate initial values only)\r\n");
     printf("  motor param set <name> <value>\r\n");
     printf("  motor commissioning status|abort|diff|accept|discard|save\r\n");
     printf("  calibrate current_offset\r\n");
@@ -389,7 +392,8 @@ static void motor_cli_command_execute(char *line)
   else if (strcmp(line, "reset") == 0)
   {
     (void)motor_control_status_read(&motor);
-    if ((motor.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
+    if ((motor.state == MOTOR_CONTROL_STATE_SPEED_PREPARING) ||
+        (motor.state == MOTOR_CONTROL_STATE_CURRENT_STARTING) ||
         (motor.state == MOTOR_CONTROL_STATE_OPEN_LOOP) ||
         (motor.state == MOTOR_CONTROL_STATE_CURRENT_CONTROL) ||
         (motor.state == MOTOR_CONTROL_STATE_SPEED_CONTROL) ||
@@ -495,6 +499,12 @@ static void motor_cli_command_execute(char *line)
   {
     (void)motor_parameter_candidate_read(&parameter);
     motor_cli_parameter_print("candidate", &parameter);
+  }
+  else if (strcmp(line, "motor params profile 60bldc140-24v") == 0)
+  {
+    if (motor_parameter_candidate_24v_profile())
+      printf("OK 24V candidate only: Rs=80mOhm Ld/Lq=50uH bandwidth=888Hz PI=9141/9141/914; Hall/flux/speed_PI retained UNVERIFIED; calibrate before motion, accept/save separately\r\n");
+    else printf("ERR profile_requires_ready_pwm_off\r\n");
   }
   else if (strcmp(line, "motor params storage") == 0)
   {
@@ -694,7 +704,7 @@ static void motor_cli_command_execute(char *line)
       return;
     }
     if (motor_control_speed_control_start((int32_t)speed_rpm))
-      printf("OK speed started target=%ld rpm\r\n", speed_rpm);
+      printf("OK speed requested target=%ld rpm (startup preparation may be pending)\r\n", speed_rpm);
     else
       printf("ERR 10 motor_not_ready_or_speed_start_failed\r\n");
   }

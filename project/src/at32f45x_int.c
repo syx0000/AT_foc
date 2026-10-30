@@ -91,8 +91,8 @@ static void hall_edge_dispatch(motor_hall_port_sample_t *sample)
 {
   motor_hall_port_edge_capture();
   if (motor_hall_port_sample_read(sample) &&
-      motor_hall_decoder_edge_process(sample->state, sample->edge_count,
-                                      sample->timestamp_cycles))
+      motor_hall_decoder_edge_process_captured(sample->state, sample->edge_count,
+                                      sample->timestamp_cycles, sample->capture_us))
   {
     motor_commissioning_hall_edge_process();
     motor_hall_angle_estimator_edge_process();
@@ -304,6 +304,18 @@ void ADC1_2_IRQHandler(void)
 {
   /* add user code begin ADC1_2_IRQ 0 */
   motor_adc_fast_sample_t adc_fast_sample;
+  static bool monitor_overcurrent_pending;
+
+  if (adc_flag_get(ADC1, ADC_VMOR_FLAG) != RESET)
+  {
+    adc_flag_clear(ADC1, ADC_VMOR_FLAG);
+    monitor_overcurrent_pending = true;
+  }
+  if (adc_flag_get(ADC2, ADC_VMOR_FLAG) != RESET)
+  {
+    adc_flag_clear(ADC2, ADC_VMOR_FLAG);
+    monitor_overcurrent_pending = true;
+  }
 
   /* add user code end ADC1_2_IRQ 0 */
 
@@ -314,10 +326,11 @@ void ADC1_2_IRQHandler(void)
     adc_flag_clear(ADC1, ADC_PCCE_FLAG);
     motor_adc_port_fast_sample_capture(&adc_fast_sample);
     motor_current_calibration_sample_process(&adc_fast_sample);
-    if (motor_current_sample_process(&adc_fast_sample))
+    if (motor_current_sample_process(&adc_fast_sample, monitor_overcurrent_pending))
     {
       motor_control_fault_notify_from_isr(MOTOR_FAULT_OVERCURRENT);
     }
+    monitor_overcurrent_pending = false;
     motor_open_loop_fast_process();
     motor_hall_angle_estimator_fast_process();
     motor_current_startup_fast_process();
@@ -506,12 +519,17 @@ void TMR1_BRK_TMR9_IRQHandler(void)
 void TMR4_GLOBAL_IRQHandler(void)
 {
   motor_hall_port_sample_t hall_port_sample;
+  if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_OVF_FLAG) != RESET)
+  {
+    motor_hall_port_overflow_capture();
+  }
 
   if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG) !=
       RESET)
   {
     tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG);
     hall_edge_dispatch(&hall_port_sample);
+    tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_C1_FLAG);
   }
 }
 

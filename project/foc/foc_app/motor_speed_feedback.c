@@ -14,6 +14,17 @@
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_timebase.h"
+#include "motor_hall_decoder.h"
+#include "motor_hall_port.h"
+
+bool motor_speed_feedback_standstill_confirmed(void)
+{
+  motor_hall_sample_t hall;
+  return motor_hall_decoder_sample_read(&hall) && hall.valid && !hall.health_fault &&
+    hall.state >= 1U && hall.state <= 6U &&
+    motor_hall_port_raw_state_get() == hall.state &&
+    motor_hall_port_quiet_us() >= 1000000U;
+}
 
 static volatile motor_speed_feedback_t motor_speed_feedback;
 static uint32_t motor_speed_feedback_last_update_count;
@@ -93,7 +104,7 @@ void motor_speed_feedback_process_1khz(void)
   /* 反馈源正在原子更新时保留上一结果，下一次1 kHz周期重新读取。 */
   if (!motor_rotor_feedback_read(&rotor_feedback)) return;
 
-  if ((!rotor_feedback.valid) ||
+  if ((!rotor_feedback.valid) || (!rotor_feedback.speed_valid) ||
       (motor_timebase_cycles_to_us(motor_timebase_cycles_elapsed(
         rotor_feedback.timestamp_cycles)) >
        (MOTOR_SPEED_FEEDBACK_TIMEOUT_MS * 1000U)))

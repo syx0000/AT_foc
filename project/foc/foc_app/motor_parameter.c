@@ -14,6 +14,9 @@
 #include "motor_parameter.h"
 #include "motor_pwm_port.h"
 #include "motor_can.h"
+#include "motor_profile_60bldc140_24v.h"
+#include "motor_current_pi_design.h"
+#include "motor_board_config.h"
 
 #define MOTOR_PARAMETER_POLE_PAIRS_MAX             64U
 #define MOTOR_PARAMETER_RESISTANCE_MOHM_MAX     100000U
@@ -26,6 +29,34 @@
 static volatile motor_parameter_t motor_parameter_active;
 static motor_parameter_t motor_parameter_candidate;
 static bool motor_parameter_trial_active;
+
+bool motor_parameter_candidate_24v_profile(void)
+{
+  motor_parameter_t p;
+  motor_control_status_t control;
+  motor_current_pi_design_result_t pi;
+  if (motor_parameter_trial_active || !motor_control_status_read(&control) ||
+      control.state != MOTOR_CONTROL_STATE_READY || motor_pwm_port_output_is_enabled())
+    return false;
+  if (!motor_parameter_active_read(&p) ||
+      !motor_current_pi_design(MOTOR_24V_PROFILE_RS_MOHM,
+        MOTOR_24V_PROFILE_LD_UH, MOTOR_24V_PROFILE_LQ_UH,
+        MOTOR_24V_PROFILE_BANDWIDTH_HZ, MOTOR_PWM_FREQUENCY_HZ, &pi)) return false;
+  p.pole_pairs = MOTOR_24V_PROFILE_POLE_PAIRS;
+  p.phase_resistance_mohm = MOTOR_24V_PROFILE_RS_MOHM;
+  p.direct_inductance_uh = MOTOR_24V_PROFILE_LD_UH;
+  p.quadrature_inductance_uh = MOTOR_24V_PROFILE_LQ_UH;
+  p.current_loop_bandwidth_hz = MOTOR_24V_PROFILE_BANDWIDTH_HZ;
+  p.current_d_kp_q15 = pi.direct_kp_q15;
+  p.current_q_kp_q15 = pi.quadrature_kp_q15;
+  p.current_ki_q15 = pi.integral_gain_q15;
+  p.speed_maximum_rpm = MOTOR_24V_PROFILE_MAXIMUM_RPM;
+  p.speed_current_limit_ma = MOTOR_24V_PROFILE_CURRENT_MA;
+  p.speed_acceleration_rpm_per_s = MOTOR_24V_PROFILE_ACCEL_RPM_S;
+  p.speed_deceleration_rpm_per_s = MOTOR_24V_PROFILE_DECEL_RPM_S;
+  p.speed_startup_iq_slew_ma_s = MOTOR_24V_PROFILE_IQ_SLEW_MA_S;
+  return motor_parameter_candidate_set(&p);
+}
 
 /**
  * @brief 生成与当前编译配置完全一致的默认电机参数。

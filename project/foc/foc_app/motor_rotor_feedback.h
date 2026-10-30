@@ -32,6 +32,7 @@ typedef struct
   int8_t direction;                     /**< 物理方向：1正向、-1反向、0未知。 */
   bool mechanical_angle_valid;          /**< 单圈机械角度是否有效。 */
   bool valid;                           /**< FOC电角度、方向和速度是否有效。 */
+  bool speed_valid;                     /**< Moving-speed estimate is independently valid. */
 } motor_rotor_feedback_t;
 
 /**

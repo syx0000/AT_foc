@@ -15,6 +15,7 @@
 #include "motor_parameter.h"
 #include "motor_rotor_feedback.h"
 #include "motor_timebase.h"
+#include "motor_hall_port.h"
 
 static volatile motor_rotor_feedback_t motor_rotor_feedback_override;
 static volatile bool motor_rotor_feedback_override_enabled;
@@ -70,6 +71,7 @@ void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
   motor_rotor_feedback_override.direction = direction;
   motor_rotor_feedback_override.mechanical_angle_valid = false;
   motor_rotor_feedback_override.valid = true;
+  motor_rotor_feedback_override.speed_valid = electrical_frequency_millihz != 0U;
   motor_rotor_feedback_override_enabled = true;
   __set_PRIMASK(primask);
 }
@@ -116,6 +118,12 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
   {
     return false;
   }
+  if (motor_hall_port_raw_state_get() != hall.state || !hall.valid || hall.health_fault)
+  {
+    feedback->valid = false;
+    feedback->speed_valid = false;
+    return true;
+  }
   /* A missing Hall edge means zero speed at a commanded-current stall, not
    * necessarily a lost position sensor.  The interpolating estimator times
    * out because it cannot extrapolate indefinitely, while the discrete Hall
@@ -148,6 +156,7 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
     feedback->source_state = hall.state;
     feedback->direction = 0;
     feedback->valid = true;
+    feedback->speed_valid = false;
     return true;
   }
   mechanical_speed_millirpm = (uint32_t)(
@@ -171,6 +180,7 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
   feedback->valid = estimator.valid && hall.valid &&
                     (estimator.direction != 0) &&
                     (estimator.electrical_frequency_millihz != 0U);
+  feedback->speed_valid = feedback->valid;
   return true;
 }
 

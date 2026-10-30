@@ -48,13 +48,15 @@ bool motor_current_sample_offsets_set(
   uint16_t phase_b_offset_raw);
 
 /**
- * @brief 处理一次10 kHz快速ADC采样并执行软件过流监测。
+ * @brief 处理一次16 kHz快速ADC采样并确认ADC窗口过流。
  * @param sample 本次SOA、SOB快速ADC原始采样，不允许为空。
- * @return true仅表示本次首次触发55 A连续500点过流故障；其余返回false。
+ * @param monitor_overcurrent ADC1或ADC2在本周期出现窗口越界。
+ * @return true仅表示本次首次触发55 A窗口连续30周期过流；其余返回false。
  * @details 零偏未生效时不计算。生成三相mA及Q15电流，C相按
- *          Ic=-(Ia+Ib)重构；任一相超限则累计，恢复到阈值内立即清零。
+ *          Ic=-(Ia+Ib)重构；窗口未越界或PWM关闭时立即清零确认计数。
  */
-bool motor_current_sample_process(const motor_adc_fast_sample_t *sample);
+bool motor_current_sample_process(const motor_adc_fast_sample_t *sample,
+                                  bool monitor_overcurrent);
 
 /**
  * @brief 原子读取最近一次正式电流采样状态。

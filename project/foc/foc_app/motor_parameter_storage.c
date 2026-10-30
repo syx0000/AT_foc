@@ -16,7 +16,7 @@
 #include "motor_pwm_port.h"
 
 #define MOTOR_PARAMETER_STORAGE_MAGIC          0x4D50524DU
-#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 5U
+#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 7U
 /* v2不含速度上限/加速度，v3不含速度Iq限幅，v4不含新增调试参数；均为前缀。 */
 #define MOTOR_PARAMETER_STORAGE_V2_LENGTH  \
   offsetof(motor_parameter_t, speed_maximum_rpm)
@@ -94,6 +94,14 @@ static bool motor_parameter_storage_slot_read(
   else if (version == 4U)
   {
     if (length != MOTOR_PARAMETER_STORAGE_V4_LENGTH) return false;
+  }
+  else if (version == 5U)
+  {
+    if (length != offsetof(motor_parameter_t, speed_deceleration_rpm_per_s)) return false;
+  }
+  else if (version == 6U)
+  {
+    if (length != offsetof(motor_parameter_t, speed_startup_iq_slew_ma_s)) return false;
   }
   else return false;
   if ((record->magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
