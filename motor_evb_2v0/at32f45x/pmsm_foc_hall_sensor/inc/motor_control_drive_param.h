@@ -230,14 +230,15 @@ extern "C" {
 
 /* Bus voltage */
 #define OVER_VOLT_THRESHOLD             (60)
-#define UNDER_VOLT_THRESHOLD            (24)
+#define UNDER_VOLT_THRESHOLD            (18)
 #define UNDER_VOLT_DEBOUNCE_MS          (300U)
 /* Temperature sensing section */
 /* V[V]=V0+dV/dT[V/Celsius]*(T-T0)[Celsius] */
 #define V0_V                            (0.480f) /*!< in Volts */
 #define T0_C                            (0) /*!< in Celsius degrees */
 #define dV_dT                           (0.024f) /*!< V/Celsius degrees */
-#define OVER_TEMP_THRESHOLD             (70) /*!< Celsius degrees */
+#define OVER_SPEED_THRESHOLD            (4400) /* rpm; match AT_foc_hall */
+#define OVER_TEMP_THRESHOLD             (90) /*!< Celsius degrees */
 /* error code mask */
 #define MC_ERROR_MASK                   ((err_code_type) (MC_OVER_VOLT_ERROR | MC_UNDER_VOLT_ERROR | MC_OVER_TEMP_ERROR | MC_OVER_CURRENT_ERROR | MC_ENCODER_ERROR | MC_HALL_ERROR | MC_PARAM_IDENT_ERROR | MC_HALL_LEARN_ERROR | MC_STARTUP_ERROR))
 

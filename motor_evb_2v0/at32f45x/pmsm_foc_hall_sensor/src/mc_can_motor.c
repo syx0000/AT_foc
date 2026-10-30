@@ -30,13 +30,13 @@ void mc_can_motor_init(void)
   gpio_pin_mux_config(GPIOA, GPIO_PINS_SOURCE12, GPIO_MUX_9);
 
   /* HEXT = 8 MHz; AT32 bit time = divider * (BTS1 + BTS2).
-     8 MHz / (1 * (12 + 4)) = 500 kbit/s, sample point 75%. */
+     8 MHz / (1 * (6 + 2)) = 1 Mbit/s, sample point 75%. */
   crm_can_clock_select(CRM_CAN1, CRM_CAN_CLOCK_SOURCE_HEXT);
   can_software_reset(CAN1, TRUE);
   can_bittime_default_para_init(&timing);
   timing.bittime_div = 1;
-  timing.ac_bts1_size = 12;
-  timing.ac_bts2_size = 4;
+  timing.ac_bts1_size = 6;
+  timing.ac_bts2_size = 2;
   timing.ac_rsaw_size = 2;
   can_bittime_set(CAN1, &timing);
   can_software_reset(CAN1, FALSE);
@@ -81,11 +81,10 @@ static uint8_t apply_command(const can_rxbuf_type *rx)
   {
     raw = ((uint32_t)rx->data[1] << 24) | ((uint32_t)rx->data[2] << 16) |
           ((uint32_t)rx->data[3] << 8) | rx->data[4];
-    /* Compare in encoded units before conversion; reject impossible speeds. */
-    if ((raw > (uint32_t)(MAX_SPEED_RPM * 4)) &&
-        (raw < (uint32_t)(-(int32_t)(MAX_SPEED_RPM * 4))))
-      return 0;
+    /* Match AT_foc_hall: clamp signed speed commands to the configured maximum. */
     rpm = (int32_t)raw / 4;
+    if (rpm > MAX_SPEED_RPM) rpm = MAX_SPEED_RPM;
+    else if (rpm < -MAX_SPEED_RPM) rpm = -MAX_SPEED_RPM;
     if (rpm == 0)
     {
       motor_stop();

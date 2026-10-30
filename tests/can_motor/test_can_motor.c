@@ -36,8 +36,14 @@ int main(void)
   CHECK(!apply_command(&rx));
   rx.fd_format = 0;
   rx.data[1] = 0; rx.data[2] = 0; rx.data[3] = 0x3e; rx.data[4] = 0x84; /* 4001 */
-  CHECK(!apply_command(&rx));
-  rx.data[3] = 7; rx.data[4] = 0xd0;
+  CHECK(apply_command(&rx) && speed_ramp.cmd_final == MAX_SPEED_RPM);
+  rx.data[1] = 0xff; rx.data[2] = 0xff; rx.data[3] = 0xc1; rx.data[4] = 0x7c; /* -4001 */
+  CHECK(apply_command(&rx) && speed_ramp.cmd_final == -MAX_SPEED_RPM);
+  rx.data[1] = 0x7f; rx.data[2] = 0xff; rx.data[3] = 0xff; rx.data[4] = 0xff;
+  CHECK(apply_command(&rx) && speed_ramp.cmd_final == MAX_SPEED_RPM);
+  rx.data[1] = 0x80; rx.data[2] = 0; rx.data[3] = 0; rx.data[4] = 0;
+  CHECK(apply_command(&rx) && speed_ramp.cmd_final == -MAX_SPEED_RPM);
+  rx.data[1] = 0; rx.data[2] = 0; rx.data[3] = 7; rx.data[4] = 0xd0;
   error_code = 8;
   CHECK(!apply_command(&rx) && error_code == 8);
   error_code = 0;

@@ -755,12 +755,19 @@ void SysTick_Handler(void)
     }
 
     /* MOS Temperature protection (NTC path, compare in Celsius x 100) */
-    if (iMosTemperature > (OVER_TEMP_THRESHOLD * 100))
+    if (iMosTemperature >= (OVER_TEMP_THRESHOLD * 100))
     {
       error_code |= error_code_mask & MC_OVER_TEMP_ERROR;
     }
   }
 
+  /* Match AT_foc_hall's running speed-loop overspeed threshold. */
+  if ((esc_state == ESC_STATE_RUNNING) && (ctrl_mode == SPEED_CTRL) &&
+      ((rotor_speed_val > OVER_SPEED_THRESHOLD) ||
+       (rotor_speed_val < -OVER_SPEED_THRESHOLD)))
+  {
+    error_code |= error_code_mask & MC_STARTUP_ERROR;
+  }
   /* Enter error state handler */
   if (error_code != MC_NO_ERROR)
   {
