@@ -129,8 +129,8 @@ extern "C" {
 
 /********************************* Motor-related parameter *********************************/
 #define POLE_PAIRS                      (8/2)        /* 60BLDC140: 8 poles */
-#define RS_LL                           (0.39997f)     /* line-to-line = 2 x 0.268 ohm (phase) */
-#define LS_LL                           (0.000381854f)  /* line-to-line = 2 x 214 uH (phase avg) */
+#define RS_LL                           (0.124f)     /* 2 x phase Rs=62 mOhm */
+#define LS_LL                           (0.000086f)     /* 2 x phase Ls=43 uH */
 #define LD_LQ_RATIO                     (1.078f)     /* Ld/Lq = 222/206 */
 #define KE                              (0.00849f)   /* V/rpm, motor spec 8.4 V/kRPM */
 #define NOMINAL_CURRENT                 (11.5f)      /* A, motor rated current */
@@ -142,12 +142,12 @@ extern "C" {
 
 /* hall learn table */
 #define HALL_LEARN_DIR                  (0)            /* Polarity, 0 or 1 */
-#define HALL_LEARN_0_STATE              (5)
-#define HALL_LEARN_1_STATE              (1)
-#define HALL_LEARN_2_STATE              (3)
-#define HALL_LEARN_3_STATE              (2)
-#define HALL_LEARN_4_STATE              (6)
-#define HALL_LEARN_5_STATE              (4)
+#define HALL_LEARN_0_STATE              (6)
+#define HALL_LEARN_1_STATE              (4)
+#define HALL_LEARN_2_STATE              (5)
+#define HALL_LEARN_3_STATE              (1)
+#define HALL_LEARN_4_STATE              (3)
+#define HALL_LEARN_5_STATE              (2)
 
 /********************************* Drive-related parameter *********************************/
 /* basic */
@@ -197,7 +197,7 @@ extern "C" {
 #endif
 
 /* Current */
-#define MAX_CURRENT                     (50.0f)
+#define MAX_CURRENT                     (60.0f)
 #define MIN_CURRENT                     (-MAX_CURRENT)
 #define DC_MAX_CURRENT                  (60.0f)
 #define CURRENT_SPAN_SHIFT              ((uint8_t) 1)
@@ -224,7 +224,7 @@ extern "C" {
 
 /* Current */
 /* software over current protection by ADC windowns */
-#define OVER_CURRENT_SW                 (55.0f)  /* A */
+#define OVER_CURRENT_SW                 (64.0f)  /* A */
 #define ADC_VMOR_CONFIRM_COUNT          (30U)     /* consecutive out-of-window samples */
 /* over current setting in hardware */
 #if defined AT32M412xx || defined AT32M416xx
@@ -290,7 +290,7 @@ extern "C" {
 #define OLC_VOLT                        (0.0f)      /* (V) */
 
 /* hall learn */
-#define LEARN_OLC_VOLT                  (0.8f)     /* (V) */
+#define LEARN_OLC_VOLT                  (1.5f)     /* (V) */
 #define LEARN_OLC_ANGLE_INC             (5)
 #define LEARN_TIME                      (10000)    /* (ms) */
 #define LEARN_ALIGN_TIME                (500)      /* (ms) */
@@ -309,16 +309,16 @@ extern "C" {
 #define AUTO_TUNE_CURR_BANDWIDTH        (3500)     /* 2*pi*freq */
 
 /* Id/Iq pid parameter */
-#define PID_ID_KP_DEFUALT               (6047)
-#define PID_ID_KI_DEFUALT               (3414)
-#define PID_ID_KP_GAIN_DIV              (4096)
+#define PID_ID_KP_DEFUALT               (5914)
+#define PID_ID_KI_DEFUALT               (1071)
+#define PID_ID_KP_GAIN_DIV              (16384)
 #define PID_ID_KP_GAIN_DIV_LOG          (LOG2(PID_ID_KP_GAIN_DIV))
 #define PID_ID_KI_GAIN_DIV              (32768)
 #define PID_ID_KI_GAIN_DIV_LOG          (LOG2(PID_ID_KI_GAIN_DIV))
 
-#define PID_IQ_KP_DEFUALT               (6047)
-#define PID_IQ_KI_DEFUALT               (3414)
-#define PID_IQ_KP_GAIN_DIV              (4096)
+#define PID_IQ_KP_DEFUALT               (5486)
+#define PID_IQ_KI_DEFUALT               (1071)
+#define PID_IQ_KP_GAIN_DIV              (16384)
 #define PID_IQ_KP_GAIN_DIV_LOG          (LOG2(PID_IQ_KP_GAIN_DIV))
 #define PID_IQ_KI_GAIN_DIV              (32768)
 #define PID_IQ_KI_GAIN_DIV_LOG          (LOG2(PID_IQ_KI_GAIN_DIV))
