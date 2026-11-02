@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import csv
 import math
+from bisect import bisect_left, bisect_right
 from collections import deque
 from dataclasses import dataclass
 
@@ -11,11 +12,29 @@ from PySide6.QtGui import QPainter, QColor, QPen
 from PySide6.QtCharts import QChart, QChartView, QLineSeries, QValueAxis
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QComboBox,
-    QPushButton, QLabel, QCheckBox, QFileDialog, QMessageBox, QRubberBand)
+    QPushButton, QLabel, QCheckBox, QFileDialog, QMessageBox, QRubberBand,
+    QDoubleSpinBox)
 
 # Fixed per-channel palette, independent of Qt chart themes and unit grouping.
 TRACE_COLORS = ('#d62728', '#008548', '#0066cc', '#a64d00', '#a020c0',
                 '#008b95', '#d14b7c', '#6b5b20', '#4f46b8')
+HISTORY_POINTS = 300000  # Ten minutes at the maximum 500 Hz stream rate.
+PLOT_POINTS = 4000
+
+
+def envelope_points(data):
+    """Bound Qt rendering cost while retaining short positive/negative peaks."""
+    if len(data) <= PLOT_POINTS:
+        return data
+    step = math.ceil(len(data) / ((PLOT_POINTS - 2) // 2))
+    reduced = [data[0]]
+    for start in range(0, len(data), step):
+        bucket = data[start:start+step]
+        low = min(range(len(bucket)), key=lambda i: bucket[i].y())
+        high = max(range(len(bucket)), key=lambda i: bucket[i].y())
+        reduced.extend(bucket[i] for i in sorted({low, high}))
+    reduced.append(data[-1])
+    return reduced
 
 
 class ScopeChartView(QChartView):
@@ -218,8 +237,8 @@ class TraceView(QWidget):
         self.send = send
         self.firmware = 'hall'
         self.pending = ''
-        self.rows = deque(maxlen=100000)
-        self.points = deque(maxlen=2000)
+        self.rows = deque(maxlen=HISTORY_POINTS)
+        self.points = deque(maxlen=HISTORY_POINTS)
         self.key = None
         self.last_us = None
         self.elapsed = 0
@@ -258,6 +277,17 @@ class TraceView(QWidget):
                 self.capture_button = button
         layout.addLayout(controls)
         navigation = QHBoxLayout()
+        navigation.addWidget(QLabel('窗口(s)'))
+        self.time_window = QDoubleSpinBox()
+        self.time_window.setRange(.1, 600)
+        self.time_window.setDecimals(1)
+        self.time_window.setValue(30)
+        self.time_window.setToolTip('从采集0秒连续计时；窗口随最新数据向前滚动')
+        self.time_window.valueChanged.connect(self.time_window_changed)
+        navigation.addWidget(self.time_window)
+        self.full_history = QCheckBox('全部历史')
+        self.full_history.toggled.connect(self.time_window_changed)
+        navigation.addWidget(self.full_history)
         self.lock_x, self.lock_y = QCheckBox('锁定X'), QCheckBox('锁定Y')
         navigation.addWidget(self.lock_x)
         navigation.addWidget(self.lock_y)
@@ -385,6 +415,13 @@ class TraceView(QWidget):
                     view.manual_y_axes.add(axis)
                     axis.setRange(*bounds)
 
+    def time_window_changed(self, _value=None):
+        self.time_window.setEnabled(not self.full_history.isChecked())
+        for view in self.chart_views:
+            view.auto_x = True
+        self.dirty = True
+        self.redraw()
+
     def restore_auto(self):
         self.lock_x.setChecked(False)
         self.lock_y.setChecked(False)
@@ -483,7 +520,7 @@ class TraceView(QWidget):
             f'解析错误={self.bad_frames} 抓取={bool(frame.capture)} 电流环运行={bool(flags & 1)} '
             f'PWM={bool(flags & 4)} 限压={bool(flags & 2)} '
             f'限流={bool(flags & 64)} 速度有效={bool(flags & 32)} 位置有效={bool(flags & 128)} '
-            f'保存最近 {len(self.rows)} / 100000 点')
+            f'采集时间={self.elapsed:.1f}s 保存最近 {len(self.rows)} / {HISTORY_POINTS} 点')
 
     def build_plots(self, logid, detail):
         self.series = []
@@ -571,9 +608,22 @@ class TraceView(QWidget):
             return
         self.dirty = False
         limits = {}
+        points = list(self.points)
+        times = [t for t, _ in points]
+        end = max(times[0]+.001, times[-1])
+        # Burst captures retain their short, complete capture view.
+        start = times[0] if self.full_history.isChecked() or self.key[2] else max(
+            times[0], end-self.time_window.value())
+        slices = {}
+        for view in self.chart_views:
+            if view.auto_x and not self.lock_x.isChecked() and not view.gesture:
+                view.x_axis.setRange(start, end)
+            left = max(0, bisect_left(times, view.x_axis.min())-1)
+            right = min(len(points), bisect_right(times, view.x_axis.max())+1)
+            slices[view.x_axis] = points[left:right]
         for series, index, scale, x, y in self.series:
             data = []
-            for t, f in self.points:
+            for t, f in slices[x]:
                 # Show the latest contiguous valid segment; never bridge invalid data.
                 valid = True
                 if f.logid == 10:
@@ -592,7 +642,7 @@ class TraceView(QWidget):
                     data.append(QPointF(t, f.values[index] * scale))
                 else:
                     data.clear()
-            series.replace(data)
+            series.replace(envelope_points(data))
             if series.isVisible() and data:
                 low = min(p.y() for p in data)
                 high = max(p.y() for p in data)
@@ -603,9 +653,6 @@ class TraceView(QWidget):
             view = next(view for view in self.chart_views if axis in view.y_axes)
             if axis not in view.manual_y_axes and not self.lock_y.isChecked() and not view.gesture:
                 axis.setRange(low-pad, high+pad)
-        for view in self.chart_views:
-            if view.auto_x and not self.lock_x.isChecked() and not view.gesture:
-                view.x_axis.setRange(self.points[0][0], max(self.points[0][0]+.001, self.points[-1][0]))
 
     def export(self):
         path, _ = QFileDialog.getSaveFileName(self, '导出原始曲线数据', 'motor_trace.csv', 'CSV (*.csv)')

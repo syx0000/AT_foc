@@ -22,7 +22,7 @@
 #define MOTOR_PWM_DEADTIME_COUNTS           80U
 
 /* Hall输入捕获（对齐demo）：TMR4 CH1/CH2/CH3 XOR捕获，经硬件数字滤波后
- * 触发中断，再读取GPIO状态。 */
+ * C1双边沿捕获中断，再读取GPIO状态。 */
 #define MOTOR_HALL_CAPTURE_TIMER            TMR4
 #define MOTOR_HALL_CAPTURE_CRM_CLK          CRM_TMR4_PERIPH_CLOCK
 #define MOTOR_HALL_CAPTURE_IRQn             TMR4_GLOBAL_IRQn

@@ -49,4 +49,11 @@ bool motor_hall_offset_identify(
   const motor_hall_offset_identification_input_t *input,
   motor_hall_offset_identification_result_t *result);
 
+/* Positive logical Iq may produce negative physical Iq/Vq when inverted.
+ * Normalize both voltage axes together before applying the positive-Vq solver. */
+bool motor_hall_offset_identify_directional(
+  const motor_hall_offset_identification_input_t *input,
+  bool direction_inverted,
+  motor_hall_offset_identification_result_t *result);
+
 #endif /* MOTOR_HALL_OFFSET_IDENTIFICATION_H */

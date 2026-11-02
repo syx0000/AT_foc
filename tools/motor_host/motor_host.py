@@ -119,7 +119,7 @@ for _name in DEMO_PARAMETER_NAMES:
 PARAMETER_RANGES.update({
     "demo_rs_mohm": (1, 10000), "demo_ls_uh": (1, 100000),
     "demo_bandwidth_rad_s": (1, 65535), "demo_tune_bus_mv": (18000, 60000),
-    "demo_current_limit_ma": (0, 50000), "demo_acc_rpm_ms": (1, 1000),
+    "demo_current_limit_ma": (0, 60000), "demo_acc_rpm_ms": (1, 1000),
     "demo_dec_rpm_ms": (1, 1000), "demo_hall_scan_mv": (100, 4800),
     "demo_hall_angle_inc": (1, 100),
     "demo_hall_align_ms": (10, 10000),

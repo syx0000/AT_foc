@@ -84,19 +84,18 @@
  * @brief 捕获一次Hall边沿并分发给下游模块。
  * @param sample 输出本次捕获后的端口快照，不允许为空。
  * @return 无。
- * @details 由TMR4 XOR捕获中断调用。只有解码器确认的相邻合法跳变
- *          才会传给标定、观测器和角度估算器；重复、000/111毛刺或跳扇区的
- *          跳变不会被当作新的转子角度边界。
+ * @details 标定独立接收原始边沿并自行校验，不依赖待重新学习的旧顺序表。
+ *          运行角度估算仍仅接收解码器确认的合法跳变。
  */
 static void hall_edge_dispatch(motor_hall_port_sample_t *sample)
 {
   motor_hall_port_edge_capture();
-  if (motor_hall_port_sample_read(sample) &&
-      motor_hall_decoder_edge_process_captured(sample->state, sample->edge_count,
-                                      sample->timestamp_cycles, sample->capture_us))
+  if (motor_hall_port_sample_read(sample))
   {
     motor_commissioning_hall_edge_process();
-    motor_hall_angle_estimator_edge_process();
+    if (motor_hall_decoder_edge_process_captured(sample->state, sample->edge_count,
+                                        sample->timestamp_cycles, sample->capture_us))
+      motor_hall_angle_estimator_edge_process();
   }
 }
 
@@ -515,7 +514,7 @@ void TMR1_BRK_TMR9_IRQHandler(void)
  * @brief 处理TMR4 Hall XOR捕获中断。
  * @param 无。
  * @return 无。
- * @details 三路Hall异或并经数字滤波后，每个边沿置位TRIGGER标志。按前后两次
+ * @details 三路Hall异或并经数字滤波后，双边沿捕获置位C1标志。按前后两次
  *          端口状态并分发Hall边沿。
  */
 void TMR4_GLOBAL_IRQHandler(void)
@@ -526,12 +525,11 @@ void TMR4_GLOBAL_IRQHandler(void)
     motor_hall_port_overflow_capture();
   }
 
-  if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG) !=
+  if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_C1_FLAG) !=
       RESET)
   {
-    tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_FLAG);
-    hall_edge_dispatch(&hall_port_sample);
     tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_C1_FLAG);
+    hall_edge_dispatch(&hall_port_sample);
   }
 }
 

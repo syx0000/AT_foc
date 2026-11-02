@@ -8,10 +8,28 @@
 
 #include <stddef.h>
 #include "motor_foc_math.h"
+#include "motor_direction.h"
 #include "motor_hall_offset_identification.h"
 
 #define MOTOR_HALL_OFFSET_QUARTER_TURN_U16 16384L
 #define MOTOR_HALL_OFFSET_DEGREES_X10_PER_TURN 3600L
+
+bool motor_hall_offset_identify_directional(
+  const motor_hall_offset_identification_input_t *input,
+  bool direction_inverted,
+  motor_hall_offset_identification_result_t *result)
+{
+  motor_hall_offset_identification_input_t normalized;
+  if (result == NULL) return false;
+  result->status = MOTOR_HALL_OFFSET_IDENT_INVALID_ARGUMENT;
+  if (input == NULL) return false;
+  normalized = *input;
+  if (!motor_direction_transform_s32(input->direct_voltage_mv,
+         direction_inverted, &normalized.direct_voltage_mv) ||
+      !motor_direction_transform_s32(input->quadrature_voltage_mv,
+         direction_inverted, &normalized.quadrature_voltage_mv)) return false;
+  return motor_hall_offset_identify(&normalized, result);
+}
 
 static int32_t motor_hall_offset_angle_find(int32_t y, int32_t x)
 {

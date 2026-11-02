@@ -110,7 +110,7 @@ void motor_parameter_defaults_build(motor_parameter_t *parameter)
   parameter->speed_acceleration_rpm_per_s =
     MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S;
   parameter->speed_current_limit_ma =
-    (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA;
+    (uint32_t)MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA;
   parameter->hall_rotor_offset_u16 = MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16;
   (void)memcpy(parameter->hall_positive_next, hall_positive_next,
                sizeof(hall_positive_next));

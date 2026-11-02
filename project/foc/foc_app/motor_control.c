@@ -785,6 +785,10 @@ void motor_control_poll(void)
     {
       hall_read_ok = motor_hall_decoder_sample_read(&hall);
       estimator_read_ok = motor_hall_angle_estimator_read(&estimator);
+      LOGE("Hall input diag: raw=%u decoded=%u health_fault=%u\r\n",
+        (unsigned int)motor_hall_port_raw_state_get(),
+        hall_read_ok ? (unsigned int)hall.state : 0U,
+        (hall_read_ok && hall.health_fault) ? 1U : 0U);
       LOGE("Hall fault diag: read=%u/%u valid=%u/%u state=%u/%u dir=%d/%d freq_mhz=%lu/%lu edges=%lu invalid=%lu duplicate=%lu iq=%ld/%ld\r\n",
         hall_read_ok ? 1U : 0U, estimator_read_ok ? 1U : 0U,
         (hall_read_ok && hall.valid) ? 1U : 0U,

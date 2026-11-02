@@ -75,6 +75,8 @@ typedef struct
   int32_t direct_voltage_average_mv;
   int32_t quadrature_voltage_average_mv;
   uint32_t final_frequency_millihz;
+  int8_t final_direction;
+  bool final_speed_valid;
   int32_t final_phase_a_ma;
   int32_t final_phase_b_ma;
   int32_t final_phase_c_ma;
@@ -112,8 +114,10 @@ static bool commissioning_flux_result_print(
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 2U);
     return false;
   }
-  if (measurement->final_frequency_millihz <
-      MOTOR_COMMISSIONING_FLUX_MINIMUM_FREQUENCY_MILLIHZ)
+  if ((measurement->final_frequency_millihz <
+       MOTOR_COMMISSIONING_FLUX_MINIMUM_FREQUENCY_MILLIHZ) ||
+      (!measurement->final_speed_valid) ||
+      ((measurement->final_direction != 1) && (measurement->final_direction != -1)))
   {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 3U);
     return false;
@@ -123,10 +127,20 @@ static bool commissioning_flux_result_print(
                        measurement->quadrature_average_ma;
   inductive_drop_uv = MOTOR_COMMISSIONING_TWO_PI_X1000000 *
     (int64_t)measurement->final_frequency_millihz *
+    measurement->final_direction *
     (int64_t)candidate.direct_inductance_uh *
     measurement->direct_average_ma / 1000000000000LL;
   back_emf_uv = (int64_t)measurement->quadrature_voltage_average_mv *
                 1000LL - resistive_drop_uv - inductive_drop_uv;
+  LOGI("Flux measurement: dir=%d frequency=%lu mHz vd/vq=%ld/%ld mV id/iq=%ld/%ld mA bemf_uv=%ld\r\n",
+    (int)measurement->final_direction,
+    (unsigned long)measurement->final_frequency_millihz,
+    (long)measurement->direct_voltage_average_mv,
+    (long)measurement->quadrature_voltage_average_mv,
+    (long)measurement->direct_average_ma,
+    (long)measurement->quadrature_average_ma, (long)back_emf_uv);
+  /* E_q = omega_e * psi: both E_q and omega_e reverse with physical motion. */
+  back_emf_uv *= measurement->final_direction;
   if (back_emf_uv <= 0LL)
   {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 4U);
@@ -299,6 +313,8 @@ static void commissioning_iq_snapshot(commissioning_iq_result_t *result)
   if (motor_rotor_feedback_read(&rotor))
   {
     result->final_frequency_millihz = rotor.electrical_frequency_millihz;
+    result->final_direction = rotor.direction;
+    result->final_speed_valid = rotor.speed_valid;
     result->final_hall_state = rotor.source_state;
   }
   if (motor_pwm_port_status_read(&pwm))
@@ -661,7 +677,13 @@ static bool commissioning_hall_offset_run(
     MOTOR_HALL_OFFSET_MAXIMUM_CORRECTION_U16;
   input.minimum_quadrature_voltage_mv =
     MOTOR_HALL_OFFSET_MINIMUM_VQ_MV;
-  if (!motor_hall_offset_identify(&input, &result))
+  LOGI("Hall offset measurement: inverted=%u vd/vq=%ld/%ld mV id/iq=%ld/%ld mA frequency=%lu mHz\r\n",
+    (unsigned int)candidate.direction_inverted,
+    (long)input.direct_voltage_mv, (long)input.quadrature_voltage_mv,
+    (long)measurement->direct_average_ma, (long)measurement->quadrature_average_ma,
+    (unsigned long)measurement->final_frequency_millihz);
+  if (!motor_hall_offset_identify_directional(&input,
+        candidate.direction_inverted != 0U, &result))
   {
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_OFFSET,
                             3U + (uint32_t)result.status - 1U);
@@ -718,6 +740,8 @@ static bool commissioning_hall_direction_run(int8_t direction)
   bool target_reached=false;
   bool scan_control_valid=true;
 
+  (void)memset(&motor_status, 0, sizeof(motor_status));
+  (void)memset(&open_loop_status, 0, sizeof(open_loop_status));
   commissioning_hall_collecting=false;
   if (motor_hall_calibration_scan_begin(&commissioning_hall,direction) !=
       MOTOR_HALL_CALIBRATION_OK) {
@@ -766,6 +790,11 @@ static bool commissioning_hall_direction_run(int8_t direction)
     return false;
   }
   if (!target_reached) {
+    LOGE("Hall scan target wait failed: logical=%ld physical=%ld actual=%ld mHz motor=%u open=%u\r\n",
+      (long)command.target_frequency_millihz,
+      (long)physical_target_frequency_millihz,
+      (long)open_loop_status.actual_frequency_millihz,
+      (unsigned int)motor_status.state, (unsigned int)open_loop_status.state);
     motor_control_stop();
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 104U);
     return false;
@@ -782,8 +811,13 @@ static bool commissioning_hall_direction_run(int8_t direction)
         !motor_open_loop_status_read(&open_loop_status) ||
         (open_loop_status.state != MOTOR_OPEN_LOOP_RUNNING) ||
         (open_loop_status.actual_frequency_millihz !=
-         command.target_frequency_millihz))
+         physical_target_frequency_millihz))
     {
+      LOGE("Hall scan settle failed: logical=%ld physical=%ld actual=%ld mHz motor=%u open=%u\r\n",
+        (long)command.target_frequency_millihz,
+        (long)physical_target_frequency_millihz,
+        (long)open_loop_status.actual_frequency_millihz,
+        (unsigned int)motor_status.state, (unsigned int)open_loop_status.state);
       motor_control_stop();
       commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 104U);
       return false;
@@ -827,6 +861,16 @@ static bool commissioning_hall_direction_run(int8_t direction)
                             (uint32_t)commissioning_hall.error); return false;
   }
   if (motor_timebase_cycles_elapsed(start)>=timeout) {
+    (void)motor_hall_port_sample_read(&sample);
+    LOGE("Hall scan timeout: dir=%d hall=%u raw_edges=%lu target=%ld mHz samples=%lu/%lu/%lu/%lu/%lu/%lu\r\n",
+      (int)direction, (unsigned int)sample.state, (unsigned long)sample.edge_count,
+      (long)physical_target_frequency_millihz,
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[1].count : commissioning_hall.reverse_angle[1].count),
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[2].count : commissioning_hall.reverse_angle[2].count),
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[3].count : commissioning_hall.reverse_angle[3].count),
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[4].count : commissioning_hall.reverse_angle[4].count),
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[5].count : commissioning_hall.reverse_angle[5].count),
+      (unsigned long)((direction > 0) ? commissioning_hall.forward_angle[6].count : commissioning_hall.reverse_angle[6].count));
     commissioning_error_set(MOTOR_COMMISSIONING_ERROR_HALL_SCAN, 102U); return false;
   }
   scan_error = motor_hall_calibration_scan_end(&commissioning_hall);

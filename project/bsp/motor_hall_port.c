@@ -46,8 +46,8 @@ uint8_t motor_hall_port_raw_state_get(void)
  * @param 无。
  * @return 无。
  * @details 三路Hall引脚配置为TMR4复用输入；
- *          CH1/CH2/CH3异或后经数字滤波送入C1，C1INC作为触发输入，每个
- *          滤波后的Hall边沿产生一次TRIGGER中断。计数器以1 MHz自由运行，
+ *          CH1/CH2/CH3异或后经数字滤波直接送入C1，每个上升/下降沿
+ *          产生一次C1捕获中断，不依赖从模式触发。计数器以1 MHz自由运行，
  *          C1硬件锁存边沿时标，溢出中断扩展计数；DWT只保留事件诊断时间。
  */
 static void motor_hall_port_timer_xor_init(void)
@@ -85,8 +85,8 @@ static void motor_hall_port_timer_xor_init(void)
 
   tmr_input_default_para_init(&tmr_input_struct);
   tmr_input_struct.input_channel_select = TMR_SELECT_CHANNEL_1;
-  tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_STI;
-  tmr_input_struct.input_polarity_select = TMR_INPUT_RISING_EDGE;
+  tmr_input_struct.input_mapped_select = TMR_CC_CHANNEL_MAPPED_DIRECT;
+  tmr_input_struct.input_polarity_select = TMR_INPUT_BOTH_EDGE;
   tmr_input_struct.input_filter_value = MOTOR_HALL_CAPTURE_FILTER;
   tmr_input_channel_init(MOTOR_HALL_CAPTURE_TIMER, &tmr_input_struct,
                          TMR_CHANNEL_INPUT_DIV_1);
@@ -97,7 +97,7 @@ static void motor_hall_port_timer_xor_init(void)
 
   tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER,
                  TMR_TRIGGER_FLAG | TMR_C1_FLAG | TMR_OVF_FLAG);
-  tmr_interrupt_enable(MOTOR_HALL_CAPTURE_TIMER, TMR_TRIGGER_INT | TMR_OVF_INT, TRUE);
+  tmr_interrupt_enable(MOTOR_HALL_CAPTURE_TIMER, TMR_C1_INT | TMR_OVF_INT, TRUE);
   nvic_irq_enable(MOTOR_HALL_CAPTURE_IRQn, 2, 0);
   tmr_counter_enable(MOTOR_HALL_CAPTURE_TIMER, TRUE);
 }

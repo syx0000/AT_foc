@@ -23,8 +23,8 @@
 #define MOTOR_CURRENT_OFFSET_DIFFERENCE_MAX      80U
 
 /* 电机能力、控制限幅与保护参数，单位均为mA。 */
-#define MOTOR_CURRENT_COMMAND_MAX_MA           50000L
-#define MOTOR_SOFTWARE_OVERCURRENT_MA          55000L
+#define MOTOR_CURRENT_COMMAND_MAX_MA           60000L
+#define MOTOR_SOFTWARE_OVERCURRENT_MA          64000L
 #define MOTOR_SOFTWARE_OVERCURRENT_SAMPLES        30U /* ADC window: 1.875 ms @16 kHz */
 #define MOTOR_ADC_OVERCURRENT_DELTA_COUNTS \
   ((MOTOR_SOFTWARE_OVERCURRENT_MA * 1ULL * MOTOR_ADC_FULL_SCALE_COUNTS * \
@@ -40,7 +40,7 @@
 /* 电机本体参数：4对极，机械转速=rpm=(电频率Hz×60)/极对数。 */
 #define MOTOR_POLE_PAIRS                           4U
 /* 设备逻辑方向默认与当前电气正方向一致；1表示逻辑方向反转。 */
-#define MOTOR_DIRECTION_INVERTED                   0U
+#define MOTOR_DIRECTION_INVERTED                   1U
 /* 反向中低速闭环已完成上板验证；在线跨零换向和高速性能仍不在开放范围。 */
 #define MOTOR_REVERSE_CONTROL_VERIFIED             1U
 
@@ -58,18 +58,18 @@
 #endif
 
 /* 10 Hz空载正向开环实测Hall状态进入边沿角度，U16一周制。 */
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_1             5U
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_2             3U
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_3             1U
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_4             6U
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_5             4U
-#define MOTOR_HALL_POSITIVE_NEXT_STATE_6             2U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         58890U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         38627U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         48251U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16         14958U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16          6537U
-#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         26968U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_1             3U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_2             6U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_3             2U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_4             5U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_5             1U
+#define MOTOR_HALL_POSITIVE_NEXT_STATE_6             4U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_1_U16         16360U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_2_U16         39216U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_3_U16         28539U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_4_U16         61437U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_5_U16          6369U
+#define MOTOR_HALL_EDGE_ANGLE_STATE_6_U16         49271U
 /* 由35 Hz闭环平均Vd/Vq=-2910/3333 mV计算，补偿开环标定引入的41.1度超前角。 */
 #define MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16            448U
 #define MOTOR_HALL_DYNAMIC_COMPENSATION_DELAY_US      75U
@@ -90,14 +90,18 @@
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
 /* 静止即以Iq=0启动电流环(Hall扇区角)，速度PI全程直接输出Iq。
- * 默认增益采用最后一次板上确认的活动参数4800/64。 */
+ * 默认增益采用已确认的4800/64。 */
 #define MOTOR_SPEED_PI_KP_Q20                         4800L
 #define MOTOR_SPEED_PI_KI_Q20                           64L
 /* Legacy Flash parameter defaults only; speed-loop stall shutdown is removed. */
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
-#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         35000L
-#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         3000L
+#define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         60000L
+#define MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA       60000L
+#if (MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA > MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA)
+#error "default speed current exceeds configurable limit"
+#endif
+#define MOTOR_SPEED_CONTROL_MAXIMUM_SPEED_RPM         4000L
 #define MOTOR_SPEED_CONTROL_ACCELERATION_RPM_PER_S   30000U /* 30 rpm/ms */
 /* 速度闭环保护阈值：当前仅支持正向Hall角度标定。 */
 #define MOTOR_SPEED_OVERSPEED_RPM                      4400U
@@ -130,21 +134,21 @@
 #define MOTOR_INDUCTANCE_IDENT_MEASURE_SAMPLES      16000U /* 1 s @16 kHz */
 #define MOTOR_INDUCTANCE_IDENT_ABORT_CURRENT_MA     10000L
 
-/* 60BLDC140-24030-14J30, 24 V: Rs=80 mOhm, Ld=Lq=50 uH; 888 Hz PI @16 kHz. */
-#define MOTOR_PHASE_RESISTANCE_MOHM                   80U
-#define MOTOR_DIRECT_INDUCTANCE_UH                    50U
-#define MOTOR_QUADRATURE_INDUCTANCE_UH                50U
+/* Board active defaults: Rs=86 mOhm, Ld=71 uH, Lq=60 uH; 2000 Hz PI @16 kHz. */
+#define MOTOR_PHASE_RESISTANCE_MOHM                   86U
+#define MOTOR_DIRECT_INDUCTANCE_UH                    71U
+#define MOTOR_QUADRATURE_INDUCTANCE_UH                60U
 #define MOTOR_FLUX_LINKAGE_UWB                      19494U
-#define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               888U
-#define MOTOR_CURRENT_PI_D_KP_Q15                   9141L
-#define MOTOR_CURRENT_PI_Q_KP_Q15                   9141L
-#define MOTOR_CURRENT_PI_KI_Q15                      914L
+#define MOTOR_CURRENT_LOOP_BANDWIDTH_HZ               2000U
+#define MOTOR_CURRENT_PI_D_KP_Q15                   29236L
+#define MOTOR_CURRENT_PI_Q_KP_Q15                   24706L
+#define MOTOR_CURRENT_PI_KI_Q15                      2213L
 #define MOTOR_CURRENT_PI_OUTPUT_LIMIT_MV             4800L
 /* 正式电流环放开到整数百分比下的线性SVPWM上限；理论边界为Vbus/sqrt(3)=57.735%。 */
 #define MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT    57U
 /* 48 V母线在线性SVPWM理论边界Vbus/sqrt(3)下的dq电压矢量硬上限。 */
 #define MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV 27700L
-#define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       50000L
+#define MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA       64000L
 
 /* Independent current-mode I/F startup and Hall handover. */
 #define MOTOR_CURRENT_STARTUP_ALIGNMENT_CURRENT_MA   10000L
@@ -181,7 +185,7 @@
 #define MOTOR_CURRENT_STARTUP_BLEND_CYCLES              640U /* 40 ms @16 kHz */
 #define MOTOR_CURRENT_STARTUP_TIMEOUT_MS               3000U
 /* 调试CLI初期限制，正式通信协议接入状态机后再按权限放宽。 */
-#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            35000L
+#define MOTOR_CLI_CURRENT_COMMAND_LIMIT_MA            60000L
 
 /* 测试固件开关：1 = 上电ADC校准进入READY后自动开环旋转（motor stop可停止）；
  * 正式固件必须为0。参数与上位机开环默认值一致。 */
