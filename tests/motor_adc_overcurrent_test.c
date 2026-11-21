@@ -4,6 +4,10 @@ bool motor_pwm_port_output_is_enabled(void) { return enabled; }
 #define CHECK(x) do { if (!(x)) return __LINE__; } while(0)
 int main(void)
 {
+  CHECK(MOTOR_CURRENT_COMMAND_MAX_MA == 60000L);
+  CHECK(MOTOR_SOFTWARE_OVERCURRENT_MA == 64000L);
+  CHECK(MOTOR_ADC_OVERCURRENT_HIGH_COUNTS < MOTOR_ADC_FULL_SCALE_COUNTS);
+  CHECK(MOTOR_ADC_OVERCURRENT_LOW_COUNTS > 0U);
   motor_adc_fast_sample_t sample = {2048,2048,0};
   motor_current_sample_init();
   CHECK(!motor_current_sample_process(&sample,true));

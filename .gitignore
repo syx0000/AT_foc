@@ -17,3 +17,7 @@ bootloader/mdk_v5/build_log.txt
 *.swp
 JLinkLog.txt
 EventRecorderStub.scvd
+
+# Local scratch / Python cache
+tmp/
+__pycache__/

@@ -5,6 +5,7 @@ try {
         @{name='decoder';sources=@('tests/motor_hall_decoder_test.c','project/foc/foc_kernel/motor_hall_decoder.c')},
         @{name='direction_angle';sources=@('tests/motor_direction_angle_test.c','project/foc/foc_kernel/motor_direction.c','project/foc/foc_kernel/motor_hall_angle_math.c')},
         @{name='hall_calibration';sources=@('tests/motor_hall_calibration_test.c','project/foc/foc_kernel/motor_hall_calibration.c')},
+        @{name='hall_offset';sources=@('tests/motor_hall_offset_identification_test.c','project/foc/foc_kernel/motor_hall_offset_identification.c','project/foc/foc_kernel/motor_foc_math.c','project/foc/foc_kernel/motor_direction.c')},
         @{name='estimator_upgrade';sources=@('tests/motor_hall_estimator_upgrade_test.c','project/foc/foc_kernel/motor_hall_angle_math.c')},
         @{name='raw_health';sources=@('tests/motor_hall_raw_health_test.c','project/foc/foc_kernel/motor_hall_angle_math.c')}
     )

@@ -1,5 +1,6 @@
 """Protocol, command sequencing and Qt curve smoke tests (no motor required)."""
 import csv
+from collections import deque
 import os
 import sys
 import unittest
@@ -12,7 +13,7 @@ from PySide6.QtWidgets import QApplication, QPushButton
 from PySide6.QtGui import QFontDatabase, QFont, QWheelEvent
 from PySide6.QtCore import QPoint, QPointF, Qt
 from PySide6.QtTest import QTest
-from trace_view import Frame, TraceView, channels
+from trace_view import Frame, TraceView, channels, envelope_points, PLOT_POINTS
 from motor_host import MotorHost
 
 APP = QApplication.instance() or QApplication([])
@@ -26,6 +27,43 @@ def wire(logid=10, detail=0, seq=0, us=100, flags=511, capture=0):
 
 
 class TraceTests(unittest.TestCase):
+    def test_positive_elapsed_time_scroll_window_and_history(self):
+        for seq in range(601):
+            self.view.consume(wire(seq=seq, us=1000000+seq*100000))
+        self.view.redraw()
+        chart = self.view.chart_views[0]
+        self.assertEqual(self.view.points[0][0], 0)
+        self.assertAlmostEqual(self.view.elapsed, 60)
+        self.assertAlmostEqual(chart.x_axis.min(), 30)
+        self.assertAlmostEqual(chart.x_axis.max(), 60)
+        self.view.time_window.setValue(10)
+        self.assertAlmostEqual(chart.x_axis.min(), 50)
+        self.view.full_history.setChecked(True)
+        self.assertEqual(chart.x_axis.min(), 0)
+        self.assertAlmostEqual(chart.x_axis.max(), 60)
+        self.assertEqual(len(self.view.rows), 601)
+
+    def test_evicted_history_does_not_restart_clock(self):
+        self.view.points = deque(maxlen=3)
+        for seq in range(6):
+            self.view.consume(wire(seq=seq, us=seq*1000000))
+        self.view.redraw()
+        chart = self.view.chart_views[0]
+        self.assertEqual(self.view.elapsed, 5)
+        self.assertEqual(chart.x_axis.min(), 3)
+        self.assertEqual(chart.x_axis.max(), 5)
+
+    def test_plot_envelope_keeps_peaks_and_bounds_render_size(self):
+        data = [QPointF(i, 0) for i in range(20000)]
+        data[1234].setY(100)
+        data[1235].setY(-100)
+        reduced = envelope_points(data)
+        self.assertLessEqual(len(reduced), PLOT_POINTS)
+        self.assertEqual(max(p.y() for p in reduced), 100)
+        self.assertEqual(min(p.y() for p in reduced), -100)
+        self.assertEqual(reduced[0].x(), 0)
+        self.assertEqual(reduced[-1].x(), 19999)
+
     def setUp(self):
         self.sent = []
         self.view = TraceView(self.sent.append)

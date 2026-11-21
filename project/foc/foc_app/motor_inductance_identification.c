@@ -103,13 +103,16 @@ void motor_inductance_identification_fast_process(void)
 
 static bool motor_inductance_identification_axis_run(motor_inductance_identification_state_t axis, uint32_t *current_ma)
 {
-  motor_inductance_identification_state = axis;
+  /* 先保持IDLE开启MOE，再切换轴状态；否则采样中断会在MOE开启前看到oen==0并误判驱动故障急停。 */
+  motor_inductance_identification_state = IDENT_IDLE;
   motor_inductance_identification_count = 0U; motor_inductance_identification_sum_sin = 0; motor_inductance_identification_sum_cos = 0; motor_inductance_identification_phase = 0U;
   motor_inductance_identification_voltage_apply(0, 0);
   if (!motor_pwm_port_output_enable()) {
     motor_inductance_identification_fault = MOTOR_INDUCTANCE_IDENT_PWM_ENABLE_FAILED;
-    motor_inductance_identification_state = IDENT_FAULT; return false;
+    motor_inductance_identification_state = IDENT_FAULT;
+    motor_pwm_port_emergency_stop(); return false;
   }
+  motor_inductance_identification_state = axis;
   while ((motor_inductance_identification_state == axis)) wk_delay_ms(1U);
   if (motor_inductance_identification_state != IDENT_DONE) return false;
   *current_ma = (motor_inductance_identification_current_amplitude_q15 * (uint32_t)MOTOR_CURRENT_Q15_BASE_MA) / 32768U;

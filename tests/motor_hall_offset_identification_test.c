@@ -7,6 +7,7 @@
  */
 
 #include <assert.h>
+#include <limits.h>
 #include <stdio.h>
 #include "motor_hall_offset_identification.h"
 
@@ -27,6 +28,19 @@ int main(void)
   assert(result.candidate_offset_u16 == (uint16_t)result.correction_u16);
   assert((result.correction_degrees_x10 >= 409U) &&
          (result.correction_degrees_x10 <= 413U));
+
+  /* Direction inversion reverses both measured axes, not the correction. */
+  input.direct_voltage_mv = 2910;
+  input.quadrature_voltage_mv = -3333;
+  assert(motor_hall_offset_identify_directional(&input, true, &result));
+  assert(result.correction_u16 >= 7460 && result.correction_u16 <= 7500);
+  assert(!motor_hall_offset_identify_directional(&input, false, &result));
+  input.quadrature_voltage_mv = -100;
+  assert(!motor_hall_offset_identify_directional(&input, true, &result));
+  assert(result.status == MOTOR_HALL_OFFSET_IDENT_QUADRATURE_VOLTAGE_TOO_LOW);
+  input.direct_voltage_mv = INT32_MIN;
+  assert(!motor_hall_offset_identify_directional(&input, true, &result));
+  assert(result.status == MOTOR_HALL_OFFSET_IDENT_INVALID_ARGUMENT);
 
   input.direct_voltage_mv = 0;
   input.quadrature_voltage_mv = 3000;
