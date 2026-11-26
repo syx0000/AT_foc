@@ -97,6 +97,11 @@ void encoder_rs485_trigger(void);
 /** @brief Collect the response from the ADC fast loop without waiting. */
 void encoder_rs485_collect(void);
 
+void encoder_rs485_usart_irq(void);
+
+/* Control snapshot is valid only for a new frame belonging to this ADC cycle. */
+bool encoder_rs485_read_control(enc_data_t *out);
+
 /**
  * @brief  获取最新有效数据（无论上次请求是否已完成）
  */
@@ -115,6 +120,7 @@ enc_result_t encoder_rs485_get_result(void);
  * @retval 0 ~ 65535，对应 0 ~ 360°
  */
 uint16_t encoder_abs_to_angle_q16(uint32_t abs_pos);
+uint16_t encoder_abs_to_electrical_angle_q16(uint32_t abs_pos, uint8_t pole_pairs);
 
 /* 轮询自检：绕过 DMA 发送 1 字节 0x02，200us 内轮询接收 */
 typedef struct {

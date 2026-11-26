@@ -52,7 +52,7 @@ typedef enum
   MOTOR_PARAMETER_FIELD_SPEED_KP_Q20,
   MOTOR_PARAMETER_FIELD_SPEED_KI_Q20,
   MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16,
-  MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16,
+  MOTOR_PARAMETER_FIELD_ENCODER_ELECTRICAL_ZERO_U16,
   MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US,
   MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB,
   MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM,
@@ -79,7 +79,7 @@ typedef struct
   int32_t speed_kp_q20;
   int32_t speed_ki_q20;
   uint16_t hall_rotor_offset_u16;
-  uint16_t encoder_offset_u16;    /**< 编码器零位与d轴对齐偏移，U16一周制，编码器模式使用。 */
+  uint16_t encoder_electrical_zero_u16; /**< 编码器电角度零位，U16 一电周期。 */
   uint8_t hall_positive_next[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint16_t hall_entry_angle_u16[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint32_t flux_linkage_uwb;
@@ -191,6 +191,7 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
  * @details 更新RAM活动参数；调用方重载控制器，Flash持久化须单独执行save。
  */
 bool motor_parameter_candidate_accept(void);
+bool motor_parameter_encoder_zero_apply(uint16_t zero, uint8_t pole_pairs);
 
 /**
  * @brief 在安全停止状态临时应用候选参数并备份原活动参数。

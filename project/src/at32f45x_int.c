@@ -342,6 +342,7 @@ void ADC1_2_IRQHandler(void)
     motor_hall_angle_estimator_fast_process();
 #elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
     encoder_rs485_collect();
+    motor_rotor_feedback_process_fast();
 #endif
     motor_current_startup_fast_process();
     motor_current_transform_fast_process();
@@ -481,6 +482,9 @@ void USART1_IRQHandler(void)
   */
 void USART3_IRQHandler(void)
 {
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  encoder_rs485_usart_irq();
+#else
   /* add user code begin USART3_IRQ 0 */
 
   /* add user code end USART3_IRQ 0 */
@@ -506,6 +510,7 @@ void USART3_IRQHandler(void)
   /* add user code begin USART3_IRQ 1 */
 
   /* add user code end USART3_IRQ 1 */
+#endif
 }
 
 /* add user code begin 1 */

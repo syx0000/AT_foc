@@ -66,6 +66,8 @@ void motor_open_loop_init(void);
  * @return 指令及硬件状态满足安全条件并成功开启PWM时返回true。
  */
 bool motor_open_loop_start(const motor_open_loop_command_t *command);
+bool motor_open_loop_alignment_start(void);
+bool motor_open_loop_alignment_vector_set(int32_t voltage_mv, uint16_t angle);
 
 /**
  * @brief 运行中更新开环指令。

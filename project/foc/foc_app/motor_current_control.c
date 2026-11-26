@@ -11,6 +11,7 @@
 #include "motor_board_config.h"
 #include "motor_control_config.h"
 #include "motor_current_control.h"
+#include "motor_commissioning.h"
 #include "motor_current_pi.h"
 #include "motor_current_sample.h"
 #include "motor_foc_math.h"
@@ -31,6 +32,28 @@ static uint32_t motor_current_control_hall_invalid_cycles;
 static int32_t motor_current_control_start_direct_mv;
 static int32_t motor_current_control_start_quadrature_mv;
 
+typedef struct
+{
+  int32_t direct_mv;
+  int32_t quadrature_mv;
+} motor_current_control_voltage_t;
+
+static struct
+{
+  uint32_t resistance_mohm;
+  uint32_t direct_inductance_uh;
+  uint32_t quadrature_inductance_uh;
+  bool enabled;
+} motor_current_control_model;
+
+static int32_t motor_current_control_bus_voltage_limit(uint32_t bus_mv)
+{
+  const int32_t linear_limit_mv = (int32_t)(
+    bus_mv * motor_current_control_config.voltage_limit_percent / 100U);
+  const int32_t hard_limit_mv = motor_current_control_config.hard_voltage_limit_mv;
+  return (hard_limit_mv > 0 && hard_limit_mv < linear_limit_mv) ? hard_limit_mv : linear_limit_mv;
+}
+
 static void motor_current_control_bus_voltage_update(void)
 {
   motor_slow_sensor_state_t sensor;
@@ -44,12 +67,7 @@ static void motor_current_control_bus_voltage_update(void)
     return;
   }
   bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
-  voltage_limit_mv = (int32_t)(
-    (bus_mv * motor_current_control_config.voltage_limit_percent) / 100U);
-  if (voltage_limit_mv > motor_current_control_config.hard_voltage_limit_mv)
-  {
-    voltage_limit_mv = motor_current_control_config.hard_voltage_limit_mv;
-  }
+  voltage_limit_mv = motor_current_control_bus_voltage_limit(bus_mv);
   if ((bus_mv == motor_current_control_bus_mv) &&
       (voltage_limit_mv == motor_current_control_voltage_limit_mv))
   {
@@ -57,25 +75,55 @@ static void motor_current_control_bus_voltage_update(void)
   }
   motor_current_control_bus_mv = bus_mv;
   motor_current_control_voltage_limit_mv = voltage_limit_mv;
-  (void)motor_current_pi_axis_output_limit_set(
-    &motor_current_control_d_pi, voltage_limit_mv);
-  (void)motor_current_pi_axis_output_limit_set(
-    &motor_current_control_q_pi, voltage_limit_mv);
-}
-
-static int32_t motor_current_control_abs(int32_t value)
-{
-  return (value < 0) ? -value : value;
 }
 
 static bool motor_current_control_command_valid(
   const motor_current_control_command_t *command)
 {
-  return (command != NULL) &&
-    (motor_current_control_abs(command->direct_reference_ma) <=
-     motor_current_control_config.command_limit_ma) &&
-    (motor_current_control_abs(command->quadrature_reference_ma) <=
-     motor_current_control_config.command_limit_ma);
+  const int32_t limit = motor_current_control_config.command_limit_ma;
+  return command != NULL &&
+    command->direct_reference_ma >= -limit && command->direct_reference_ma <= limit &&
+    command->quadrature_reference_ma >= -limit && command->quadrature_reference_ma <= limit;
+}
+
+static motor_current_control_command_t motor_current_control_reference_limit(
+  const motor_current_control_command_t *command)
+{
+  motor_current_control_command_t reference = *command;
+  (void)motor_voltage_limit_apply(&reference.direct_reference_ma,
+    &reference.quadrature_reference_ma, motor_current_control_config.command_limit_ma);
+  return reference;
+}
+
+static int32_t motor_current_control_saturate_i32(int64_t value)
+{
+  if (value > INT32_MAX) return INT32_MAX;
+  if (value < INT32_MIN) return INT32_MIN;
+  return (int32_t)value;
+}
+
+static motor_current_control_voltage_t motor_current_control_feedforward(
+  const motor_current_control_command_t *reference, int64_t omega_mrad_s)
+{
+  motor_current_control_voltage_t ff = {0, 0};
+  if (!motor_current_control_model.enabled) return ff;
+
+  const int64_t id = reference->direct_reference_ma;
+  const int64_t iq = reference->quadrature_reference_ma;
+  const int64_t d_flux_uwb = motor_current_control_model.direct_inductance_uh * id / 1000;
+  const int64_t q_flux_uwb = motor_current_control_model.quadrature_inductance_uh * iq / 1000;
+  /* R in mOhm, I in mA, omega in mrad/s and flux in uWb yield mV. */
+  ff.direct_mv = motor_current_control_saturate_i32(
+    motor_current_control_model.resistance_mohm * id / 1000 -
+    omega_mrad_s * q_flux_uwb / 1000000);
+  ff.quadrature_mv = motor_current_control_saturate_i32(
+    motor_current_control_model.resistance_mohm * iq / 1000 +
+    omega_mrad_s * d_flux_uwb / 1000000);
+  const int32_t ff_limit_mv = (motor_current_control_voltage_limit_mv *
+    MOTOR_CURRENT_CONTROL_FEEDFORWARD_LIMIT_NUMERATOR /
+    MOTOR_CURRENT_CONTROL_FEEDFORWARD_LIMIT_DENOMINATOR);
+  (void)motor_voltage_limit_apply(&ff.direct_mv, &ff.quadrature_mv, ff_limit_mv);
+  return ff;
 }
 
 static bool motor_current_control_config_valid(
@@ -85,37 +133,62 @@ static bool motor_current_control_config_valid(
     (config->quadrature_kp_q15 >= 0) && (config->integral_gain_q15 >= 0) &&
     (config->voltage_limit_percent > 0U) &&
     (config->voltage_limit_percent <= 57U) &&
-    (config->hard_voltage_limit_mv > 0) &&
+    (config->hard_voltage_limit_mv >= 0) &&
     (config->command_limit_ma > 0) &&
     (config->abort_current_ma >= config->command_limit_ma) &&
     (config->abort_current_ma <= MOTOR_SOFTWARE_OVERCURRENT_MA);
 }
 
-static motor_alpha_beta_q15_t motor_current_control_voltage_apply(
-  int32_t direct_mv, int32_t quadrature_mv, uint16_t angle_u16)
+static uint16_t motor_current_control_compare(uint16_t duty, bool *limited)
 {
-  motor_alpha_beta_q15_t voltage = {0, 0};
-  int16_t direct_q15;
-  int16_t quadrature_q15;
+  const uint16_t minimum = MOTOR_PWM_MINIMUM_PULSE_COUNTS;
+  const uint16_t maximum = MOTOR_PWM_PERIOD_COUNTS - minimum;
+  const uint16_t compare = (uint16_t)((uint32_t)duty * MOTOR_PWM_PERIOD_COUNTS / 32767U);
+  if (compare < minimum || compare > maximum)
+  {
+    *limited = true;
+    return compare < minimum ? minimum : maximum;
+  }
+  return compare;
+}
 
-  /* prepare() 尚未成功时 bus_mv 为零，直接返回零向量并跳过PWM写入，
-   * 让上一次 compare 保持不变，避免除零UB和无根据的输出。 */
-  if (motor_current_control_bus_mv == 0U) return voltage;
-  direct_q15 = (int16_t)(((int64_t)direct_mv * 32768) / motor_current_control_bus_mv);
-  quadrature_q15 = (int16_t)(((int64_t)quadrature_mv * 32768) /
-                                     motor_current_control_bus_mv);
-  voltage = motor_foc_inverse_park_q15(
+static motor_current_control_voltage_t motor_current_control_voltage_apply(
+  int32_t direct_mv, int32_t quadrature_mv, uint16_t angle_u16, bool *limited)
+{
+  motor_current_control_voltage_t applied = {0, 0};
+  const int32_t bus_mv = (int32_t)motor_current_control_bus_mv;
+
+  if (limited != NULL) *limited = false;
+  if (bus_mv <= 0) return applied;
+  bool clipped = motor_voltage_limit_apply(&direct_mv, &quadrature_mv,
+    motor_current_control_voltage_limit_mv);
+  const int16_t direct_q15 = (int16_t)((int64_t)direct_mv * 32768 / bus_mv);
+  const int16_t quadrature_q15 = (int16_t)((int64_t)quadrature_mv * 32768 / bus_mv);
+  const motor_alpha_beta_q15_t voltage = motor_foc_inverse_park_q15(
     direct_q15, quadrature_q15, angle_u16);
-  motor_svpwm_duty_q15_t duty = motor_foc_svpwm_q15(voltage);
-  motor_pwm_compare_t compare;
-  compare.phase_a = (uint16_t)(((uint32_t)duty.phase_a *
-                                MOTOR_PWM_PERIOD_COUNTS) / 32767U);
-  compare.phase_b = (uint16_t)(((uint32_t)duty.phase_b *
-                                MOTOR_PWM_PERIOD_COUNTS) / 32767U);
-  compare.phase_c = (uint16_t)(((uint32_t)duty.phase_c *
-                                 MOTOR_PWM_PERIOD_COUNTS) / 32767U);
+  const motor_svpwm_duty_q15_t duty = motor_foc_svpwm_q15(voltage);
+  const motor_pwm_compare_t compare = {
+    motor_current_control_compare(duty.phase_a, &clipped),
+    motor_current_control_compare(duty.phase_b, &clipped),
+    motor_current_control_compare(duty.phase_c, &clipped)
+  };
   motor_pwm_port_compare_set(&compare);
-  return voltage;
+  if (limited == NULL) return applied;
+  *limited = clipped;
+
+  /* Remove common mode from the final compares. Use the voltage-apply angle
+     for the inverse transform of the same duty vector. */
+  const int32_t a = compare.phase_a;
+  const int32_t b = compare.phase_b;
+  const int32_t c = compare.phase_c;
+  const motor_alpha_beta_q15_t actual = {
+    (int16_t)((2 * a - b - c) * 32768 / (3 * (int32_t)MOTOR_PWM_PERIOD_COUNTS)),
+    (int16_t)((b - c) * 18919 / (int32_t)MOTOR_PWM_PERIOD_COUNTS)
+  };
+  const motor_direct_quadrature_q15_t actual_dq = motor_foc_park_q15(actual, angle_u16);
+  applied.direct_mv = (int32_t)actual_dq.direct_q15 * bus_mv / 32768;
+  applied.quadrature_mv = (int32_t)actual_dq.quadrature_q15 * bus_mv / 32768;
+  return applied;
 }
 
 static bool motor_current_control_prepare(
@@ -124,31 +197,41 @@ static bool motor_current_control_prepare(
 {
   motor_slow_sensor_state_t sensor;
   motor_rotor_feedback_t rotor_feedback;
+  motor_parameter_t parameter;
+  motor_commissioning_status_t commissioning;
   (void)motor_slow_sensor_process();
   if ((!motor_current_control_command_valid(command)) ||
       (!motor_slow_sensor_state_read(&sensor)) ||
       (!motor_rotor_feedback_read(&rotor_feedback)) ||
       (!rotor_feedback.valid) ||
+      (!motor_parameter_active_read(&parameter)) ||
+      (!motor_commissioning_status_read(&commissioning)) ||
       (sensor.bus_voltage_0p1v < MOTOR_BUS_UNDERVOLTAGE_0P1V) ||
       (sensor.bus_voltage_0p1v > MOTOR_BUS_OVERVOLTAGE_0P1V))
   {
     return false;
   }
   motor_current_control_bus_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
-  motor_current_control_voltage_limit_mv = (int32_t)(
-    (motor_current_control_bus_mv * motor_current_control_config.voltage_limit_percent) / 100U);
-  if (motor_current_control_voltage_limit_mv > motor_current_control_config.hard_voltage_limit_mv)
-  {
-    motor_current_control_voltage_limit_mv = motor_current_control_config.hard_voltage_limit_mv;
-  }
+  motor_current_control_voltage_limit_mv =
+    motor_current_control_bus_voltage_limit(motor_current_control_bus_mv);
   motor_current_pi_axis_init(&motor_current_control_d_pi, motor_current_control_config.direct_kp_q15,
-                             motor_current_control_config.integral_gain_q15,
-                             motor_current_control_voltage_limit_mv);
+                             motor_current_control_config.integral_gain_q15);
   motor_current_pi_axis_init(&motor_current_control_q_pi, motor_current_control_config.quadrature_kp_q15,
-                             motor_current_control_config.integral_gain_q15,
-                             motor_current_control_voltage_limit_mv);
-  (void)motor_current_pi_axis_output_seed(&motor_current_control_d_pi, direct_seed_mv);
-  (void)motor_current_pi_axis_output_seed(&motor_current_control_q_pi, quadrature_seed_mv);
+                             motor_current_control_config.integral_gain_q15);
+  motor_current_control_model.resistance_mohm = parameter.phase_resistance_mohm;
+  motor_current_control_model.direct_inductance_uh = parameter.direct_inductance_uh;
+  motor_current_control_model.quadrature_inductance_uh = parameter.quadrature_inductance_uh;
+  motor_current_control_model.enabled =
+    rotor_feedback.source == MOTOR_ROTOR_FEEDBACK_SOURCE_ABSOLUTE_ENCODER &&
+    commissioning.state != MOTOR_COMMISSIONING_RUNNING;
+
+  const motor_current_control_command_t reference = motor_current_control_reference_limit(command);
+  /* Use the published speed for the initial seed; the ISR uses same-cycle speed. */
+  const int64_t seed_omega = rotor_feedback.speed_valid ?
+    (int64_t)rotor_feedback.direction * rotor_feedback.electrical_frequency_millihz * 6283 / 1000 : 0;
+  const motor_current_control_voltage_t ff = motor_current_control_feedforward(&reference, seed_omega);
+  (void)motor_current_pi_axis_output_seed(&motor_current_control_d_pi, motor_current_control_saturate_i32((int64_t)direct_seed_mv - ff.direct_mv));
+  (void)motor_current_pi_axis_output_seed(&motor_current_control_q_pi, motor_current_control_saturate_i32((int64_t)quadrature_seed_mv - ff.quadrature_mv));
   motor_current_control_command = *command;
   /* The startup state machine reads the published command before the first
      settled ADC frame.  Publish the new seed command here so a restart cannot
@@ -171,8 +254,7 @@ void motor_current_control_init(void)
   motor_current_control_config.integral_gain_q15 = parameter.current_ki_q15;
   motor_current_control_config.voltage_limit_percent =
     MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT;
-  motor_current_control_config.hard_voltage_limit_mv =
-    MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
+  motor_current_control_config.hard_voltage_limit_mv = 0;
   motor_current_control_config.command_limit_ma = MOTOR_CURRENT_COMMAND_MAX_MA;
   motor_current_control_config.abort_current_ma = MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA;
   motor_current_control_status.state = MOTOR_CURRENT_CONTROL_STOPPED;
@@ -192,7 +274,7 @@ bool motor_current_control_parameter_reload(void)
   config.integral_gain_q15 = parameter.current_ki_q15;
   /* 参数/辨识切换结束后必须恢复正式运行限制，不能沿用低功率测试配置。 */
   config.voltage_limit_percent = MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT;
-  config.hard_voltage_limit_mv = MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
+  config.hard_voltage_limit_mv = 0;
   config.command_limit_ma = MOTOR_CURRENT_COMMAND_MAX_MA;
   config.abort_current_ma = MOTOR_CURRENT_CONTROL_ABORT_CURRENT_MA;
   return motor_current_control_config_set(&config);
@@ -230,7 +312,7 @@ bool motor_current_control_start_seeded(
   }
   motor_current_control_voltage_apply(
     direct_voltage_seed_mv, quadrature_voltage_seed_mv,
-    rotor_feedback.electrical_angle_u16);
+    rotor_feedback.electrical_angle_u16, NULL);
   motor_current_control_start_direct_mv = direct_voltage_seed_mv;
   motor_current_control_start_quadrature_mv = quadrature_voltage_seed_mv;
   motor_current_control_sample_settle_cycles = sample_settle_cycles;
@@ -319,7 +401,7 @@ void motor_current_control_fast_process(void)
     motor_current_control_voltage_apply(
       motor_current_control_start_direct_mv,
       motor_current_control_start_quadrature_mv,
-      motor_rotor_feedback_foc_angle(&rotor_feedback, true));
+      motor_rotor_feedback_foc_angle(&rotor_feedback, true), NULL);
     return;
   }
   if (!motor_current_sample_state_read(&current))
@@ -358,31 +440,38 @@ void motor_current_control_fast_process(void)
       dq = motor_foc_park_q15(alpha_beta, sample_angle);
       direct_ma = (int32_t)(((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
       quadrature_ma = (int32_t)(((int64_t)dq.quadrature_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
+      const motor_current_control_command_t command = motor_current_control_command;
+      const motor_current_control_command_t reference = motor_current_control_reference_limit(&command);
       direct_mv = motor_current_pi_axis_process(&motor_current_control_d_pi,
-        motor_current_control_command.direct_reference_ma, direct_ma);
+        reference.direct_reference_ma, direct_ma);
       quadrature_mv = motor_current_pi_axis_process(&motor_current_control_q_pi,
-        motor_current_control_command.quadrature_reference_ma, quadrature_ma);
-      motor_current_control_status.direct_p_mv = (int32_t)(((int64_t)(motor_current_control_command.direct_reference_ma - direct_ma) * motor_current_control_d_pi.proportional_gain_q15) >> 15);
-      motor_current_control_status.direct_i_mv = motor_current_control_d_pi.integral_mv;
+        reference.quadrature_reference_ma, quadrature_ma);
+      motor_current_control_status.direct_p_mv = (int32_t)(((int64_t)(reference.direct_reference_ma - direct_ma) * motor_current_control_d_pi.proportional_gain_q15) >> 15);
+      motor_current_control_status.quadrature_p_mv = (int32_t)(((int64_t)(reference.quadrature_reference_ma - quadrature_ma) * motor_current_control_q_pi.proportional_gain_q15) >> 15);
+      const int64_t omega = rotor_feedback.source == MOTOR_ROTOR_FEEDBACK_SOURCE_ABSOLUTE_ENCODER ?
+        motor_rotor_feedback_foc_omega_mrad_s() : 0;
+      const motor_current_control_voltage_t ff = motor_current_control_feedforward(&reference, omega);
+      const int64_t request_d = (int64_t)direct_mv + ff.direct_mv;
+      const int64_t request_q = (int64_t)quadrature_mv + ff.quadrature_mv;
+      direct_mv = motor_current_control_saturate_i32(request_d);
+      quadrature_mv = motor_current_control_saturate_i32(request_q);
       motor_current_control_status.direct_request_mv = direct_mv;
-      motor_current_control_status.quadrature_p_mv = (int32_t)(((int64_t)(motor_current_control_command.quadrature_reference_ma - quadrature_ma) * motor_current_control_q_pi.proportional_gain_q15) >> 15);
-      motor_current_control_status.quadrature_i_mv = motor_current_control_q_pi.integral_mv;
       motor_current_control_status.quadrature_request_mv = quadrature_mv;
-      limited = motor_voltage_limit_apply(&direct_mv, &quadrature_mv,
-                                           motor_current_control_voltage_limit_mv);
-      if (limited)
-      {
-        motor_current_pi_axis_output_track(&motor_current_control_d_pi, direct_mv);
-        motor_current_pi_axis_output_track(&motor_current_control_q_pi, quadrature_mv);
-      }
-      (void)motor_current_control_voltage_apply(
-        direct_mv, quadrature_mv,
-        motor_rotor_feedback_foc_angle(&rotor_feedback, true));
+      const motor_current_control_voltage_t applied = motor_current_control_voltage_apply(
+        direct_mv, quadrature_mv, motor_rotor_feedback_foc_angle(&rotor_feedback, true), &limited);
+      motor_current_pi_axis_back_calculate(&motor_current_control_d_pi,
+        applied.direct_mv - request_d, MOTOR_CURRENT_CONTROL_TRACKING_GAIN_Q15,
+        MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV);
+      motor_current_pi_axis_back_calculate(&motor_current_control_q_pi,
+        applied.quadrature_mv - request_q, MOTOR_CURRENT_CONTROL_TRACKING_GAIN_Q15,
+        MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV);
+      motor_current_control_status.direct_i_mv = motor_current_control_d_pi.integral_mv;
+      motor_current_control_status.quadrature_i_mv = motor_current_control_q_pi.integral_mv;
       motor_current_control_status.command = motor_current_control_command;
       motor_current_control_status.direct_feedback_ma = direct_ma;
       motor_current_control_status.quadrature_feedback_ma = quadrature_ma;
-      motor_current_control_status.direct_voltage_mv = direct_mv;
-      motor_current_control_status.quadrature_voltage_mv = quadrature_mv;
+      motor_current_control_status.direct_voltage_mv = applied.direct_mv;
+      motor_current_control_status.quadrature_voltage_mv = applied.quadrature_mv;
       motor_current_control_status.electrical_angle_u16 = sample_angle;
       motor_current_control_status.electrical_frequency_millihz =
         rotor_feedback.electrical_frequency_millihz;

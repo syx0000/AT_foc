@@ -216,7 +216,7 @@ void wk_tmr1_init(void)
   tmr_brkdt_struct.fcsoen_state = FALSE;
   tmr_brkdt_struct.fcsodis_state = FALSE;
   tmr_brkdt_struct.wp_level = TMR_WP_OFF;
-  tmr_brkdt_struct.deadtime = 80;
+  tmr_brkdt_struct.deadtime = MOTOR_PWM_DEADTIME_COUNTS;
   tmr_brkdt_config(TMR1, &tmr_brkdt_struct);
 
   tmr_brk_filter_value_set(TMR1, 0);

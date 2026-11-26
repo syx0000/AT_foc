@@ -9,36 +9,49 @@
 #include <stddef.h>
 #include "motor_voltage_limit.h"
 
-static int32_t motor_voltage_limit_abs(int32_t value)
+/* Restoring integer square root. Round upward to keep the output inside the circle. */
+static uint64_t motor_voltage_magnitude_ceil(uint64_t square)
 {
-  return (value < 0) ? -value : value;
+  uint64_t root = 0;
+  uint64_t bit = UINT64_C(1) << 62;
+
+  while (bit > square) bit >>= 2;
+  while (bit != 0)
+  {
+    if (square >= root + bit)
+    {
+      square -= root + bit;
+      root = (root >> 1) + bit;
+    }
+    else
+    {
+      root >>= 1;
+    }
+    bit >>= 2;
+  }
+  return root + (square != 0);
 }
 
 bool motor_voltage_limit_apply(int32_t *direct_mv,
                                int32_t *quadrature_mv,
                                int32_t limit_mv)
 {
-  int32_t direct_abs;
-  int32_t quadrature_abs;
-  int32_t maximum;
-  int32_t minimum;
-  int32_t magnitude_upper;
+  if (direct_mv == NULL || quadrature_mv == NULL || limit_mv <= 0)
+  {
+    return false;
+  }
 
-  if ((direct_mv == NULL) || (quadrature_mv == NULL) || (limit_mv <= 0))
+  const int64_t direct = *direct_mv;
+  const int64_t quadrature = *quadrature_mv;
+  const uint64_t square = (uint64_t)(direct * direct) +
+                          (uint64_t)(quadrature * quadrature);
+  if (square <= (uint64_t)limit_mv * (uint64_t)limit_mv)
   {
     return false;
   }
-  direct_abs = motor_voltage_limit_abs(*direct_mv);
-  quadrature_abs = motor_voltage_limit_abs(*quadrature_mv);
-  maximum = (direct_abs > quadrature_abs) ? direct_abs : quadrature_abs;
-  minimum = (direct_abs > quadrature_abs) ? quadrature_abs : direct_abs;
-  magnitude_upper = maximum + minimum / 2;
-  if (magnitude_upper <= limit_mv)
-  {
-    return false;
-  }
-  *direct_mv = (int32_t)(((int64_t)*direct_mv * limit_mv) / magnitude_upper);
-  *quadrature_mv = (int32_t)(((int64_t)*quadrature_mv * limit_mv) /
-                             magnitude_upper);
+
+  const int64_t magnitude = (int64_t)motor_voltage_magnitude_ceil(square);
+  *direct_mv = (int32_t)(direct * limit_mv / magnitude);
+  *quadrature_mv = (int32_t)(quadrature * limit_mv / magnitude);
   return true;
 }

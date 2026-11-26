@@ -86,6 +86,7 @@ void motor_control_init(void);
 bool motor_control_ready_set(void);
 /** @brief 从READY启动正式开环。 @param command 逻辑开环指令，频率按活动方向映射。 @return 成功返回true。 */
 bool motor_control_open_loop_start(const motor_open_loop_command_t *command);
+bool motor_control_encoder_alignment_start(void);
 /** @brief 更新运行中的开环指令。 @param command 新逻辑指令，频率按活动方向映射。 @return 成功返回true。 */
 bool motor_control_open_loop_command_set(const motor_open_loop_command_t *command);
 /** @brief 从运行中的开环无扰切换到Hall电流闭环。 @param command 逻辑Id/Iq指令，Iq按活动方向映射。 @return 成功返回true。 */

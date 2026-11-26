@@ -54,6 +54,12 @@ void motor_rotor_feedback_init(void);
  */
 void motor_rotor_feedback_process_1khz(void);
 
+/* Update the phase advance from consecutive encoder frames in the ADC ISR. */
+void motor_rotor_feedback_process_fast(void);
+
+/* Electrical speed from the same ADC cycle, for use in the FOC fast loop. */
+int64_t motor_rotor_feedback_foc_omega_mrad_s(void);
+
 /**
  * @brief 读取当前统一转子反馈快照。
  * @param feedback 输出电角度、机械速度、方向、时效和反馈源，不允许为空。
@@ -74,4 +80,7 @@ void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
                                        int32_t electrical_frequency_millihz,
                                        int8_t direction);
 void motor_rotor_feedback_override_clear(void);
+
+/* Capture the present encoder position as the RAM-only mechanical origin. */
+bool motor_rotor_feedback_encoder_zero_here(void);
 #endif /* MOTOR_ROTOR_FEEDBACK_H */

@@ -30,6 +30,8 @@ static int32_t motor_open_loop_abs(int32_t value)
   return (value < 0) ? -value : value;
 }
 
+static bool motor_open_loop_fixed_angle;
+
 static bool motor_open_loop_command_valid(const motor_open_loop_command_t *command)
 {
   int32_t direct_abs;
@@ -115,7 +117,7 @@ void motor_open_loop_init(void)
 bool motor_open_loop_command_set(const motor_open_loop_command_t *command)
 {
   uint32_t primask;
-  if ((!motor_open_loop_command_valid(command)) ||
+  if (motor_open_loop_fixed_angle || (!motor_open_loop_command_valid(command)) ||
       ((motor_open_loop_status.state != MOTOR_OPEN_LOOP_ALIGNING) &&
        (motor_open_loop_status.state != MOTOR_OPEN_LOOP_RUNNING)))
   {
@@ -136,7 +138,8 @@ bool motor_open_loop_command_set(const motor_open_loop_command_t *command)
   return true;
 }
 
-bool motor_open_loop_start(const motor_open_loop_command_t *command)
+static bool motor_open_loop_start_mode(const motor_open_loop_command_t *command,
+                                       bool fixed_angle)
 {
   motor_current_sample_state_t current;
   motor_slow_sensor_state_t sensor;
@@ -151,26 +154,57 @@ bool motor_open_loop_start(const motor_open_loop_command_t *command)
   {
     return false;
   }
+  motor_open_loop_fixed_angle = fixed_angle;
   motor_open_loop_command = *command;
   motor_open_loop_bus_voltage_mv = (uint32_t)sensor.bus_voltage_0p1v * 100U;
   motor_open_loop_phase_accumulator =
-    (uint32_t)motor_open_loop_config.alignment_angle_u16 << 16;
+    fixed_angle ? 0U : (uint32_t)motor_open_loop_config.alignment_angle_u16 << 16;
   motor_open_loop_alignment_ticks = 0U;
   (void)motor_ramp_init(&motor_open_loop_frequency_ramp, 0,
                         command->target_frequency_millihz,
                         command->acceleration_millihz_per_s);
   motor_open_loop_status.target_frequency_millihz = command->target_frequency_millihz;
   motor_open_loop_status.actual_frequency_millihz = 0;
-  motor_open_loop_voltage_apply(motor_open_loop_config.alignment_voltage_mv, 0,
-                                motor_open_loop_config.alignment_angle_u16);
+  motor_open_loop_voltage_apply(fixed_angle ? 0 : motor_open_loop_config.alignment_voltage_mv,
+                                0, fixed_angle ? 0U : motor_open_loop_config.alignment_angle_u16);
   if (!motor_pwm_port_output_enable())
   {
     motor_open_loop_status.state = MOTOR_OPEN_LOOP_FAULT;
     motor_pwm_port_emergency_stop();
     return false;
   }
-  motor_open_loop_status.state = MOTOR_OPEN_LOOP_ALIGNING;
+  motor_open_loop_status.state = fixed_angle ? MOTOR_OPEN_LOOP_RUNNING : MOTOR_OPEN_LOOP_ALIGNING;
   return true;
+}
+
+bool motor_open_loop_start(const motor_open_loop_command_t *command)
+{
+  return motor_open_loop_start_mode(command, false);
+}
+
+bool motor_open_loop_alignment_start(void)
+{
+  const motor_open_loop_command_t command = {0, 0, 0, 1U};
+  return motor_open_loop_start_mode(&command, true);
+}
+
+bool motor_open_loop_alignment_vector_set(int32_t voltage_mv, uint16_t angle)
+{
+  const uint32_t primask = __get_PRIMASK();
+  bool accepted;
+
+  __disable_irq();
+  accepted = motor_open_loop_fixed_angle &&
+    motor_open_loop_status.state == MOTOR_OPEN_LOOP_RUNNING &&
+    motor_pwm_port_output_is_enabled() &&
+    voltage_mv >= 0 && voltage_mv <= MOTOR_OPEN_LOOP_MAXIMUM_VOLTAGE_MV;
+  if (accepted)
+  {
+    motor_open_loop_command.direct_voltage_mv = voltage_mv;
+    motor_open_loop_phase_accumulator = (uint32_t)angle << 16;
+  }
+  __set_PRIMASK(primask);
+  return accepted;
 }
 
 void motor_open_loop_stop(void)
@@ -206,6 +240,12 @@ void motor_open_loop_fast_process(void)
   if (!motor_pwm_port_output_is_enabled())
   {
     motor_open_loop_status.state = MOTOR_OPEN_LOOP_FAULT;
+    return;
+  }
+  if (motor_open_loop_fixed_angle)
+  {
+    motor_open_loop_voltage_apply(motor_open_loop_command.direct_voltage_mv, 0,
+      (uint16_t)(motor_open_loop_phase_accumulator >> 16));
     return;
   }
   if (motor_open_loop_status.state == MOTOR_OPEN_LOOP_ALIGNING)

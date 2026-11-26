@@ -65,7 +65,7 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"speed_kp_q20", MOTOR_PARAMETER_FIELD_SPEED_KP_Q20},
   {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
   {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16},
-  {"encoder_offset_u16", MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16},
+  {"encoder_electrical_zero_u16", MOTOR_PARAMETER_FIELD_ENCODER_ELECTRICAL_ZERO_U16},
   {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US},
   {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB},
   {"speed_maximum_rpm", MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM},
@@ -299,18 +299,22 @@ static void motor_cli_commissioning_execute(motor_commissioning_task_t task)
 }
 
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
-/* encoder align：开环在电角度0注入d轴电压，转子停稳后平均编码器位置，
- * 得到 encoder_offset_u16 = 该位置的机械角U16，使此处电角度为0。
- * 非阻塞状态机，由 motor_cli_poll() 推进。结果只写入候选参数。 */
-#define ENC_ALIGN_HOLD_MS        1500U   /* 含开环500 ms预定位 */
-#define ENC_ALIGN_SAMPLE_MS       200U
-#define ENC_ALIGN_MAX_SPREAD      200L   /* 17bit计数，约0.55°机械角 */
+#define ENC_ALIGN_RAMP_MS          200U
+#define ENC_ALIGN_SETTLE_MS        400U
+#define ENC_ALIGN_SAMPLE_COUNT     256U
+#define ENC_ALIGN_SAMPLE_TIMEOUT   500U
+#define ENC_ALIGN_MAX_SPREAD       (1U << (ENC_SINGLE_BITS - 14U))
+#define ENC_ALIGN_SCAN_MS          109U
+#define ENC_ALIGN_SCAN_POINTS      12U
+#define ENC_ALIGN_SCAN_ANGLE       49152U
 
 typedef enum
 {
   ENC_ALIGN_IDLE = 0,
-  ENC_ALIGN_HOLD,
-  ENC_ALIGN_SAMPLE
+  ENC_ALIGN_RAMP,
+  ENC_ALIGN_SETTLE,
+  ENC_ALIGN_SAMPLE,
+  ENC_ALIGN_SCAN
 } enc_align_state_t;
 
 static struct
@@ -319,10 +323,16 @@ static struct
   uint32_t phase_start_cycles;
   uint32_t first_pos;
   uint32_t last_update;
-  int64_t delta_sum;
+  int32_t delta_sum;
   int32_t delta_min;
   int32_t delta_max;
   uint32_t samples;
+  uint32_t previous_pos;
+  uint32_t scan_point;
+  int32_t expected_step;
+  int32_t voltage_mv;
+  uint16_t zero;
+  uint8_t pole_pairs;
 } enc_align;
 
 static int32_t enc_align_delta(uint32_t pos, uint32_t ref)
@@ -340,128 +350,169 @@ static void enc_align_abort(const char *reason)
   printf("ERR encoder_align_failed reason=%s\r\n", reason);
 }
 
+static void enc_align_phase_set(enc_align_state_t state)
+{
+  enc_align.phase_start_cycles = motor_timebase_cycles_get();
+  enc_align.state = state;
+}
+
 static void enc_align_start(int32_t voltage_mv)
 {
-  motor_control_status_t motor;
-  motor_open_loop_command_t command;
+  motor_parameter_t candidate;
+  enc_data_t enc;
+  const uint8_t pole_pairs = motor_parameter_pole_pairs_get();
 
   if (enc_align.state != ENC_ALIGN_IDLE)
   {
     printf("ERR encoder_align_busy\r\n");
     return;
   }
-  (void)motor_control_status_read(&motor);
-  if (motor.state != MOTOR_CONTROL_STATE_READY)
+  if (!motor_parameter_candidate_read(&candidate) || pole_pairs == 0U ||
+      candidate.pole_pairs != pole_pairs)
   {
-    printf("ERR encoder_align_motor_not_ready state=%u\r\n",
-           (unsigned int)motor.state);
+    printf("ERR encoder_align_requires_matching_pole_pairs\r\n");
     return;
   }
-  /* vd保持，vq=0，目标频率0：预定位结束后频率从起始值以1000 Hz/s斜坡
-   * 回到0，约2 ms，电角度偏移可忽略。 */
-  command.direct_voltage_mv = voltage_mv;
-  command.quadrature_voltage_mv = 0;
-  command.target_frequency_millihz = 0;
-  command.acceleration_millihz_per_s = 1000000U;
-  if (!motor_control_open_loop_start(&command))
+  (void)encoder_rs485_read(&enc);
+  if (!enc.valid || motor_timebase_cycles_elapsed(enc.timestamp_cycles) >
+      2U * system_core_clock / MOTOR_PWM_FREQUENCY_HZ)
+  {
+    printf("ERR encoder_align_requires_fresh_frame\r\n");
+    return;
+  }
+  if (!motor_control_encoder_alignment_start())
   {
     printf("ERR encoder_align_open_loop_rejected\r\n");
     return;
   }
-  enc_align.state = ENC_ALIGN_HOLD;
-  enc_align.phase_start_cycles = motor_timebase_cycles_get();
-  printf("OK encoder align started vd=%ld mV, hold %u ms\r\n",
-         (long)voltage_mv, (unsigned int)(ENC_ALIGN_HOLD_MS + ENC_ALIGN_SAMPLE_MS));
+
+  (void)memset(&enc_align, 0, sizeof(enc_align));
+  enc_align.voltage_mv = voltage_mv;
+  enc_align.pole_pairs = pole_pairs;
+  enc_align.expected_step = (int32_t)((uint64_t)ENC_SINGLE_MAX * ENC_ALIGN_SCAN_ANGLE /
+    65536ULL / pole_pairs / (ENC_ALIGN_SCAN_POINTS - 1U));
+  enc_align_phase_set(ENC_ALIGN_RAMP);
+  printf("OK encoder align started vd=%ld mV scan_points=%u\r\n",
+         (long)voltage_mv, (unsigned int)ENC_ALIGN_SCAN_POINTS);
 }
 
-static void enc_align_finish(void)
+static void enc_align_scan_next(void)
 {
-  int32_t mean_delta;
-  uint32_t mean_pos;
-  uint16_t offset_u16;
-  int32_t spread = enc_align.delta_max - enc_align.delta_min;
+  ++enc_align.scan_point;
+  if (enc_align.scan_point == ENC_ALIGN_SCAN_POINTS)
+  {
+    motor_control_stop();
+    enc_align.state = ENC_ALIGN_IDLE;
+    if (!motor_parameter_encoder_zero_apply(enc_align.zero, enc_align.pole_pairs))
+    {
+      printf("ERR encoder_align_failed reason=zero_apply_rejected\r\n");
+      return;
+    }
+    printf("OK encoder align zero_u16=%u active=1 saved=0\r\n",
+           (unsigned int)enc_align.zero);
+    return;
+  }
 
-  motor_control_stop();
-  enc_align.state = ENC_ALIGN_IDLE;
-  if (enc_align.samples < 10U)
+  /* Encoder positions have already been mapped to physical electrical direction. */
+  const uint16_t angle = (uint16_t)(enc_align.scan_point * ENC_ALIGN_SCAN_ANGLE /
+                                   (ENC_ALIGN_SCAN_POINTS - 1U));
+  if (!motor_open_loop_alignment_vector_set(enc_align.voltage_mv, angle))
   {
-    printf("ERR encoder_align_failed reason=too_few_samples n=%lu\r\n",
-           (unsigned long)enc_align.samples);
+    enc_align_abort("scan_voltage_rejected");
     return;
   }
-  if (spread > ENC_ALIGN_MAX_SPREAD)
-  {
-    printf("ERR encoder_align_failed reason=rotor_not_still spread=%ld counts\r\n",
-           (long)spread);
-    return;
-  }
-  mean_delta = (int32_t)(enc_align.delta_sum / (int64_t)enc_align.samples);
-  mean_pos = (uint32_t)((int32_t)enc_align.first_pos + mean_delta +
-                        (int32_t)ENC_SINGLE_MAX) & (ENC_SINGLE_MAX - 1U);
-  offset_u16 = encoder_abs_to_angle_q16(mean_pos);
-  if (!motor_parameter_candidate_field_set(
-        MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16, (int32_t)offset_u16))
-  {
-    printf("ERR encoder_align_failed reason=candidate_set_rejected offset=%u\r\n",
-           (unsigned int)offset_u16);
-    return;
-  }
-  printf("OK encoder align pos=%lu offset_u16=%u spread=%ld samples=%lu candidate=1\r\n",
-         (unsigned long)mean_pos, (unsigned int)offset_u16, (long)spread,
-         (unsigned long)enc_align.samples);
-  printf("   next: motor commissioning accept ; motor commissioning save\r\n");
+  enc_align_phase_set(ENC_ALIGN_SCAN);
 }
 
 static void enc_align_poll(void)
 {
   motor_control_status_t motor;
   enc_data_t enc;
-  uint32_t elapsed_ms;
-  int32_t d;
 
   if (enc_align.state == ENC_ALIGN_IDLE) return;
 
   (void)motor_control_status_read(&motor);
-  if (motor.state != MOTOR_CONTROL_STATE_OPEN_LOOP)
+  if (motor.state != MOTOR_CONTROL_STATE_OPEN_LOOP || !motor_pwm_port_fault_check())
   {
-    enc_align.state = ENC_ALIGN_IDLE;
-    printf("ERR encoder_align_failed reason=open_loop_lost state=%u\r\n",
-           (unsigned int)motor.state);
+    enc_align_abort("open_loop_lost");
     return;
   }
   (void)encoder_rs485_read(&enc);
-  if (!enc.valid)
+  if (!enc.valid || motor_timebase_cycles_elapsed(enc.timestamp_cycles) >
+      2U * system_core_clock / MOTOR_PWM_FREQUENCY_HZ)
   {
     enc_align_abort("encoder_invalid");
     return;
   }
-  elapsed_ms = motor_timebase_cycles_to_us(
+  const uint32_t elapsed_ms = motor_timebase_cycles_to_us(
     motor_timebase_cycles_elapsed(enc_align.phase_start_cycles)) / 1000U;
 
-  if (enc_align.state == ENC_ALIGN_HOLD)
+  switch (enc_align.state)
   {
-    if (elapsed_ms < ENC_ALIGN_HOLD_MS) return;
-    enc_align.state = ENC_ALIGN_SAMPLE;
-    enc_align.phase_start_cycles = motor_timebase_cycles_get();
-    enc_align.first_pos = enc.abs_pos;
-    enc_align.last_update = enc.update_count;
-    enc_align.delta_sum = 0;
-    enc_align.delta_min = 0;
-    enc_align.delta_max = 0;
-    enc_align.samples = 0U;
-    return;
+    case ENC_ALIGN_RAMP:
+    {
+      const uint32_t ramp_ms = elapsed_ms < ENC_ALIGN_RAMP_MS ? elapsed_ms : ENC_ALIGN_RAMP_MS;
+      const int32_t voltage = enc_align.voltage_mv * (int32_t)ramp_ms / (int32_t)ENC_ALIGN_RAMP_MS;
+      if (!motor_open_loop_alignment_vector_set(voltage, 0U))
+        enc_align_abort("ramp_voltage_rejected");
+      else if (ramp_ms == ENC_ALIGN_RAMP_MS)
+        enc_align_phase_set(ENC_ALIGN_SETTLE);
+      break;
+    }
+    case ENC_ALIGN_SETTLE:
+      if (elapsed_ms >= ENC_ALIGN_SETTLE_MS)
+      {
+        enc_align.last_update = enc.update_count;
+        enc_align_phase_set(ENC_ALIGN_SAMPLE);
+      }
+      break;
+    case ENC_ALIGN_SAMPLE:
+      if (elapsed_ms >= ENC_ALIGN_SAMPLE_TIMEOUT)
+      {
+        enc_align_abort("sample_timeout");
+        break;
+      }
+      if (enc.update_count != enc_align.last_update)
+      {
+        enc_align.last_update = enc.update_count;
+        if (enc_align.samples == 0U) enc_align.first_pos = enc.abs_pos;
+        const int32_t delta = enc_align_delta(enc.abs_pos, enc_align.first_pos);
+        enc_align.delta_sum += delta;
+        if (delta < enc_align.delta_min) enc_align.delta_min = delta;
+        if (delta > enc_align.delta_max) enc_align.delta_max = delta;
+        if (enc_align.delta_max - enc_align.delta_min > (int32_t)ENC_ALIGN_MAX_SPREAD)
+        {
+          enc_align_abort("rotor_not_still");
+          break;
+        }
+        if (++enc_align.samples == ENC_ALIGN_SAMPLE_COUNT)
+        {
+          const uint32_t mean_pos = (uint32_t)((int32_t)enc_align.first_pos +
+            enc_align.delta_sum / (int32_t)ENC_ALIGN_SAMPLE_COUNT) & (ENC_SINGLE_MAX - 1U);
+          enc_align.zero = encoder_abs_to_electrical_angle_q16(mean_pos, enc_align.pole_pairs);
+          enc_align.previous_pos = enc.abs_pos;
+          enc_align_scan_next();
+        }
+      }
+      break;
+    case ENC_ALIGN_SCAN:
+      if (elapsed_ms >= ENC_ALIGN_SCAN_MS)
+      {
+        const int32_t delta = enc_align_delta(enc.abs_pos, enc_align.previous_pos);
+        if (delta < enc_align.expected_step / 3 || delta > enc_align.expected_step * 2)
+        {
+          enc_align_abort("scan_displacement");
+          printf("ERR encoder_align_scan point=%lu delta=%ld expected=%ld\r\n",
+                 (unsigned long)enc_align.scan_point, (long)delta, (long)enc_align.expected_step);
+          break;
+        }
+        enc_align.previous_pos = enc.abs_pos;
+        enc_align_scan_next();
+      }
+      break;
+    default:
+      break;
   }
-
-  if (enc.update_count != enc_align.last_update)
-  {
-    enc_align.last_update = enc.update_count;
-    d = enc_align_delta(enc.abs_pos, enc_align.first_pos);
-    enc_align.delta_sum += d;
-    if (d < enc_align.delta_min) enc_align.delta_min = d;
-    if (d > enc_align.delta_max) enc_align.delta_max = d;
-    enc_align.samples++;
-  }
-  if (elapsed_ms >= ENC_ALIGN_SAMPLE_MS) enc_align_finish();
 }
 #endif
 
@@ -500,7 +551,7 @@ static void motor_cli_command_execute(char *line)
   if (strcmp(line, "help") == 0)
   {
     printf("OK commands:\r\n");
-    printf("  help | version | status | reset | encoder | encoder test | encoder align [vd_mv]\r\n");
+    printf("  help | version | status | reset | encoder | encoder test | encoder align [vd_mv] | encoder zero\r\n");
     printf("  debug <0|1> | logid [10|20|30|40] | lograte <1..500> | logdetail <0|1|2> | logcapture [1..128]\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
@@ -530,8 +581,8 @@ static void motor_cli_command_execute(char *line)
 
     (void)encoder_rs485_read(&enc);
     (void)encoder_rs485_stats_read(&enc_stats);
-    if (!motor_rotor_feedback_read(&enc_feedback))
-      (void)memset(&enc_feedback, 0, sizeof(enc_feedback));
+    (void)memset(&enc_feedback, 0, sizeof(enc_feedback));
+    (void)motor_rotor_feedback_read(&enc_feedback);
     printf("OK enc valid=%u pos=%lu sf=0x%02X result=%u frames=%lu "
            "req=%lu ok=%lu crc=%lu timeout=%lu sf_err=%lu "
            "rx_len=%u raw=%02X %02X %02X %02X %02X %02X %02X %02X "
@@ -553,6 +604,17 @@ static void motor_cli_command_execute(char *line)
       (long)(enc_feedback.mechanical_speed_millirpm / 1000L),
       (unsigned int)enc_feedback.valid,
       (unsigned int)enc_feedback.speed_valid);
+  }
+  else if (strcmp(line, "encoder zero") == 0)
+  {
+    (void)motor_control_status_read(&motor);
+    if ((motor.state != MOTOR_CONTROL_STATE_READY) ||
+        motor_pwm_port_output_is_enabled())
+      printf("ERR encoder_zero_requires_motor_ready_and_pwm_off\r\n");
+    else if (!motor_rotor_feedback_encoder_zero_here())
+      printf("ERR encoder_zero_requires_fresh_frame\r\n");
+    else
+      printf("OK encoder mechanical_zero=0 storage=ram\r\n");
   }
   else if (strncmp(line, "encoder align", 13) == 0)
   {

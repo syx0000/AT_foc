@@ -112,7 +112,7 @@ void motor_parameter_defaults_build(motor_parameter_t *parameter)
   parameter->speed_current_limit_ma =
     (uint32_t)MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA;
   parameter->hall_rotor_offset_u16 = MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16;
-  parameter->encoder_offset_u16 = 0U;  /* 对齐标定后通过 CLI 写入 */
+  parameter->encoder_electrical_zero_u16 = 0U;  /* 对齐标定后通过 CLI 写入 */
   (void)memcpy(parameter->hall_positive_next, hall_positive_next,
                sizeof(hall_positive_next));
   (void)memcpy(parameter->hall_entry_angle_u16, hall_entry_angle_u16,
@@ -358,9 +358,9 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
       if ((value < 0) || (value > 65535)) return false;
       updated.hall_rotor_offset_u16 = (uint16_t)value;
       break;
-    case MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16:
+    case MOTOR_PARAMETER_FIELD_ENCODER_ELECTRICAL_ZERO_U16:
       if ((value < 0) || (value > 65535)) return false;
-      updated.encoder_offset_u16 = (uint16_t)value;
+      updated.encoder_electrical_zero_u16 = (uint16_t)value;
       break;
     case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
       if ((value < 0) || (value > MOTOR_PARAMETER_HALL_DELAY_US_MAX))
@@ -444,8 +444,8 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
     case MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16:
       *value = parameter->hall_rotor_offset_u16;
       break;
-    case MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16:
-      *value = parameter->encoder_offset_u16;
+    case MOTOR_PARAMETER_FIELD_ENCODER_ELECTRICAL_ZERO_U16:
+      *value = parameter->encoder_electrical_zero_u16;
       break;
     case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
       *value = parameter->hall_delay_compensation_us;
@@ -482,6 +482,36 @@ uint32_t motor_parameter_debug_get(motor_parameter_field_t field)
 #undef DEBUG_GET
     default: return 0U;
   }
+}
+
+bool motor_parameter_encoder_zero_apply(uint16_t zero, uint8_t pole_pairs)
+{
+  motor_control_status_t control;
+  const uint32_t primask = __get_PRIMASK();
+  bool accepted;
+
+  __disable_irq();
+  accepted = !motor_parameter_trial_active &&
+    motor_parameter_active.pole_pairs == pole_pairs &&
+    motor_parameter_candidate.pole_pairs == pole_pairs &&
+    motor_control_status_read(&control) && control.state == MOTOR_CONTROL_STATE_READY &&
+    !motor_pwm_port_output_is_enabled() &&
+    tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) == RESET;
+  if (accepted)
+  {
+    const uint16_t active_zero = motor_parameter_active.encoder_electrical_zero_u16;
+    const uint16_t candidate_zero = motor_parameter_candidate.encoder_electrical_zero_u16;
+    motor_parameter_active.encoder_electrical_zero_u16 = zero;
+    motor_parameter_candidate.encoder_electrical_zero_u16 = zero;
+    if (tmr_flag_get(MOTOR_PWM_TIMER, TMR_BRK_FLAG) != RESET)
+    {
+      motor_parameter_active.encoder_electrical_zero_u16 = active_zero;
+      motor_parameter_candidate.encoder_electrical_zero_u16 = candidate_zero;
+      accepted = false;
+    }
+  }
+  __set_PRIMASK(primask);
+  return accepted;
 }
 
 bool motor_parameter_candidate_accept(void)

@@ -248,6 +248,18 @@ bool motor_control_open_loop_start(const motor_open_loop_command_t *command)
   motor_control_status.state = MOTOR_CONTROL_STATE_OPEN_LOOP;
   return true;
 }
+bool motor_control_encoder_alignment_start(void)
+{
+  if (!motor_control_mos_temperature_check() ||
+      motor_control_status.state != MOTOR_CONTROL_STATE_READY ||
+      !motor_open_loop_alignment_start())
+  {
+    return false;
+  }
+  motor_control_status.state = MOTOR_CONTROL_STATE_OPEN_LOOP;
+  return true;
+}
+
 bool motor_control_open_loop_command_set(const motor_open_loop_command_t *command)
 {
   motor_open_loop_command_t physical_command;
@@ -383,8 +395,6 @@ static bool motor_control_speed_control_start_now(int32_t target_speed_rpm)
        * corrects it immediately. This is not a measured-voltage match. */
       flying_limit_mv = (int32_t)((uint32_t)flying_sensor.bus_voltage_0p1v *
         MOTOR_CURRENT_CONTROL_VOLTAGE_LIMIT_PERCENT);
-      if (flying_limit_mv > MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV)
-        flying_limit_mv = MOTOR_CURRENT_CONTROL_HARD_VOLTAGE_LIMIT_MV;
       if (!motor_flying_seed_mv(flying_parameter.flux_linkage_uwb,
           flying_rotor.electrical_frequency_millihz, flying_rotor.direction,
           flying_limit_mv, &flying_vq_mv)) return false;
