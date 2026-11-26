@@ -60,6 +60,7 @@ typedef struct {
 /** @brief 初始化统一辨识任务状态。 @param 无。 @return 无。 */
 void motor_commissioning_init(void);
 /** @brief 阻塞执行完整流程或一个辨识/测试单项。 @param task 任务类型。 @return 成功返回true。 */
+bool motor_commissioning_task_supported(motor_commissioning_task_t task);
 bool motor_commissioning_run(motor_commissioning_task_t task);
 void motor_commissioning_poll(void);
 /** @brief 在Hall外部中断中提交边沿状态和开环角度。 @param 无。 @return 无。 */

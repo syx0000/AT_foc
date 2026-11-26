@@ -101,7 +101,13 @@ PARAMETER_HELP = {
 }
 SILENT_TIMEOUT_MS = 1500
 
-# demo uses the vendor gains divided by 2**shift, not Hall's Q15/Q20 gains.
+ENCODER_COMMANDS = {"encoder", "encoder test", "encoder zero"}
+EXTENDED_PARAMETERS = ("speed_inertia_nkg_m2",)
+ACTIVE_FIELD_MAP.update({name: [name] for name in EXTENDED_PARAMETERS})
+PARAMETER_RANGES["speed_inertia_nkg_m2"] = (0, 2147483647)
+PARAMETER_HELP["speed_inertia_nkg_m2"] = "电机轴侧等效惯量，nkg·m²。0 关闭加速度前馈。"
+
+# demo uses the vendor gains divided by 2**shift.
 DEMO_PARAMETER_NAMES = [
     "demo_rs_mohm", "demo_ls_uh", "demo_bandwidth_rad_s", "demo_tune_bus_mv",
     "demo_current_limit_ma", "demo_acc_rpm_ms", "demo_dec_rpm_ms",
@@ -181,6 +187,11 @@ class MotorHost(QMainWindow):
         self.resize(1120, 760)
         self.serial_port: serial.Serial | None = None
         self.firmware_type = "unknown"
+        self.sensor_mode_reported = False
+        self.commissioning_command: str | None = None
+        self.commissioning_status_timer = QTimer(self)
+        self.commissioning_status_timer.setInterval(1000)
+        self.commissioning_status_timer.timeout.connect(self.poll_inertia_status)
         self.reply_pending = ""
         self.command_buttons: list[tuple[QPushButton, str, str]] = []
         self.commissioning_buttons: list[QPushButton] = []
@@ -352,6 +363,24 @@ class MotorHost(QMainWindow):
             grid.addWidget(self._command_button(*item, commissioning=True),
                            index // 5, index % 5)
         layout.addWidget(group)
+
+        self.encoder_calibration_group = QGroupBox("编码器标定")
+        encoder_grid = QGridLayout(self.encoder_calibration_group)
+        encoder_grid.addWidget(self._command_button("校准电角度", "encoder align",
+                                                   commissioning=True), 0, 0)
+        zero_button = self._command_button("设置当前位置为机械零点", "encoder zero",
+                                           commissioning=True)
+        zero_button.setToolTip("当前机械零点保存在 RAM，重启后恢复。")
+        encoder_grid.addWidget(zero_button, 0, 1)
+        layout.addWidget(self.encoder_calibration_group)
+
+        self.inertia_pi_group = QGroupBox("惯量与速度 PI")
+        inertia_grid = QGridLayout(self.inertia_pi_group)
+        inertia_grid.addWidget(self._command_button("辨识惯量", "identify inertia",
+                                                   commissioning=True), 0, 0)
+        inertia_grid.addWidget(self._command_button("计算速度 PI", "calculate speed_pi",
+                                                   commissioning=True), 0, 1)
+        layout.addWidget(self.inertia_pi_group)
         layout.addStretch(1)
         return tab
 
@@ -482,9 +511,6 @@ class MotorHost(QMainWindow):
                 self.debug_enabled = False
             self.debug_button.setText("关闭调试" if self.debug_enabled else "打开调试")
         self.append_console(text)
-        if ("OK commissioning complete" in text or
-                "ERR commissioning rejected_or_failed" in text):
-            self.set_commissioning_busy(False)
 
     def send_command(self, command: str) -> bool:
         if not self.command_supported(command):
@@ -507,8 +533,8 @@ class MotorHost(QMainWindow):
         if run_mode:
             self.pending_mode_request = run_mode
         self.append_console(f"> {command.strip()}\n")
-        if command.startswith(("calibrate ",
-                               "identify ", "calculate current_pi")):
+        if command.startswith(("calibrate ", "identify ", "calculate ", "encoder align")):
+            self.commissioning_command = command
             self.set_commissioning_busy(True)
 
         return True
@@ -518,7 +544,15 @@ class MotorHost(QMainWindow):
             return True
         if self.firmware_type == "unknown":
             return False
-        if self.firmware_type == "hall":
+        if self.firmware_type in ("hall", "rs485"):
+            if command in ENCODER_COMMANDS or command.startswith("encoder align"):
+                return self.firmware_type == "rs485"
+            if command.startswith("calibrate hall "):
+                return self.firmware_type == "hall"
+            if command == "identify inertia":
+                return self.firmware_type == "rs485"
+            if command == "calculate speed_pi":
+                return self.sensor_mode_reported
             return not command.startswith("identify winding")
         if command.startswith("motor param set "):
             parts = command.split()
@@ -536,9 +570,12 @@ class MotorHost(QMainWindow):
                                    "open start ", "open set ", "open stop",
                                    "debug ", "logid ", "logdetail ", "lograte ", "logcapture "))
 
-    def apply_firmware_profile(self, firmware: str) -> None:
+    def apply_firmware_profile(self, firmware: str, sensor_mode_reported: bool = False) -> None:
         self.firmware_type = firmware
-        self.firmware_label.setText({"unknown": "固件：未识别", "hall": "固件：hall",
+        self.sensor_mode_reported = sensor_mode_reported
+        self.set_commissioning_busy(False)
+        self.firmware_label.setText({"unknown": "固件：未识别", "hall": "固件：Hall",
+                                     "rs485": "固件：RS485",
                                      "demo": "固件：demo（停机直改）"}[firmware])
         demo = firmware == "demo"
         for button, label, command in self.command_buttons:
@@ -551,18 +588,24 @@ class MotorHost(QMainWindow):
                 title = "原厂电流PI自动整定"
             button.setProperty("command", mapped)
             button.setText(title)
-            button.setVisible(not demo or self.command_supported(mapped))
-            button.setEnabled(firmware != "unknown" or mapped in ("version", "help"))
+            supported = self.command_supported(mapped)
+            button.setVisible(firmware == "unknown" or supported)
+            button.setEnabled(supported)
+        self.encoder_calibration_group.setVisible(firmware == "rs485")
+        self.inertia_pi_group.setVisible(sensor_mode_reported)
         self.parameter_name.blockSignals(True)
         self.parameter_name.clear()
-        self.parameter_name.addItems(DEMO_PARAMETER_NAMES if demo else PARAMETER_NAMES)
+        names = DEMO_PARAMETER_NAMES if demo else PARAMETER_NAMES
+        if sensor_mode_reported:
+            names = [*names, *EXTENDED_PARAMETERS]
+        self.parameter_name.addItems(names)
         self.parameter_name.blockSignals(False)
         self.parameter_set_button.setText("停机修改（立即生效）" if demo else "设置候选参数")
         self.parameter_set_button.setEnabled(firmware != "unknown")
         self.parameter_note.setText(
             "demo：停机修改直接生效；保存沿用原厂Flash，Hall学习成功仍自动保存。"
             "极对数、CAN ID、最高转速等编译项请修改宏后烧录；无候选、独立Hall补偿或磁链辨识。"
-            if demo else "hall：编辑候选参数，检查差异后接受，再保存。")
+            if demo else "编辑候选参数，检查差异后接受，再保存。")
         self.open_accel.setText("0" if demo else "20000")
         self.open_accel.setEnabled(not demo)
         self.trace_view.set_firmware(firmware)
@@ -579,14 +622,16 @@ class MotorHost(QMainWindow):
             line, self.reply_pending = self.reply_pending.split("\n", 1)
             line = line.strip()
             if line.startswith("OK fw="):
-                target = "demo" if "firmware=demo" in line else "hall"
-                if target != self.firmware_type:
+                fields = dict(token.split("=", 1) for token in line.split() if "=" in token)
+                sensor = fields.get("sensor")
+                reported = sensor in ("hall", "rs485") and fields.get("firmware") != "demo"
+                target = ("demo" if fields.get("firmware") == "demo" else
+                          sensor if reported else "hall")
+                if (target, reported) != (self.firmware_type, self.sensor_mode_reported):
                     self.active_values.clear()
-                    self.apply_firmware_profile(target)
+                    self.apply_firmware_profile(target, reported)
                     self.request_active_parameters()
-            if (line.startswith("OK commissioning complete") or
-                    line.startswith("ERR commissioning") or line.startswith("ERR ")):
-                self.set_commissioning_busy(False)
+            self.process_commissioning_reply(line)
             acknowledged_mode = None
             for mode in self.mode_buttons:
                 if line.startswith((f"OK {mode} started", f"OK {mode} updated",
@@ -751,9 +796,42 @@ class MotorHost(QMainWindow):
         else:
             self.send_command("debug 1")
 
+    def poll_inertia_status(self) -> None:
+        if self.commissioning_command != "identify inertia":
+            self.commissioning_status_timer.stop()
+        elif self.serial_port and self.serial_port.is_open:
+            try:
+                self.serial_port.write(b"motor commissioning status\r\n")
+            except serial.SerialException:
+                self.disconnect()
+
+    def process_commissioning_reply(self, line: str) -> None:
+        command = self.commissioning_command
+        if not command:
+            return
+        if line.startswith("ERR unsupported_sensor_mode"):
+            self.set_commissioning_busy(False)
+        elif command == "identify inertia":
+            if line.startswith("OK commissioning inertia started"):
+                self.commissioning_status_timer.start()
+            elif line.startswith("OK commissioning state="):
+                state = line.split()[2].partition("=")[2]
+                if state in ("0", "2", "3", "4"):
+                    self.set_commissioning_busy(False)
+            elif line.startswith("ERR commissioning rejected_or_failed"):
+                self.set_commissioning_busy(False)
+        elif command.startswith("encoder align"):
+            if line.startswith(("OK encoder align zero_u16=", "ERR encoder_align_")):
+                self.set_commissioning_busy(False)
+        elif line.startswith(("OK commissioning complete", "ERR ")):
+            self.set_commissioning_busy(False)
+
     def set_commissioning_busy(self, busy: bool) -> None:
+        if not busy:
+            self.commissioning_command = None
+            self.commissioning_status_timer.stop()
         for button in self.commissioning_buttons:
-            button.setEnabled(not busy and self.firmware_type != "unknown")
+            button.setEnabled(not busy and self.command_supported(button.property("command")))
 
     def append_console(self, text: str) -> None:
         self.console.moveCursor(QTextCursor.End)

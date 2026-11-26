@@ -280,6 +280,13 @@ static void motor_cli_commissioning_execute(motor_commissioning_task_t task)
   motor_control_status_t motor;
   motor_commissioning_status_t commissioning;
 
+  if (!motor_commissioning_task_supported(task))
+  {
+    printf("ERR unsupported_sensor_mode requires=%s\r\n",
+           task == MOTOR_COMMISSIONING_TASK_INERTIA ? "rs485" : "hall");
+    return;
+  }
+
   if (motor_commissioning_run(task))
   {
     if (task == MOTOR_COMMISSIONING_TASK_INERTIA)
@@ -557,6 +564,7 @@ static void motor_cli_command_execute(char *line)
       commissioning.state == MOTOR_COMMISSIONING_RUNNING &&
       commissioning.task == MOTOR_COMMISSIONING_TASK_INERTIA &&
       strcmp(line, "status") != 0 && strcmp(line, "fault") != 0 &&
+      strcmp(line, "motor commissioning status") != 0 && strcmp(line, "help") != 0 &&
       strcmp(line, "motor commissioning abort") != 0 &&
       strcmp(line, "motor stop") != 0 && strcmp(line, "current stop") != 0 &&
       strcmp(line, "speed stop") != 0 && strcmp(line, "open stop") != 0)
@@ -568,7 +576,7 @@ static void motor_cli_command_execute(char *line)
   if (strcmp(line, "help") == 0)
   {
     printf("OK commands:\r\n");
-    printf("  help | version | status | reset | encoder | encoder test | encoder align [vd_mv] | encoder zero\r\n");
+    printf("  help | version | status | reset\r\n");
     printf("  debug <0|1> | logid [10|20|30|40] | lograte <1..500> | logdetail <0|1|2> | logcapture [1..128]\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
@@ -581,13 +589,23 @@ static void motor_cli_command_execute(char *line)
     printf("  motor param set <name> <value>\r\n");
     printf("  motor commissioning status|abort|diff|accept|discard|save\r\n");
     printf("  calibrate current_offset\r\n");
+    printf("  identify resistance|inductance|flux | calculate current_pi|speed_pi\r\n");
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
     printf("  calibrate hall sequence|angle|offset\r\n");
-    printf("  identify resistance|inductance|flux|inertia | calculate current_pi|speed_pi\r\n");
+#else
+    printf("  encoder | encoder test | encoder align [vd_mv] | encoder zero\r\n");
+    printf("  identify inertia\r\n");
+#endif
   }
   else if (strcmp(line, "version") == 0)
   {
-    printf("OK fw=%s hw=%s\r\n", FIRMWARE_VERSION_STRING,
-           HARDWARE_VERSION_STRING);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    const char *sensor_mode = "rs485";
+#else
+    const char *sensor_mode = "hall";
+#endif
+    printf("OK fw=%s hw=%s sensor=%s\r\n", FIRMWARE_VERSION_STRING,
+           HARDWARE_VERSION_STRING, sensor_mode);
   }
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
   else if (strcmp(line, "encoder") == 0)
@@ -676,6 +694,15 @@ static void motor_cli_command_execute(char *line)
       (unsigned long)USART3->baudr,
       (unsigned long)t.wire_gpioa_cfgr, (unsigned long)t.wire_gpioa_muxl,
       (unsigned long)t.wire_gpioa_pull);
+  }
+#else
+  else if (strcmp(line, "encoder") == 0 ||
+           strcmp(line, "encoder test") == 0 ||
+           strcmp(line, "encoder zero") == 0 ||
+           (strncmp(line, "encoder align", 13) == 0 &&
+            (line[13] == '\0' || line[13] == ' ' || line[13] == '\t')))
+  {
+    printf("ERR unsupported_sensor_mode requires=rs485\r\n");
   }
 #endif
   else if (strcmp(line, "reset") == 0)
@@ -857,12 +884,10 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_FLUX);
   }
-#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
   else if (strcmp(line, "identify inertia") == 0)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_INERTIA);
   }
-#endif
   else if (strcmp(line, "calculate speed_pi") == 0)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_SPEED_PI);

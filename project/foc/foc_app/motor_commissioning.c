@@ -1157,13 +1157,34 @@ static bool commissioning_inertia_evaluate(void)
 }
 #endif
 
+bool motor_commissioning_task_supported(motor_commissioning_task_t task)
+{
+  switch (task)
+  {
+    case MOTOR_COMMISSIONING_TASK_HALL:
+    case MOTOR_COMMISSIONING_TASK_HALL_OFFSET:
+      return MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL;
+    case MOTOR_COMMISSIONING_TASK_INERTIA:
+      return MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER;
+    case MOTOR_COMMISSIONING_TASK_CURRENT_OFFSET:
+    case MOTOR_COMMISSIONING_TASK_RESISTANCE:
+    case MOTOR_COMMISSIONING_TASK_INDUCTANCE:
+    case MOTOR_COMMISSIONING_TASK_CURRENT_PI:
+    case MOTOR_COMMISSIONING_TASK_FLUX:
+    case MOTOR_COMMISSIONING_TASK_SPEED_PI:
+      return true;
+    default:
+      return false;
+  }
+}
+
 static bool commissioning_finish(bool ok);
 
 bool motor_commissioning_run(motor_commissioning_task_t task)
 {
   bool ok=false;
   commissioning_iq_result_t q_result;
-  if ((task==MOTOR_COMMISSIONING_TASK_NONE) || !commissioning_ready() ||
+  if (!motor_commissioning_task_supported(task) || !commissioning_ready() ||
       (commissioning_status.state==MOTOR_COMMISSIONING_RUNNING)) return false;
   commissioning_status.state=MOTOR_COMMISSIONING_RUNNING;
   commissioning_status.task=task; commissioning_status.step=0U;

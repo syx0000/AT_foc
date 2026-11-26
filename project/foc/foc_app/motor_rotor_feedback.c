@@ -363,10 +363,9 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
       feedback->direction = 0;
       feedback->valid = true;
       feedback->speed_valid = false;
-      feedback->mechanical_angle_valid = false;
       return true;
     }
-    mechanical_speed_millirpm = (uint32_t)(
+    const uint32_t mechanical_speed_millirpm = (uint32_t)(
       ((uint64_t)estimator.electrical_frequency_millihz * 60U) / pole_pairs);
     feedback->source = MOTOR_ROTOR_FEEDBACK_SOURCE_HALL;
     feedback->electrical_angle_u16 = estimator.electrical_angle_u16;
