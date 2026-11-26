@@ -63,6 +63,7 @@ typedef struct {
     uint8_t  almc;       /* ALMC 故障字节（仅 READ_ALL 时有效） */
     bool     valid;      /* 数据有效标志 */
     uint32_t update_count; /* 成功解析的帧计数，用于判断是否有新数据 */
+    uint32_t timestamp_cycles; /* 请求发送时刻的 CPU 周期计数 */
 } enc_data_t;
 
 typedef struct {
@@ -90,18 +91,11 @@ bool encoder_rs485_stats_read(enc_stats_t *out);
  */
 void encoder_rs485_init(void);
 
-/**
- * @brief  发起单圈位置读取（非阻塞，DMA 发送请求帧）
- *         在 USART3 IDLE 中断中调用 encoder_rs485_on_idle() 处理响应
- * @retval ENC_OK 或 ENC_ERR_BUSY
- */
-enc_result_t encoder_rs485_request_abs(void);
+/** @brief Start the DMA transaction from the PWM compare interrupt. */
+void encoder_rs485_trigger(void);
 
-/**
- * @brief  IDLE 中断回调，解析已收到的帧
- *         在 USART3_IRQHandler 的 IDLE 分支中调用
- */
-void encoder_rs485_on_idle(void);
+/** @brief Collect the response from the ADC fast loop without waiting. */
+void encoder_rs485_collect(void);
 
 /**
  * @brief  获取最新有效数据（无论上次请求是否已完成）

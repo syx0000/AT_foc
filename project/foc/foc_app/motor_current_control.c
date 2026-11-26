@@ -301,6 +301,7 @@ void motor_current_control_fast_process(void)
   motor_alpha_beta_q15_t alpha_beta;
   motor_direct_quadrature_q15_t dq;
   int32_t direct_ma, quadrature_ma, direct_mv, quadrature_mv;
+  uint16_t sample_angle;
   bool limited;
 
   if (motor_current_control_status.state != MOTOR_CURRENT_CONTROL_RUNNING) return;
@@ -318,7 +319,7 @@ void motor_current_control_fast_process(void)
     motor_current_control_voltage_apply(
       motor_current_control_start_direct_mv,
       motor_current_control_start_quadrature_mv,
-      rotor_feedback.electrical_angle_u16);
+      motor_rotor_feedback_foc_angle(&rotor_feedback, true));
     return;
   }
   if (!motor_current_sample_state_read(&current))
@@ -353,8 +354,8 @@ void motor_current_control_fast_process(void)
     {
       motor_current_control_bus_voltage_update();
       alpha_beta = motor_foc_clarke_q15(current.phase_a_q15, current.phase_b_q15);
-      dq = motor_foc_park_q15(alpha_beta,
-                              rotor_feedback.electrical_angle_u16);
+      sample_angle = motor_rotor_feedback_foc_angle(&rotor_feedback, false);
+      dq = motor_foc_park_q15(alpha_beta, sample_angle);
       direct_ma = (int32_t)(((int64_t)dq.direct_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
       quadrature_ma = (int32_t)(((int64_t)dq.quadrature_q15 * MOTOR_CURRENT_Q15_BASE_MA) / 32768);
       direct_mv = motor_current_pi_axis_process(&motor_current_control_d_pi,
@@ -375,14 +376,14 @@ void motor_current_control_fast_process(void)
         motor_current_pi_axis_output_track(&motor_current_control_q_pi, quadrature_mv);
       }
       (void)motor_current_control_voltage_apply(
-        direct_mv, quadrature_mv, rotor_feedback.electrical_angle_u16);
+        direct_mv, quadrature_mv,
+        motor_rotor_feedback_foc_angle(&rotor_feedback, true));
       motor_current_control_status.command = motor_current_control_command;
       motor_current_control_status.direct_feedback_ma = direct_ma;
       motor_current_control_status.quadrature_feedback_ma = quadrature_ma;
       motor_current_control_status.direct_voltage_mv = direct_mv;
       motor_current_control_status.quadrature_voltage_mv = quadrature_mv;
-      motor_current_control_status.electrical_angle_u16 =
-        rotor_feedback.electrical_angle_u16;
+      motor_current_control_status.electrical_angle_u16 = sample_angle;
       motor_current_control_status.electrical_frequency_millihz =
         rotor_feedback.electrical_frequency_millihz;
       motor_current_control_status.voltage_limited = limited;

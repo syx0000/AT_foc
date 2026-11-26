@@ -26,6 +26,18 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "wk_tmr.h"
+#include "motor_board_config.h"
+
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+/* CH4 is on the up-count before the peak for this lead time. */
+#define ENCODER_LEAD_COUNTS \
+  ((2U * MOTOR_PWM_PERIOD_COUNTS * MOTOR_PWM_FREQUENCY_HZ / 1000000U) * \
+   MOTOR_ENCODER_SAMPLE_LEAD_US)
+#if (ENCODER_LEAD_COUNTS <= MOTOR_PWM_PERIOD_COUNTS) || \
+    (ENCODER_LEAD_COUNTS >= 2U * MOTOR_PWM_PERIOD_COUNTS)
+#error "Encoder lead must place CH4 on the up-count"
+#endif
+#endif
 
 /* add user code begin 0 */
 
@@ -120,7 +132,7 @@ void wk_tmr1_init(void)
   tmr_clock_source_div_set(TMR1, TMR_CLOCK_DIV1);
   tmr_repetition_counter_set(TMR1, 1);
   tmr_period_buffer_enable(TMR1, FALSE);
-  tmr_base_init(TMR1, 5999, 0);
+  tmr_base_init(TMR1, MOTOR_PWM_COMPARE_MAX, 0);
 
   /* configure primary mode settings */
   tmr_sub_sync_mode_set(TMR1, FALSE);
@@ -136,7 +148,11 @@ void wk_tmr1_init(void)
   tmr_output_struct.occ_idle_state = FALSE;
   tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_1, &tmr_output_struct);
   tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_1, 0);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_1, TRUE);
+#else
   tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_1, FALSE);
+#endif
 
   tmr_output_channel_immediately_set(TMR1, TMR_SELECT_CHANNEL_1, TRUE);
 
@@ -150,7 +166,11 @@ void wk_tmr1_init(void)
   tmr_output_struct.occ_idle_state = FALSE;
   tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_2, &tmr_output_struct);
   tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_2, 0);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_2, TRUE);
+#else
   tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_2, FALSE);
+#endif
 
   tmr_output_channel_immediately_set(TMR1, TMR_SELECT_CHANNEL_2, TRUE);
 
@@ -164,7 +184,11 @@ void wk_tmr1_init(void)
   tmr_output_struct.occ_idle_state = FALSE;
   tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_3, &tmr_output_struct);
   tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_3, 0);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_3, TRUE);
+#else
   tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_3, FALSE);
+#endif
 
   tmr_output_channel_immediately_set(TMR1, TMR_SELECT_CHANNEL_3, TRUE);
 
@@ -177,7 +201,12 @@ void wk_tmr1_init(void)
   tmr_output_struct.oc_idle_state = FALSE;
   tmr_output_struct.occ_idle_state = FALSE;
   tmr_output_channel_config(TMR1, TMR_SELECT_CHANNEL_4, &tmr_output_struct);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4,
+                        2U * MOTOR_PWM_PERIOD_COUNTS - ENCODER_LEAD_COUNTS);
+#else
   tmr_channel_value_set(TMR1, TMR_SELECT_CHANNEL_4, 5499);
+#endif
   tmr_output_channel_buffer_enable(TMR1, TMR_SELECT_CHANNEL_4, FALSE);
 
   /* configure break and dead-time settings */

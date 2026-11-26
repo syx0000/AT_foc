@@ -111,6 +111,33 @@ void motor_rotor_feedback_override_clear(void)
   __set_PRIMASK(primask);
 }
 
+uint16_t motor_rotor_feedback_foc_angle(const motor_rotor_feedback_t *feedback,
+                                        bool voltage_apply)
+{
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  if (feedback->source == MOTOR_ROTOR_FEEDBACK_SOURCE_ABSOLUTE_ENCODER &&
+      feedback->speed_valid && feedback->direction != 0 &&
+      motor_timebase_cycles_elapsed(feedback->timestamp_cycles) <=
+        (system_core_clock / 1000U) * MOTOR_SPEED_FEEDBACK_TIMEOUT_MS)
+  {
+    /* Quarter-microseconds preserve the half-PWM-period at 16 kHz. */
+    const uint32_t sample_delay = 4U * MOTOR_ENCODER_SAMPLE_LEAD_US;
+    const uint32_t voltage_delay = sample_delay + 6000000U / MOTOR_PWM_FREQUENCY_HZ;
+    const uint32_t delay = voltage_apply ? voltage_delay : sample_delay;
+    const uint32_t advance = (uint32_t)(
+      (uint64_t)feedback->electrical_frequency_millihz * delay * 65536U /
+      4000000000ULL);
+
+    return (uint16_t)(feedback->direction < 0 ?
+      feedback->electrical_angle_u16 - advance :
+      feedback->electrical_angle_u16 + advance);
+  }
+#else
+  (void)voltage_apply;
+#endif
+  return feedback->electrical_angle_u16;
+}
+
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
 {
   uint32_t primask;
@@ -128,12 +155,13 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
 
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
   {
-    const enc_data_t *enc = encoder_rs485_get_data();
+    enc_data_t enc;
     uint8_t pole_pairs = motor_parameter_pole_pairs_get();
     uint32_t mechanical_speed_millirpm;
 
     if (pole_pairs == 0U) return false;
-    if (!enc->valid)
+    (void)encoder_rs485_read(&enc);
+    if (!enc.valid)
     {
       feedback->valid      = false;
       feedback->speed_valid = false;
@@ -141,7 +169,7 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
     }
 
     /* 单圈机械角：17bit → U16（右移1位） */
-    uint16_t mech_u16 = encoder_abs_to_angle_q16(enc->abs_pos);
+    uint16_t mech_u16 = encoder_abs_to_angle_q16(enc.abs_pos);
 
     /* 电角度 = (机械角 - 编码器零位偏移) × 极对数（取模 U16 自然溢出） */
     motor_parameter_t parameter;
@@ -289,7 +317,7 @@ void motor_rotor_feedback_process_1khz(void)
 
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
   {
-    const enc_data_t *enc = encoder_rs485_get_data();
+    enc_data_t enc;
     uint32_t now_cycles;
     int32_t  pos_delta;
     uint32_t dt_cycles;
@@ -299,7 +327,8 @@ void motor_rotor_feedback_process_1khz(void)
     uint32_t freq_millihz;
     int8_t   dir;
 
-    if (!enc->valid)
+    (void)encoder_rs485_read(&enc);
+    if (!enc.valid)
     {
       primask = __get_PRIMASK();
       __disable_irq();
@@ -310,21 +339,26 @@ void motor_rotor_feedback_process_1khz(void)
       return;
     }
 
-    now_cycles = motor_timebase_cycles_get();
+    if (enc_speed.initialized && enc_speed.last_frame_count == enc.update_count)
+    {
+      return;
+    }
+    now_cycles = enc.timestamp_cycles;
 
     primask = __get_PRIMASK();
     __disable_irq();
 
+    enc_speed.last_frame_count = enc.update_count;
     if (!enc_speed.initialized)
     {
-      enc_speed.last_abs_pos  = enc->abs_pos;
+      enc_speed.last_abs_pos  = enc.abs_pos;
       enc_speed.last_cycles   = now_cycles;
       enc_speed.initialized   = true;
       enc_speed.direction     = 0;
       enc_speed.elec_freq_millihz = 0U;
       enc_speed.speed_millirpm    = 0;
       motor_rotor_feedback_tracker.last_electrical_u16 =
-        (uint16_t)((uint32_t)(enc->abs_pos >> 1u) * pole_pairs);
+        (uint16_t)((uint32_t)(enc.abs_pos >> 1u) * pole_pairs);
       motor_rotor_feedback_tracker.tracking = false;
       motor_rotor_feedback_tracker.residue  = 0;
       __set_PRIMASK(primask);
@@ -334,7 +368,7 @@ void motor_rotor_feedback_process_1khz(void)
     dt_cycles = now_cycles - enc_speed.last_cycles;
 
     /* 有符号差分，处理跨圈回绕（131072 步一圈） */
-    pos_delta = (int32_t)enc->abs_pos - (int32_t)enc_speed.last_abs_pos;
+    pos_delta = (int32_t)enc.abs_pos - (int32_t)enc_speed.last_abs_pos;
     if (pos_delta >  (int32_t)(ENC_SINGLE_MAX / 2u))
       pos_delta -= (int32_t)ENC_SINGLE_MAX;
     else if (pos_delta < -(int32_t)(ENC_SINGLE_MAX / 2u))
@@ -361,12 +395,12 @@ void motor_rotor_feedback_process_1khz(void)
     enc_speed.speed_millirpm    = (dir < 0) ?
       -(int32_t)((uint64_t)freq_millihz * 60U / pole_pairs) :
        (int32_t)((uint64_t)freq_millihz * 60U / pole_pairs);
-    enc_speed.last_abs_pos = enc->abs_pos;
+    enc_speed.last_abs_pos = enc.abs_pos;
     enc_speed.last_cycles  = now_cycles;
     enc_speed.update_count++;
 
     /* 机械角累加器：直接使用编码器单圈机械角 Q16（右移1位） */
-    uint16_t mech_now = (uint16_t)(enc->abs_pos >> 1u);
+    uint16_t mech_now = (uint16_t)(enc.abs_pos >> 1u);
     if (!motor_rotor_feedback_tracker.tracking)
     {
       motor_rotor_feedback_tracker.last_electrical_u16 =

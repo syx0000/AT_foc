@@ -21,6 +21,7 @@
 #include "motor_board_config.h"
 
 static volatile bool s_paused = false;
+static volatile bool s_initialized = false;
 
 /* ID0 回应字节数：CF(1) + SF(1) + ABS0~2(3) + CRC(1) */
 #define ENC_RX_LEN_ABS        6u
@@ -28,8 +29,9 @@ static volatile bool s_paused = false;
 /* 缓冲区容纳：可能的回显 1 字节 + 完整回应 + 余量 */
 #define ENC_DMA_RX_BUF_SIZE   16u
 
-/* 超时：以 encoder_rs485_request_abs() 调用次数计（1 kHz 下即 ms） */
-#define ENC_TIMEOUT_TICKS     2u
+/* Allow turnaround and a late reply without blocking the fast loop. */
+#define ENC_TIMEOUT_US        125u
+#define ENC_UART_ERRORS       (USART_PERR_FLAG | USART_FERR_FLAG | USART_NERR_FLAG | USART_ROERR_FLAG)
 
 typedef enum {
     ENC_STATE_IDLE = 0,
@@ -37,16 +39,17 @@ typedef enum {
 } enc_state_t;
 
 static volatile enc_state_t  s_state        = ENC_STATE_IDLE;
-static volatile uint32_t     s_timeout_cnt  = 0u;
+static uint32_t              s_request_cycles;
+static uint32_t              s_timeout_cycles;
 static volatile enc_result_t s_last_result  = ENC_OK;
 
-static uint8_t s_rx_buf[ENC_DMA_RX_BUF_SIZE] __attribute__((aligned(4)));
+static volatile uint8_t s_rx_buf[ENC_DMA_RX_BUF_SIZE] __attribute__((aligned(4)));
 static uint8_t s_tx_byte __attribute__((aligned(4)));
 
 static volatile enc_data_t  s_data;
 static volatile enc_stats_t s_stats;
 
-static uint8_t enc_crc8(const uint8_t *buf, uint8_t len)
+static uint8_t enc_crc8(const volatile uint8_t *buf, uint8_t len)
 {
     uint8_t crc = 0u;
     for (uint8_t i = 0u; i < len; i++) {
@@ -98,64 +101,36 @@ void encoder_rs485_init(void)
     usart_flag_clear(USART3, USART_NERR_FLAG | USART_ROERR_FLAG |
                              USART_FERR_FLAG | USART_IDLEF_FLAG);
 
-    s_state       = ENC_STATE_IDLE;
+    usart_interrupt_enable(USART3, USART_IDLE_INT, FALSE);
+    usart_interrupt_enable(USART3, USART_ERR_INT, FALSE);
+    s_state = ENC_STATE_IDLE;
     s_last_result = ENC_OK;
-    s_data.valid  = false;
+    s_data.valid = false;
     s_data.update_count = 0u;
-    enc_dma_rx_reload();
+    s_timeout_cycles = (system_core_clock / 1000000u) * ENC_TIMEOUT_US;
+    s_initialized = true;
 }
 
-enc_result_t encoder_rs485_request_abs(void)
+static void enc_receive(void)
 {
-    if (s_paused) {
-        return ENC_ERR_BUSY;
-    }
-    if (s_state == ENC_STATE_WAIT_RESP) {
-        s_timeout_cnt++;
-        if (s_timeout_cnt < ENC_TIMEOUT_TICKS) {
-            return ENC_ERR_BUSY;
-        }
-        s_last_result = ENC_ERR_TIMEOUT;
-        s_data.valid  = false;
-        s_stats.timeout_count++;
-        s_stats.last_rx_len = (uint8_t)(ENC_DMA_RX_BUF_SIZE -
-                                        (uint16_t)DMA1_CHANNEL2->dtcnt);
-        s_state = ENC_STATE_IDLE;
-    }
+    const uint32_t sts = USART3->sts;
+    const uint16_t rx_len = ENC_DMA_RX_BUF_SIZE - (uint16_t)DMA1_CHANNEL2->dtcnt;
+    const bool expired = motor_timebase_cycles_elapsed(s_request_cycles) >= s_timeout_cycles;
+    uint16_t start = 0u;
+    bool found = false;
 
-    enc_dma_rx_reload();
-    enc_send_cmd(ENC_CF_READ_ABS);
-    s_stats.request_count++;
-    s_state       = ENC_STATE_WAIT_RESP;
-    s_timeout_cnt = 0u;
-    return ENC_OK;
-}
-
-void encoder_rs485_on_idle(void)
-{
-    uint16_t rx_len;
-    uint16_t start;
-    bool     found = false;
-
-    if (s_state != ENC_STATE_WAIT_RESP) {
+    if (!expired && ((sts & USART_IDLEF_FLAG) == 0u ||
+                     (sts & USART_RDBF_FLAG) != 0u || rx_len < ENC_RX_LEN_ABS)) {
         return;
-    }
-
-    rx_len = ENC_DMA_RX_BUF_SIZE - (uint16_t)DMA1_CHANNEL2->dtcnt;
-    if (rx_len < ENC_RX_LEN_ABS) {
-        /* 只收到回显或半帧，等待下一次 IDLE 或超时 */
-        return;
-    }
-
-    dma_channel_enable(DMA1_CHANNEL2, FALSE);
-    s_stats.last_rx_len = (uint8_t)rx_len;
-    for (uint8_t i = 0u; i < 8u; i++) {
-        s_stats.last_raw[i] = s_rx_buf[i];
     }
 
     /* 从后往前找“CF + 有效 CRC”的 6 字节帧，跳过可能的回显 */
-    for (start = (uint16_t)(rx_len - ENC_RX_LEN_ABS) + 1u; start-- > 0u; ) {
-        const uint8_t *f = &s_rx_buf[start];
+    if (rx_len >= ENC_RX_LEN_ABS) {
+        start = (uint16_t)(rx_len - ENC_RX_LEN_ABS + 1u);
+    }
+    while (start != 0u) {
+        --start;
+        const volatile uint8_t *f = &s_rx_buf[start];
         if ((f[0] == ENC_CF_READ_ABS) &&
             (enc_crc8(f, ENC_RX_LEN_ABS - 1u) == f[ENC_RX_LEN_ABS - 1u])) {
             found = true;
@@ -163,9 +138,27 @@ void encoder_rs485_on_idle(void)
         }
     }
 
-    s_state = ENC_STATE_IDLE;
+    /* Six bytes can also be an echo followed by a partial reply. */
+    if (!expired && !found && rx_len == ENC_RX_LEN_ABS &&
+        (sts & ENC_UART_ERRORS) == 0u) {
+        return;
+    }
 
-    if (!found) {
+    dma_channel_enable(DMA1_CHANNEL2, FALSE);
+    s_state = ENC_STATE_IDLE;
+    s_stats.last_rx_len = (uint8_t)rx_len;
+    for (uint8_t i = 0u; i < sizeof(s_stats.last_raw); i++) {
+        s_stats.last_raw[i] = (i < rx_len) ? s_rx_buf[i] : 0u;
+    }
+
+    if (rx_len < ENC_RX_LEN_ABS) {
+        s_last_result = ENC_ERR_TIMEOUT;
+        s_data.valid = false;
+        s_stats.timeout_count++;
+        return;
+    }
+
+    if (!found || (sts & ENC_UART_ERRORS) != 0u) {
         s_last_result = ENC_ERR_CRC;
         s_data.valid  = false;
         s_stats.crc_error_count++;
@@ -173,7 +166,7 @@ void encoder_rs485_on_idle(void)
     }
 
     {
-        const uint8_t *f = &s_rx_buf[start];
+        const volatile uint8_t *f = &s_rx_buf[start];
         uint8_t sf = f[1];
 
         s_data.status = sf;
@@ -194,6 +187,7 @@ void encoder_rs485_on_idle(void)
 #endif
             s_data.abs_pos = raw_pos;
         }
+        s_data.timestamp_cycles = s_request_cycles;
         s_data.valid   = true;
         s_data.update_count++;
         s_last_result  = ENC_OK;
@@ -201,6 +195,29 @@ void encoder_rs485_on_idle(void)
     }
 }
 
+void encoder_rs485_trigger(void)
+{
+    const uint32_t primask = __get_PRIMASK();
+
+    /* Publish the transaction after arming DMA, before ADC can preempt CH4. */
+    __disable_irq();
+    if (s_initialized && !s_paused && s_state == ENC_STATE_IDLE) {
+        usart_flag_clear(USART3, ENC_UART_ERRORS | USART_IDLEF_FLAG);
+        enc_dma_rx_reload();
+        s_request_cycles = motor_timebase_cycles_get();
+        enc_send_cmd(ENC_CF_READ_ABS);
+        s_stats.request_count++;
+        s_state = ENC_STATE_WAIT_RESP;
+    }
+    __set_PRIMASK(primask);
+}
+
+void encoder_rs485_collect(void)
+{
+    if (!s_paused && s_state == ENC_STATE_WAIT_RESP) {
+        enc_receive();
+    }
+}
 bool encoder_rs485_read(enc_data_t *out)
 {
     uint32_t primask;
@@ -216,6 +233,7 @@ bool encoder_rs485_read(enc_data_t *out)
     out->almc         = s_data.almc;
     out->valid        = s_data.valid;
     out->update_count = s_data.update_count;
+    out->timestamp_cycles = s_data.timestamp_cycles;
     __set_PRIMASK(primask);
     return true;
 }
@@ -274,7 +292,7 @@ bool encoder_rs485_poll_test(enc_poll_test_t *out)
     out->tx_done     = false;
     out->err_sts     = 0u;
 
-    /* 暂停 1 kHz 请求，等待可能在途的一帧结束 */
+    /* 暂停快环请求，等待可能在途的一帧结束 */
     s_paused = true;
     enc_wait_us(200u);
 
@@ -384,7 +402,6 @@ bool encoder_rs485_poll_test(enc_poll_test_t *out)
     usart_dma_transmitter_enable(USART3, TRUE);
     usart_dma_receiver_enable(USART3, TRUE);
     s_state = ENC_STATE_IDLE;
-    enc_dma_rx_reload();
     NVIC_ClearPendingIRQ(USART3_IRQn);
     NVIC_EnableIRQ(USART3_IRQn);
     s_paused = false;

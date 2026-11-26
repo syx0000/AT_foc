@@ -231,7 +231,9 @@ int main(void)
                         (uint32_t)&USART3->dt, 
                         DMA1_CHANNEL1_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL1_BUFFER_SIZE);
+#if (MOTOR_POS_SENSOR_TYPE != MOTOR_POS_SENSOR_ENCODER)
   dma_channel_enable(DMA1_CHANNEL1, TRUE);
+#endif
 
   /* init dma1 channel2 */
   wk_dma1_channel2_init();
@@ -242,7 +244,9 @@ int main(void)
                         (uint32_t)&USART3->dt, 
                         DMA1_CHANNEL2_MEMORY_BASE_ADDR, 
                         DMA1_CHANNEL2_BUFFER_SIZE);
+#if (MOTOR_POS_SENSOR_TYPE != MOTOR_POS_SENSOR_ENCODER)
   dma_channel_enable(DMA1_CHANNEL2, TRUE);
+#endif
 
   /* init dma1 channel4 */
   wk_dma1_channel4_init();

@@ -19,6 +19,7 @@
 #define MOTOR_PWM_PERIOD_COUNTS            6000U
 #define MOTOR_PWM_COMPARE_MAX              (MOTOR_PWM_PERIOD_COUNTS - 1U)
 #define MOTOR_PWM_FREQUENCY_HZ             16000U
+#define MOTOR_ENCODER_SAMPLE_LEAD_US        35U
 #define MOTOR_PWM_DEADTIME_COUNTS           80U
 
 /* Hall输入捕获（对齐demo）：TMR4 CH1/CH2/CH3 XOR捕获，经硬件数字滤波后

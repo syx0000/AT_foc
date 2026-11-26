@@ -133,6 +133,14 @@ void motor_pwm_port_emergency_stop(void)
   motor_pwm_output_enabled = false;
 }
 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+static void motor_pwm_compare_preload_set(confirm_state enable)
+{
+  tmr_output_channel_buffer_enable(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1, enable);
+  tmr_output_channel_buffer_enable(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2, enable);
+  tmr_output_channel_buffer_enable(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3, enable);
+}
+#endif
 void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare)
 {
   uint16_t clamped_a;
@@ -146,10 +154,27 @@ void motor_pwm_port_compare_set(const motor_pwm_compare_t *compare)
   clamped_a = motor_pwm_compare_clamp(compare->phase_a);
   clamped_b = motor_pwm_compare_clamp(compare->phase_b);
   clamped_c = motor_pwm_compare_clamp(compare->phase_c);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  const uint32_t primask = __get_PRIMASK();
+  __disable_irq();
+  if (!motor_pwm_output_enabled)
+  {
+    /* Prime the active compares while MOE is off so enabling cannot expose
+       an old command before the first timer update. */
+    motor_pwm_compare_preload_set(FALSE);
+    tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1, clamped_a);
+    tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2, clamped_b);
+    tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3, clamped_c);
+    motor_pwm_compare_preload_set(TRUE);
+  }
+#endif
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_1, clamped_a);
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_2, clamped_b);
   tmr_channel_value_set(MOTOR_PWM_TIMER, TMR_SELECT_CHANNEL_3, clamped_c);
   motor_pwm_command_valid = true;
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  __set_PRIMASK(primask);
+#endif
 }
 
 bool motor_pwm_port_output_is_enabled(void)

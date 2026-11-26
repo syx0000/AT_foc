@@ -264,9 +264,6 @@ void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
   motor_current_startup_process_1khz();
-#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
-  encoder_rs485_request_abs();
-#endif
   motor_rotor_feedback_process_1khz();
   motor_speed_feedback_process_1khz();
   motor_speed_control_process_1khz();
@@ -343,6 +340,8 @@ void ADC1_2_IRQHandler(void)
     motor_open_loop_fast_process();
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
     motor_hall_angle_estimator_fast_process();
+#elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    encoder_rs485_collect();
 #endif
     motor_current_startup_fast_process();
     motor_current_transform_fast_process();
@@ -425,6 +424,13 @@ void TMR1_CH_IRQHandler(void)
     /* add user code begin TMR1_TMR_C4_FLAG */
     /* clear flag */
     tmr_flag_clear(TMR1, TMR_C4_FLAG);
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    /* In center-aligned mode 3, CH4 matches in both directions. */
+    if ((TMR1->ctrl1_bit.cnt_dir & 1u) == 0u)
+    {
+      encoder_rs485_trigger();
+    }
+#endif
     /* add user code end TMR1_TMR_C4_FLAG */
   }
 
@@ -494,9 +500,6 @@ void USART3_IRQHandler(void)
     /* add user code begin USART3_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART3, USART_IDLEF_FLAG);
-#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
-    encoder_rs485_on_idle();
-#endif
     /* add user code end USART3_USART_IDLEF_FLAG */
   }
 

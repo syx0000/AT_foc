@@ -66,6 +66,10 @@ void motor_rotor_feedback_process_1khz(void);
  */
 bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback);
 
+/* Select the Park sampling angle or the inverse-Park voltage-center angle. */
+uint16_t motor_rotor_feedback_foc_angle(const motor_rotor_feedback_t *feedback,
+                                        bool voltage_apply);
+
 void motor_rotor_feedback_override_set(uint16_t electrical_angle_u16,
                                        int32_t electrical_frequency_millihz,
                                        int8_t direction);
