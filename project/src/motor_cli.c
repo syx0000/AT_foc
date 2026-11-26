@@ -33,6 +33,10 @@
 #include "motor_uart_port.h"
 #include "product_version.h"
 #include "wk_system.h"
+#include "motor_board_config.h"
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+#include "encoder_rs485.h"
+#endif
 
 #define MOTOR_CLI_LINE_SIZE 96U
 static char motor_cli_line[MOTOR_CLI_LINE_SIZE];
@@ -61,6 +65,7 @@ static const motor_cli_parameter_field_t motor_cli_parameter_fields[] =
   {"speed_kp_q20", MOTOR_PARAMETER_FIELD_SPEED_KP_Q20},
   {"speed_ki_q20", MOTOR_PARAMETER_FIELD_SPEED_KI_Q20},
   {"hall_rotor_offset_u16", MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16},
+  {"encoder_offset_u16", MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16},
   {"hall_delay_us", MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US},
   {"flux_linkage_uwb", MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB},
   {"speed_maximum_rpm", MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM},
@@ -293,6 +298,173 @@ static void motor_cli_commissioning_execute(motor_commissioning_task_t task)
          (unsigned long)commissioning.error_detail);
 }
 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+/* encoder align：开环在电角度0注入d轴电压，转子停稳后平均编码器位置，
+ * 得到 encoder_offset_u16 = 该位置的机械角U16，使此处电角度为0。
+ * 非阻塞状态机，由 motor_cli_poll() 推进。结果只写入候选参数。 */
+#define ENC_ALIGN_HOLD_MS        1500U   /* 含开环500 ms预定位 */
+#define ENC_ALIGN_SAMPLE_MS       200U
+#define ENC_ALIGN_MAX_SPREAD      200L   /* 17bit计数，约0.55°机械角 */
+
+typedef enum
+{
+  ENC_ALIGN_IDLE = 0,
+  ENC_ALIGN_HOLD,
+  ENC_ALIGN_SAMPLE
+} enc_align_state_t;
+
+static struct
+{
+  enc_align_state_t state;
+  uint32_t phase_start_cycles;
+  uint32_t first_pos;
+  uint32_t last_update;
+  int64_t delta_sum;
+  int32_t delta_min;
+  int32_t delta_max;
+  uint32_t samples;
+} enc_align;
+
+static int32_t enc_align_delta(uint32_t pos, uint32_t ref)
+{
+  int32_t d = (int32_t)pos - (int32_t)ref;
+  if (d > (int32_t)(ENC_SINGLE_MAX / 2U)) d -= (int32_t)ENC_SINGLE_MAX;
+  else if (d < -(int32_t)(ENC_SINGLE_MAX / 2U)) d += (int32_t)ENC_SINGLE_MAX;
+  return d;
+}
+
+static void enc_align_abort(const char *reason)
+{
+  motor_control_stop();
+  enc_align.state = ENC_ALIGN_IDLE;
+  printf("ERR encoder_align_failed reason=%s\r\n", reason);
+}
+
+static void enc_align_start(int32_t voltage_mv)
+{
+  motor_control_status_t motor;
+  motor_open_loop_command_t command;
+
+  if (enc_align.state != ENC_ALIGN_IDLE)
+  {
+    printf("ERR encoder_align_busy\r\n");
+    return;
+  }
+  (void)motor_control_status_read(&motor);
+  if (motor.state != MOTOR_CONTROL_STATE_READY)
+  {
+    printf("ERR encoder_align_motor_not_ready state=%u\r\n",
+           (unsigned int)motor.state);
+    return;
+  }
+  /* vd保持，vq=0，目标频率0：预定位结束后频率从起始值以1000 Hz/s斜坡
+   * 回到0，约2 ms，电角度偏移可忽略。 */
+  command.direct_voltage_mv = voltage_mv;
+  command.quadrature_voltage_mv = 0;
+  command.target_frequency_millihz = 0;
+  command.acceleration_millihz_per_s = 1000000U;
+  if (!motor_control_open_loop_start(&command))
+  {
+    printf("ERR encoder_align_open_loop_rejected\r\n");
+    return;
+  }
+  enc_align.state = ENC_ALIGN_HOLD;
+  enc_align.phase_start_cycles = motor_timebase_cycles_get();
+  printf("OK encoder align started vd=%ld mV, hold %u ms\r\n",
+         (long)voltage_mv, (unsigned int)(ENC_ALIGN_HOLD_MS + ENC_ALIGN_SAMPLE_MS));
+}
+
+static void enc_align_finish(void)
+{
+  int32_t mean_delta;
+  uint32_t mean_pos;
+  uint16_t offset_u16;
+  int32_t spread = enc_align.delta_max - enc_align.delta_min;
+
+  motor_control_stop();
+  enc_align.state = ENC_ALIGN_IDLE;
+  if (enc_align.samples < 10U)
+  {
+    printf("ERR encoder_align_failed reason=too_few_samples n=%lu\r\n",
+           (unsigned long)enc_align.samples);
+    return;
+  }
+  if (spread > ENC_ALIGN_MAX_SPREAD)
+  {
+    printf("ERR encoder_align_failed reason=rotor_not_still spread=%ld counts\r\n",
+           (long)spread);
+    return;
+  }
+  mean_delta = (int32_t)(enc_align.delta_sum / (int64_t)enc_align.samples);
+  mean_pos = (uint32_t)((int32_t)enc_align.first_pos + mean_delta +
+                        (int32_t)ENC_SINGLE_MAX) & (ENC_SINGLE_MAX - 1U);
+  offset_u16 = encoder_abs_to_angle_q16(mean_pos);
+  if (!motor_parameter_candidate_field_set(
+        MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16, (int32_t)offset_u16))
+  {
+    printf("ERR encoder_align_failed reason=candidate_set_rejected offset=%u\r\n",
+           (unsigned int)offset_u16);
+    return;
+  }
+  printf("OK encoder align pos=%lu offset_u16=%u spread=%ld samples=%lu candidate=1\r\n",
+         (unsigned long)mean_pos, (unsigned int)offset_u16, (long)spread,
+         (unsigned long)enc_align.samples);
+  printf("   next: motor commissioning accept ; motor commissioning save\r\n");
+}
+
+static void enc_align_poll(void)
+{
+  motor_control_status_t motor;
+  enc_data_t enc;
+  uint32_t elapsed_ms;
+  int32_t d;
+
+  if (enc_align.state == ENC_ALIGN_IDLE) return;
+
+  (void)motor_control_status_read(&motor);
+  if (motor.state != MOTOR_CONTROL_STATE_OPEN_LOOP)
+  {
+    enc_align.state = ENC_ALIGN_IDLE;
+    printf("ERR encoder_align_failed reason=open_loop_lost state=%u\r\n",
+           (unsigned int)motor.state);
+    return;
+  }
+  (void)encoder_rs485_read(&enc);
+  if (!enc.valid)
+  {
+    enc_align_abort("encoder_invalid");
+    return;
+  }
+  elapsed_ms = motor_timebase_cycles_to_us(
+    motor_timebase_cycles_elapsed(enc_align.phase_start_cycles)) / 1000U;
+
+  if (enc_align.state == ENC_ALIGN_HOLD)
+  {
+    if (elapsed_ms < ENC_ALIGN_HOLD_MS) return;
+    enc_align.state = ENC_ALIGN_SAMPLE;
+    enc_align.phase_start_cycles = motor_timebase_cycles_get();
+    enc_align.first_pos = enc.abs_pos;
+    enc_align.last_update = enc.update_count;
+    enc_align.delta_sum = 0;
+    enc_align.delta_min = 0;
+    enc_align.delta_max = 0;
+    enc_align.samples = 0U;
+    return;
+  }
+
+  if (enc.update_count != enc_align.last_update)
+  {
+    enc_align.last_update = enc.update_count;
+    d = enc_align_delta(enc.abs_pos, enc_align.first_pos);
+    enc_align.delta_sum += d;
+    if (d < enc_align.delta_min) enc_align.delta_min = d;
+    if (d > enc_align.delta_max) enc_align.delta_max = d;
+    enc_align.samples++;
+  }
+  if (elapsed_ms >= ENC_ALIGN_SAMPLE_MS) enc_align_finish();
+}
+#endif
+
 static void motor_cli_command_execute(char *line)
 {
   unsigned int level;
@@ -328,7 +500,7 @@ static void motor_cli_command_execute(char *line)
   if (strcmp(line, "help") == 0)
   {
     printf("OK commands:\r\n");
-    printf("  help | version | status | reset\r\n");
+    printf("  help | version | status | reset | encoder | encoder test | encoder align [vd_mv]\r\n");
     printf("  debug <0|1> | logid [10|20|30|40] | lograte <1..500> | logdetail <0|1|2> | logcapture [1..128]\r\n");
     printf("  fault | fault clear | log level <0..4>\r\n");
     printf("  motor stop | motor direction [normal|reverse]\r\n");
@@ -349,6 +521,84 @@ static void motor_cli_command_execute(char *line)
     printf("OK fw=%s hw=%s\r\n", FIRMWARE_VERSION_STRING,
            HARDWARE_VERSION_STRING);
   }
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  else if (strcmp(line, "encoder") == 0)
+  {
+    enc_data_t enc;
+    enc_stats_t enc_stats;
+    motor_rotor_feedback_t enc_feedback;
+
+    (void)encoder_rs485_read(&enc);
+    (void)encoder_rs485_stats_read(&enc_stats);
+    if (!motor_rotor_feedback_read(&enc_feedback))
+      (void)memset(&enc_feedback, 0, sizeof(enc_feedback));
+    printf("OK enc valid=%u pos=%lu sf=0x%02X result=%u frames=%lu "
+           "req=%lu ok=%lu crc=%lu timeout=%lu sf_err=%lu "
+           "rx_len=%u raw=%02X %02X %02X %02X %02X %02X %02X %02X "
+           "elec=%u mech=%u speed_rpm=%ld fb_valid=%u spd_valid=%u\r\n",
+      (unsigned int)enc.valid, (unsigned long)enc.abs_pos,
+      (unsigned int)enc.status, (unsigned int)encoder_rs485_get_result(),
+      (unsigned long)enc.update_count,
+      (unsigned long)enc_stats.request_count,
+      (unsigned long)enc_stats.ok_count,
+      (unsigned long)enc_stats.crc_error_count,
+      (unsigned long)enc_stats.timeout_count,
+      (unsigned long)enc_stats.status_error_count,
+      (unsigned int)enc_stats.last_rx_len,
+      enc_stats.last_raw[0], enc_stats.last_raw[1], enc_stats.last_raw[2],
+      enc_stats.last_raw[3], enc_stats.last_raw[4], enc_stats.last_raw[5],
+      enc_stats.last_raw[6], enc_stats.last_raw[7],
+      (unsigned int)enc_feedback.electrical_angle_u16,
+      (unsigned int)enc_feedback.mechanical_angle_u16,
+      (long)(enc_feedback.mechanical_speed_millirpm / 1000L),
+      (unsigned int)enc_feedback.valid,
+      (unsigned int)enc_feedback.speed_valid);
+  }
+  else if (strncmp(line, "encoder align", 13) == 0)
+  {
+    long align_mv = (long)MOTOR_OPEN_LOOP_ALIGNMENT_VOLTAGE_MV;
+    if ((line[13] != '\0') && (sscanf(&line[13], "%ld", &align_mv) != 1))
+      printf("ERR encoder_align_usage: encoder align [vd_mv]\r\n");
+    else if ((align_mv <= 0) || (align_mv > (long)MOTOR_OPEN_LOOP_MAXIMUM_VOLTAGE_MV))
+      printf("ERR encoder_align_voltage_range 1..%ld\r\n",
+             (long)MOTOR_OPEN_LOOP_MAXIMUM_VOLTAGE_MV);
+    else
+      enc_align_start((int32_t)align_mv);
+  }
+  else if (strcmp(line, "encoder test") == 0)
+  {
+    enc_poll_test_t t;
+    uint8_t n;
+
+    (void)encoder_rs485_poll_test(&t);
+    printf("OK enctest tx_done=%u rx_len=%u idle_high=%u%% err=0x%02lX rx=",
+      (unsigned int)t.tx_done, (unsigned int)t.rx_len,
+      (unsigned int)t.rx_idle_high_pct, (unsigned long)t.err_sts);
+    n = (t.rx_len > sizeof(t.rx)) ? (uint8_t)sizeof(t.rx) : t.rx_len;
+    for (uint8_t i = 0U; i < n; i++)
+      printf("%02X ", t.rx[i]);
+    printf("\r\n  usart sts=%08lX ctrl1=%08lX ctrl3=%08lX "
+           "dma_tx ctrl=%08lX cnt=%lu dma_rx ctrl=%08lX cnt=%lu\r\n",
+      (unsigned long)t.usart_sts, (unsigned long)t.usart_ctrl1,
+      (unsigned long)t.usart_ctrl3,
+      (unsigned long)t.dma_tx_ctrl, (unsigned long)t.dma_tx_cnt,
+      (unsigned long)t.dma_rx_ctrl, (unsigned long)t.dma_rx_cnt);
+    printf("  wire tx_end=%lu.%lu us low=%lu falls=%lu first_low=%lu.%lu us "
+           "last_low=%lu.%lu us usart_rx=%lu baudr=%lu "
+           "pa_cfgr=%08lX pa_muxl=%08lX pa_pull=%08lX\r\n",
+      (unsigned long)(t.wire_tx_end_100ns / 10U),
+      (unsigned long)(t.wire_tx_end_100ns % 10U),
+      (unsigned long)t.wire_low_samples, (unsigned long)t.wire_fall_edges,
+      (unsigned long)(t.wire_first_low_100ns / 10U),
+      (unsigned long)(t.wire_first_low_100ns % 10U),
+      (unsigned long)(t.wire_last_low_100ns / 10U),
+      (unsigned long)(t.wire_last_low_100ns % 10U),
+      (unsigned long)t.wire_usart_rx_count,
+      (unsigned long)USART3->baudr,
+      (unsigned long)t.wire_gpioa_cfgr, (unsigned long)t.wire_gpioa_muxl,
+      (unsigned long)t.wire_gpioa_pull);
+  }
+#endif
   else if (strcmp(line, "reset") == 0)
   {
     (void)motor_control_status_read(&motor);
@@ -738,6 +988,9 @@ void motor_cli_poll(void)
   char character;
 
   motor_trace_poll();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  enc_align_poll();
+#endif
   if (!motor_uart_port_frame_read(&frame)) return;
   for (index = 0U; index < frame.length; index++)
   {

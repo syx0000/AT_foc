@@ -276,9 +276,21 @@ bool motor_control_current_control_start(
     return false;
   if (motor_control_status.state == MOTOR_CONTROL_STATE_READY)
   {
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    /* 绝对值编码器静止即有准确电角度，无需I/F启动，直接进入电流闭环。 */
+    primask = __get_PRIMASK();
+    __disable_irq();
+    handover_ok = (motor_fault_pending_mask == 0U) &&
+                  motor_current_control_start(&physical_command);
+    if (handover_ok)
+      motor_control_status.state = MOTOR_CONTROL_STATE_CURRENT_CONTROL;
+    __set_PRIMASK(primask);
+    return handover_ok;
+#else
     if (!motor_current_startup_start(&physical_command)) return false;
     motor_control_status.state = MOTOR_CONTROL_STATE_CURRENT_STARTING;
     return true;
+#endif
   }
   if ((motor_control_status.state != MOTOR_CONTROL_STATE_OPEN_LOOP) ||
       (!motor_open_loop_status_read(&open_loop)) ||
@@ -662,8 +674,12 @@ motor_fault_clear_result_t motor_control_fault_clear_ex(void)
     return MOTOR_FAULT_CLEAR_NOT_FAULTED;
   if (motor_pwm_port_output_is_enabled())
     return MOTOR_FAULT_CLEAR_PWM_ENABLED;
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   hall_raw=motor_hall_port_raw_state_get();
   if (hall_raw<1U || hall_raw>6U) return MOTOR_FAULT_CLEAR_HALL_UNSAFE;
+#else
+  (void)hall_raw;
+#endif
   (void)motor_slow_sensor_process();
   if ((!motor_slow_sensor_state_read(&sensor)) ||
       (!sensor.mos_temperature_valid) ||

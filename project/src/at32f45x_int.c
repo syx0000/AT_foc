@@ -34,10 +34,14 @@
 #include "motor_pwm_port.h"
 #include "motor_board_config.h"
 #include "motor_open_loop.h"
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
-#include "motor_commissioning.h"
 #include "motor_hall_angle_estimator.h"
+#elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+#include "encoder_rs485.h"
+#endif
+#include "motor_commissioning.h"
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
@@ -80,6 +84,7 @@
 /* private user code ---------------------------------------------------------*/
 /* add user code begin 0 */
 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
 /**
  * @brief 捕获一次Hall边沿并分发给下游模块。
  * @param sample 输出本次捕获后的端口快照，不允许为空。
@@ -98,6 +103,7 @@ static void hall_edge_dispatch(motor_hall_port_sample_t *sample)
       motor_hall_angle_estimator_edge_process();
   }
 }
+#endif
 
 /* add user code end 0 */
 
@@ -258,6 +264,9 @@ void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
   motor_current_startup_process_1khz();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  encoder_rs485_request_abs();
+#endif
   motor_rotor_feedback_process_1khz();
   motor_speed_feedback_process_1khz();
   motor_speed_control_process_1khz();
@@ -332,7 +341,9 @@ void ADC1_2_IRQHandler(void)
     }
     monitor_overcurrent_pending = false;
     motor_open_loop_fast_process();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
     motor_hall_angle_estimator_fast_process();
+#endif
     motor_current_startup_fast_process();
     motor_current_transform_fast_process();
     motor_inductance_identification_fast_process();
@@ -483,7 +494,10 @@ void USART3_IRQHandler(void)
     /* add user code begin USART3_USART_IDLEF_FLAG */
     /* clear flag */
     usart_flag_clear(USART3, USART_IDLEF_FLAG);
-    /* add user code end USART3_USART_IDLEF_FLAG */ 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    encoder_rs485_on_idle();
+#endif
+    /* add user code end USART3_USART_IDLEF_FLAG */
   }
 
   /* add user code begin USART3_IRQ 1 */
@@ -519,6 +533,7 @@ void TMR1_BRK_TMR9_IRQHandler(void)
  */
 void TMR4_GLOBAL_IRQHandler(void)
 {
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_hall_port_sample_t hall_port_sample;
   if (tmr_interrupt_flag_get(MOTOR_HALL_CAPTURE_TIMER, TMR_OVF_FLAG) != RESET)
   {
@@ -531,6 +546,7 @@ void TMR4_GLOBAL_IRQHandler(void)
     tmr_flag_clear(MOTOR_HALL_CAPTURE_TIMER, TMR_C1_FLAG);
     hall_edge_dispatch(&hall_port_sample);
   }
+#endif
 }
 
 /* add user code end 1 */

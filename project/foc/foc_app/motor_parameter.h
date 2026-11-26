@@ -52,6 +52,7 @@ typedef enum
   MOTOR_PARAMETER_FIELD_SPEED_KP_Q20,
   MOTOR_PARAMETER_FIELD_SPEED_KI_Q20,
   MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16,
+  MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16,
   MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US,
   MOTOR_PARAMETER_FIELD_FLUX_LINKAGE_UWB,
   MOTOR_PARAMETER_FIELD_SPEED_MAXIMUM_RPM,
@@ -78,6 +79,7 @@ typedef struct
   int32_t speed_kp_q20;
   int32_t speed_ki_q20;
   uint16_t hall_rotor_offset_u16;
+  uint16_t encoder_offset_u16;    /**< 编码器零位与d轴对齐偏移，U16一周制，编码器模式使用。 */
   uint8_t hall_positive_next[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint16_t hall_entry_angle_u16[MOTOR_PARAMETER_HALL_STATE_COUNT];
   uint32_t flux_linkage_uwb;

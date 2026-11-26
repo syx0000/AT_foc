@@ -489,6 +489,11 @@
               <FileType>1</FileType>
               <FilePath>..\bsp\motor_uart_port.c</FilePath>
             </File>
+            <File>
+              <FileName>encoder_rs485.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\bsp\encoder_rs485.c</FilePath>
+            </File>
           </Files>
         </Group>
         <Group>

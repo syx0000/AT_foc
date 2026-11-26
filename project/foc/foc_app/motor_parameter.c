@@ -112,6 +112,7 @@ void motor_parameter_defaults_build(motor_parameter_t *parameter)
   parameter->speed_current_limit_ma =
     (uint32_t)MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA;
   parameter->hall_rotor_offset_u16 = MOTOR_HALL_ROTOR_ANGLE_OFFSET_U16;
+  parameter->encoder_offset_u16 = 0U;  /* 对齐标定后通过 CLI 写入 */
   (void)memcpy(parameter->hall_positive_next, hall_positive_next,
                sizeof(hall_positive_next));
   (void)memcpy(parameter->hall_entry_angle_u16, hall_entry_angle_u16,
@@ -357,6 +358,10 @@ bool motor_parameter_candidate_field_set(motor_parameter_field_t field,
       if ((value < 0) || (value > 65535)) return false;
       updated.hall_rotor_offset_u16 = (uint16_t)value;
       break;
+    case MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16:
+      if ((value < 0) || (value > 65535)) return false;
+      updated.encoder_offset_u16 = (uint16_t)value;
+      break;
     case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
       if ((value < 0) || (value > MOTOR_PARAMETER_HALL_DELAY_US_MAX))
         return false;
@@ -438,6 +443,9 @@ bool motor_parameter_field_value_read(const motor_parameter_t *parameter,
       break;
     case MOTOR_PARAMETER_FIELD_HALL_ROTOR_OFFSET_U16:
       *value = parameter->hall_rotor_offset_u16;
+      break;
+    case MOTOR_PARAMETER_FIELD_ENCODER_OFFSET_U16:
+      *value = parameter->encoder_offset_u16;
       break;
     case MOTOR_PARAMETER_FIELD_HALL_DELAY_COMPENSATION_US:
       *value = parameter->hall_delay_compensation_us;

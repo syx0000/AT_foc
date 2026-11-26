@@ -49,9 +49,13 @@
 #include "motor_current_sample.h"
 #include "motor_slow_sensor.h"
 #include "motor_open_loop.h"
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
 #include "motor_hall_port.h"
 #include "motor_hall_decoder.h"
 #include "motor_hall_angle_estimator.h"
+#elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+#include "encoder_rs485.h"
+#endif
 #include "motor_rotor_feedback.h"
 #include "motor_speed_feedback.h"
 #include "motor_speed_control.h"
@@ -131,9 +135,13 @@ static bool motor_driver_prepare_for_calibration(void)
 int main(void)
 {
   /* add user code begin 1 */
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_parameter_t motor_parameter;
+#endif
   motor_parameter_storage_status_t parameter_storage;
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_hall_port_sample_t hall_port_sample;
+#endif
 
   /* add user code end 1 */
 
@@ -164,7 +172,9 @@ int main(void)
   motor_current_sample_init();
   motor_slow_sensor_init();
   motor_open_loop_init();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_hall_angle_estimator_init();
+#endif
   motor_rotor_feedback_init();
   motor_speed_feedback_init();
   motor_speed_control_init();
@@ -256,6 +266,7 @@ int main(void)
                         DMA1_CHANNEL5_BUFFER_SIZE);
   dma_channel_enable(DMA1_CHANNEL5, TRUE);
 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_hall_port_init();
   (void)motor_parameter_active_read(&motor_parameter);
   (void)motor_hall_port_sample_read(&hall_port_sample);
@@ -266,6 +277,10 @@ int main(void)
   {
     LOGE("Hall decoder init failed\r\n");
   }
+#elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  encoder_rs485_init();
+  LOGI("Encoder RS485: init OK\r\n");
+#endif
 
   /* add user code begin 2 */
   motor_uart_port_init();

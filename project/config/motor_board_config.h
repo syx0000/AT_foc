@@ -60,4 +60,26 @@
 #define MOTOR_PWM_BREAK_PIN                 GPIO_PINS_12
 #define MOTOR_PWM_BREAK_ACTIVE_LOW          1U
 
+/* -----------------------------------------------------------------------
+ * 位置传感器选择：只能启用其中一个
+ *   MOTOR_POS_SENSOR_HALL    — 使用 Hall 传感器（TMR4 XOR 捕获）
+ *   MOTOR_POS_SENSOR_ENCODER — 使用 RS485 绝对值编码器（USART3）
+ * --------------------------------------------------------------------- */
+#define MOTOR_POS_SENSOR_HALL       0
+#define MOTOR_POS_SENSOR_ENCODER    1
+
+/* 在此处切换：改为 MOTOR_POS_SENSOR_HALL 或 MOTOR_POS_SENSOR_ENCODER */
+#define MOTOR_POS_SENSOR_TYPE       MOTOR_POS_SENSOR_ENCODER
+
+#if (MOTOR_POS_SENSOR_TYPE != MOTOR_POS_SENSOR_HALL) && \
+    (MOTOR_POS_SENSOR_TYPE != MOTOR_POS_SENSOR_ENCODER)
+#error "MOTOR_POS_SENSOR_TYPE must be MOTOR_POS_SENSOR_HALL or MOTOR_POS_SENSOR_ENCODER"
+#endif
+
+/* 编码器计数方向相对物理电角度（PWM相序）是否相反。
+ * 实测：物理电频率为负（开环逻辑+10 Hz、direction_inverted=1）时编码器读数递增，
+ * 故取1。取反在驱动层完成，下游角度、速度、零位对齐均使用取反后的位置。
+ * 与逻辑方向参数direction_inverted相互独立，修改相序或换编码器安装方向后需重新确认。 */
+#define MOTOR_ENCODER_DIRECTION_INVERTED   1U
+
 #endif /* MOTOR_BOARD_CONFIG_H */
