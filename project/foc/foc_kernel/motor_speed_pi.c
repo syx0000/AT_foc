@@ -9,6 +9,8 @@
 #include <stddef.h>
 #include "motor_speed_pi.h"
 
+#define MOTOR_SPEED_PI_Q20_SCALE INT64_C(1048576)
+
 /**
  * @brief 将64位有符号数限制在对称电流范围内。
  * @param value 待限幅数值。
@@ -123,4 +125,50 @@ int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
     proportional_ma + controller->integral_ma,
     controller->output_limit_ma);
   return controller->output_ma;
+}
+
+static void motor_speed_pi_integral_set(motor_speed_pi_t *controller, int64_t integral)
+{
+  const int64_t minimum = (int64_t)INT32_MIN * MOTOR_SPEED_PI_Q20_SCALE;
+  const int64_t maximum = (int64_t)INT32_MAX * MOTOR_SPEED_PI_Q20_SCALE;
+  if (integral < minimum) integral = minimum;
+  if (integral > maximum) integral = maximum;
+  controller->integral_ma = (int32_t)(integral >> 20);
+  controller->integral_remainder_q20 = (int32_t)(
+    integral - (int64_t)controller->integral_ma * MOTOR_SPEED_PI_Q20_SCALE);
+}
+
+int32_t motor_speed_pi_step_raw(motor_speed_pi_t *controller, int32_t reference_millirpm,
+  int32_t feedback_millirpm, uint32_t rate_ratio, bool inhibit_integral)
+{
+  if (controller == NULL || rate_ratio == 0U) return 0;
+
+  int64_t error = (int64_t)reference_millirpm - feedback_millirpm;
+  if (error > INT32_MAX) error = INT32_MAX;
+  if (error < INT32_MIN) error = INT32_MIN;
+  if (!inhibit_integral)
+  {
+    motor_speed_pi_integral_set(controller,
+      (int64_t)controller->integral_ma * MOTOR_SPEED_PI_Q20_SCALE +
+      controller->integral_remainder_q20 + error * controller->integral_gain_q20 / rate_ratio);
+  }
+  const int64_t raw = ((error * controller->proportional_gain_q20) >> 20) +
+                      controller->integral_ma;
+  if (raw > INT32_MAX) return INT32_MAX;
+  if (raw < INT32_MIN) return INT32_MIN;
+  return (int32_t)raw;
+}
+
+void motor_speed_pi_back_calculate(motor_speed_pi_t *controller, int64_t requested_ma,
+  int32_t applied_ma, uint16_t gain_q15, uint16_t deadband_ma)
+{
+  if (controller == NULL) return;
+  controller->output_ma = applied_ma;
+  const int64_t residual = (int64_t)applied_ma - requested_ma;
+  if (residual < -(int64_t)deadband_ma || residual > deadband_ma)
+  {
+    motor_speed_pi_integral_set(controller,
+      (int64_t)controller->integral_ma * MOTOR_SPEED_PI_Q20_SCALE +
+      controller->integral_remainder_q20 + residual * gain_q15 * 32);
+  }
 }

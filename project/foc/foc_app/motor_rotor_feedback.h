@@ -44,18 +44,19 @@ typedef struct
 void motor_rotor_feedback_init(void);
 
 /**
- * @brief 1 kHz 累加转子电角度得到连续单圈机械角。
+ * @brief 更新速度反馈。Hall 模式同时累加连续单圈机械角。
  * @param 无。
  * @return 无。
  * @details 每毫秒采样一次估算电角度，按极对数换算并累加到 U16 机械角；反馈失效或
  *          override 生效时冻结追踪起点，恢复后再重新起算，mechanical_angle_u16
  *          在失效期间保持最后有效值。
- * @note 仅供 SysTick 1 kHz 中断调用，且必须在 motor_hall_angle_estimator 更新之后。
+ * @note Hall 使用 SysTick，RS485 使用 ADC 快环分频。
  */
-void motor_rotor_feedback_process_1khz(void);
+void motor_rotor_feedback_process_speed(void);
 
 /* Update the phase advance from consecutive encoder frames in the ADC ISR. */
 void motor_rotor_feedback_process_fast(void);
+bool motor_rotor_feedback_encoder_fast_speed_read(int32_t *speed_millirpm);
 
 /* Electrical speed from the same ADC cycle, for use in the FOC fast loop. */
 int64_t motor_rotor_feedback_foc_omega_mrad_s(void);
@@ -65,7 +66,7 @@ int64_t motor_rotor_feedback_foc_omega_mrad_s(void);
  * @param feedback 输出电角度、机械速度、方向、时效和反馈源，不允许为空。
  * @return 参数有效且底层反馈快照可读取时返回true；不代表feedback->valid一定为true。
  * @details 当前Hall适配器保持原Hall角度和测速行为；单圈机械角由
- *          motor_rotor_feedback_process_1khz 通过累加电角度增量得到，因此
+ *          motor_rotor_feedback_process_speed 通过累加电角度增量得到，因此
  *          mechanical_angle_valid 反映累加器是否已建立追踪起点；上电或反馈失效
  *          期间可能为 false，但一旦建立便保持连续。后续 SPI 编码器实现应保持
  *          相同输出语义。

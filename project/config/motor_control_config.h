@@ -89,6 +89,15 @@
 
 /* 速度外环固定以1 kHz执行；PI输出为现有电流环的Iq指令。 */
 #define MOTOR_SPEED_LOOP_FREQUENCY_HZ                1000U
+#define MOTOR_SPEED_PI_TUNING_BANDWIDTH_HZ              10U
+#define MOTOR_SPEED_PI_TUNING_ZERO_RATIO                 8U
+#define MOTOR_SPEED_ENCODER_DIVIDER                     4U
+#define MOTOR_SPEED_PI_TRACKING_GAIN_Q15               819U
+#define MOTOR_SPEED_PI_TRACKING_DEADBAND_MA              4U
+#define MOTOR_SPEED_ACCEL_FF_GAIN_Q15                  3277U
+#define MOTOR_SPEED_ACCEL_FF_GAIN_STEP_Q15                4U
+#define MOTOR_SPEED_ACCEL_FF_FILTER_Q15                4763U
+#define MOTOR_SPEED_ACCEL_FF_LIMIT_MA (MOTOR_CURRENT_COMMAND_MAX_MA / 5L)
 /* 静止即以Iq=0启动电流环(Hall扇区角)，速度PI全程直接输出Iq。
  * 默认增益采用已确认的4800/64。 */
 #define MOTOR_SPEED_PI_KP_Q20                         4800L
@@ -97,6 +106,7 @@
 #define MOTOR_SPEED_STALL_SPEED_RPM                     30U
 #define MOTOR_SPEED_STALL_TIME_MS                     1000U
 #define MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA         60000L
+#define MOTOR_SPEED_PI_CORRECTION_LIMIT_MA ((MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA * 8L) / 23L)
 #define MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA       60000L
 #if (MOTOR_SPEED_CONTROL_DEFAULT_CURRENT_MA > MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA)
 #error "default speed current exceeds configurable limit"

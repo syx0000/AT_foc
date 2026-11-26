@@ -383,6 +383,7 @@ int main(void)
     (void)motor_slow_sensor_process();
     motor_cli_poll();
     motor_control_poll();
+    motor_commissioning_poll();
     motor_can_task();
 
     /* add user code end 3 */

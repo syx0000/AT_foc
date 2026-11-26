@@ -281,7 +281,7 @@ bool motor_parameter_validate(const motor_parameter_t *parameter)
     (parameter->speed_current_limit_ma <=
      (uint32_t)MOTOR_SPEED_CONTROL_CURRENT_LIMIT_MA) &&
 #define DEBUG_VALID(id, name, def, low, high) \
-    (parameter->name >= low) && (parameter->name <= high) &&
+    ((parameter->name - (uint32_t)(low)) <= (uint32_t)((high) - (low))) &&
     MOTOR_PARAMETER_DEBUG_FIELDS(DEBUG_VALID)
 #undef DEBUG_VALID
     (parameter->startup_timeout_ms > parameter->startup_align_ms) &&

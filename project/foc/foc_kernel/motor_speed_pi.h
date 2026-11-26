@@ -65,4 +65,11 @@ int32_t motor_speed_pi_process(motor_speed_pi_t *controller,
                                int32_t reference_millirpm,
                                int32_t feedback_millirpm);
 
+/* Raw PI step using the stored 1 ms Ki at a divided sample interval. */
+int32_t motor_speed_pi_step_raw(motor_speed_pi_t *controller, int32_t reference_millirpm,
+  int32_t feedback_millirpm, uint32_t rate_ratio, bool inhibit_integral);
+
+void motor_speed_pi_back_calculate(motor_speed_pi_t *controller, int64_t requested_ma,
+  int32_t applied_ma, uint16_t gain_q15, uint16_t deadband_ma);
+
 #endif /* MOTOR_SPEED_PI_H */

@@ -36,7 +36,8 @@
   X(STALL_TIME_MS, stall_time_ms, (MOTOR_SPEED_STALL_TIME_MS), 100U, 10000U) \
   X(CAN_NODE_ID, can_node_id, (MOTOR_CAN_NODE_ID), 1U, 127U) \
   X(SPEED_DECELERATION_RPM_PER_S, speed_deceleration_rpm_per_s, (30000U), 1U, 1000000U) \
-  X(SPEED_STARTUP_IQ_SLEW_MA_S, speed_startup_iq_slew_ma_s, (200000U), 1000U, 1000000U)
+  X(SPEED_STARTUP_IQ_SLEW_MA_S, speed_startup_iq_slew_ma_s, (200000U), 1000U, 1000000U) \
+  X(SPEED_INERTIA_NKG_M2, speed_inertia_nkg_m2, 0U, 0U, INT32_MAX)
 
 typedef enum
 {

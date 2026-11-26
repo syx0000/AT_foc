@@ -29,6 +29,7 @@ static uint32_t motor_current_control_bus_mv;
 static int32_t motor_current_control_voltage_limit_mv;
 static uint32_t motor_current_control_sample_settle_cycles;
 static uint32_t motor_current_control_hall_invalid_cycles;
+static uint8_t motor_current_control_voltage_block;
 static int32_t motor_current_control_start_direct_mv;
 static int32_t motor_current_control_start_quadrature_mv;
 
@@ -75,6 +76,12 @@ static void motor_current_control_bus_voltage_update(void)
   }
   motor_current_control_bus_mv = bus_mv;
   motor_current_control_voltage_limit_mv = voltage_limit_mv;
+}
+
+int32_t motor_current_control_available_iq(int32_t direct_reference_ma)
+{
+  return motor_vector_axis_headroom(direct_reference_ma,
+    motor_current_control_config.command_limit_ma);
 }
 
 static bool motor_current_control_command_valid(
@@ -232,6 +239,7 @@ static bool motor_current_control_prepare(
   const motor_current_control_voltage_t ff = motor_current_control_feedforward(&reference, seed_omega);
   (void)motor_current_pi_axis_output_seed(&motor_current_control_d_pi, motor_current_control_saturate_i32((int64_t)direct_seed_mv - ff.direct_mv));
   (void)motor_current_pi_axis_output_seed(&motor_current_control_q_pi, motor_current_control_saturate_i32((int64_t)quadrature_seed_mv - ff.quadrature_mv));
+  motor_current_control_voltage_block = 0U;
   motor_current_control_command = *command;
   /* The startup state machine reads the published command before the first
      settled ADC frame.  Publish the new seed command here so a restart cannot
@@ -261,6 +269,7 @@ void motor_current_control_init(void)
   motor_current_control_status.fault = MOTOR_CURRENT_CONTROL_FAULT_NONE;
   motor_current_control_status.sample_count = 0U;
   motor_current_control_hall_invalid_cycles = 0U;
+  motor_current_control_voltage_block = 0U;
 }
 
 bool motor_current_control_parameter_reload(void)
@@ -376,6 +385,13 @@ void motor_current_control_stop(void)
   if (primask == 0U) __enable_irq();
 }
 
+uint8_t motor_current_control_voltage_block_take(void)
+{
+  const uint8_t block = motor_current_control_voltage_block;
+  motor_current_control_voltage_block = 0U;
+  return block;
+}
+
 void motor_current_control_fast_process(void)
 {
   motor_current_sample_state_t current;
@@ -462,8 +478,18 @@ void motor_current_control_fast_process(void)
       motor_current_pi_axis_back_calculate(&motor_current_control_d_pi,
         applied.direct_mv - request_d, MOTOR_CURRENT_CONTROL_TRACKING_GAIN_Q15,
         MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV);
+      const int64_t q_residual = applied.quadrature_mv - request_q;
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+      if (limited)
+      {
+        if (q_residual < -(int64_t)MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV)
+          motor_current_control_voltage_block |= MOTOR_CURRENT_VOLTAGE_BLOCK_POSITIVE;
+        else if (q_residual > MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV)
+          motor_current_control_voltage_block |= MOTOR_CURRENT_VOLTAGE_BLOCK_NEGATIVE;
+      }
+#endif
       motor_current_pi_axis_back_calculate(&motor_current_control_q_pi,
-        applied.quadrature_mv - request_q, MOTOR_CURRENT_CONTROL_TRACKING_GAIN_Q15,
+        q_residual, MOTOR_CURRENT_CONTROL_TRACKING_GAIN_Q15,
         MOTOR_CURRENT_CONTROL_TRACKING_DEADBAND_MV);
       motor_current_control_status.direct_i_mv = motor_current_control_d_pi.integral_mv;
       motor_current_control_status.quadrature_i_mv = motor_current_control_q_pi.integral_mv;

@@ -33,6 +33,7 @@
 #include "motor_current_sample.h"
 #include "motor_pwm_port.h"
 #include "motor_board_config.h"
+#include "motor_control_config.h"
 #include "motor_open_loop.h"
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
 #include "motor_hall_port.h"
@@ -264,9 +265,12 @@ void SysTick_Handler(void)
 {
   /* add user code begin SysTick_IRQ 0 */
   motor_current_startup_process_1khz();
-  motor_rotor_feedback_process_1khz();
-  motor_speed_feedback_process_1khz();
-  motor_speed_control_process_1khz();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
+  motor_rotor_feedback_process_speed();
+  motor_speed_feedback_process();
+  motor_speed_control_process();
+#endif
+  motor_speed_feedback_display_process_1khz();
   motor_can_tick();
 
   /* add user code end SysTick_IRQ 0 */
@@ -343,11 +347,22 @@ void ADC1_2_IRQHandler(void)
 #elif (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
     encoder_rs485_collect();
     motor_rotor_feedback_process_fast();
+    static uint8_t speed_divider;
+    if (++speed_divider == MOTOR_SPEED_ENCODER_DIVIDER)
+    {
+      speed_divider = 0U;
+      motor_rotor_feedback_process_speed();
+      motor_speed_feedback_process();
+      motor_speed_control_process();
+    }
 #endif
     motor_current_startup_fast_process();
     motor_current_transform_fast_process();
     motor_inductance_identification_fast_process();
     motor_current_control_fast_process();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+    motor_commissioning_inertia_fast_process();
+#endif
     motor_trace_fast_sample();
     /* add user code end ADC1_ADC_PCCE_FLAG */ 
   }

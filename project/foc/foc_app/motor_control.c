@@ -401,7 +401,7 @@ static bool motor_control_speed_control_start_now(int32_t target_speed_rpm)
     }
     startup_primask = __get_PRIMASK();
     __disable_irq();
-    motor_speed_feedback_process_1khz();
+    motor_speed_feedback_process();
     __set_PRIMASK(startup_primask);
     startup_primask = __get_PRIMASK();
     __disable_irq();

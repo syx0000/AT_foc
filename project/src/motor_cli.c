@@ -256,15 +256,16 @@ static bool motor_cli_direction_set(bool inverted)
  */
 static bool motor_cli_parameter_runtime_reload(void)
 {
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_HALL)
   motor_parameter_t parameter;
   motor_hall_port_sample_t hall;
 
-  return motor_parameter_active_read(&parameter) &&
-    motor_hall_port_sample_read(&hall) &&
-    motor_hall_decoder_init(parameter.hall_positive_next, system_core_clock,
-                            hall.state, hall.timestamp_cycles) &&
-     motor_current_control_parameter_reload() &&
-     motor_speed_control_parameter_reload();
+  if (!motor_parameter_active_read(&parameter) || !motor_hall_port_sample_read(&hall) ||
+      !motor_hall_decoder_init(parameter.hall_positive_next, system_core_clock,
+                              hall.state, hall.timestamp_cycles))
+    return false;
+#endif
+  return motor_current_control_parameter_reload() && motor_speed_control_parameter_reload();
 }
 
 /**
@@ -281,8 +282,11 @@ static void motor_cli_commissioning_execute(motor_commissioning_task_t task)
 
   if (motor_commissioning_run(task))
   {
-    printf("OK commissioning complete task=%u, review diff then accept/discard\r\n",
-           (unsigned int)task);
+    if (task == MOTOR_COMMISSIONING_TASK_INERTIA)
+      printf("OK commissioning inertia started\r\n");
+    else
+      printf("OK commissioning complete task=%u, review diff then accept/discard\r\n",
+             (unsigned int)task);
     return;
   }
 
@@ -548,6 +552,19 @@ static void motor_cli_command_execute(char *line)
   int32_t logical_current_feedback_ma;
   int32_t logical_current_reference_ma;
 
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  if (motor_commissioning_status_read(&commissioning) &&
+      commissioning.state == MOTOR_COMMISSIONING_RUNNING &&
+      commissioning.task == MOTOR_COMMISSIONING_TASK_INERTIA &&
+      strcmp(line, "status") != 0 && strcmp(line, "fault") != 0 &&
+      strcmp(line, "motor commissioning abort") != 0 &&
+      strcmp(line, "motor stop") != 0 && strcmp(line, "current stop") != 0 &&
+      strcmp(line, "speed stop") != 0 && strcmp(line, "open stop") != 0)
+  {
+    printf("ERR inertia_running\r\n");
+    return;
+  }
+#endif
   if (strcmp(line, "help") == 0)
   {
     printf("OK commands:\r\n");
@@ -565,7 +582,7 @@ static void motor_cli_command_execute(char *line)
     printf("  motor commissioning status|abort|diff|accept|discard|save\r\n");
     printf("  calibrate current_offset\r\n");
     printf("  calibrate hall sequence|angle|offset\r\n");
-    printf("  identify resistance|inductance|flux | calculate current_pi\r\n");
+    printf("  identify resistance|inductance|flux|inertia | calculate current_pi|speed_pi\r\n");
   }
   else if (strcmp(line, "version") == 0)
   {
@@ -703,7 +720,7 @@ static void motor_cli_command_execute(char *line)
     (void)motor_direction_transform_s32(
       current_control.command.quadrature_reference_ma,
       motor_parameter_direction_inverted_get(), &logical_current_reference_ma);
-    printf("OK motor=%u motor_fault=%s(%u) direction=%s startup=%u/%u edges=%u open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu\r\n",
+    printf("OK motor=%u motor_fault=%s(%u) direction=%s startup=%u/%u edges=%u open=%u freq_mhz=%ld/%ld speed_rpm=%ld/%ld speed_valid=%u speed_ctrl=%u/%u logical_iq_cmd=%ld current=%u fault=%u id=%ld/%ld iq=%ld/%ld uart_drop=%lu speed_ff_ma=%ld\r\n",
       (unsigned int)motor.state,
       motor_control_fault_name_get(motor.fault_code),
       (unsigned int)motor.fault_code,
@@ -726,7 +743,8 @@ static void motor_cli_command_execute(char *line)
       (long)current_control.command.direct_reference_ma,
       (long)logical_current_feedback_ma,
       (long)logical_current_reference_ma,
-      (unsigned long)motor_uart_port_overflow_count_get());
+      (unsigned long)motor_uart_port_overflow_count_get(),
+      (long)speed_control.acceleration_feedforward_ma);
   }
   else if (strcmp(line, "motor stop") == 0)
   {
@@ -839,6 +857,16 @@ static void motor_cli_command_execute(char *line)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_FLUX);
   }
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  else if (strcmp(line, "identify inertia") == 0)
+  {
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_INERTIA);
+  }
+#endif
+  else if (strcmp(line, "calculate speed_pi") == 0)
+  {
+    motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_SPEED_PI);
+  }
   else if (strcmp(line, "calculate current_pi") == 0)
   {
     motor_cli_commissioning_execute(MOTOR_COMMISSIONING_TASK_CURRENT_PI);
@@ -851,7 +879,7 @@ static void motor_cli_command_execute(char *line)
       if (motor_cli_parameter_runtime_reload())
         printf("OK candidate applied to runtime parameter manager\r\n");
       else
-        printf("ERR candidate_applied_but_hall_decoder_reload_failed\r\n");
+        printf("ERR candidate_applied_but_runtime_reload_failed\r\n");
     }
     else
       printf("ERR 12 accept_requires_ready_pwm_off_and_valid_candidate\r\n");

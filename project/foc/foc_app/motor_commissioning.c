@@ -9,6 +9,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "at32f45x.h"
+#include "inertia_identification.h"
 #include "motor_board_config.h"
 #include "motor_commissioning.h"
 #include "motor_control.h"
@@ -199,6 +200,8 @@ const char *motor_commissioning_error_name_get(
     case MOTOR_COMMISSIONING_ERROR_CURRENT_Q: return "current_q";
     case MOTOR_COMMISSIONING_ERROR_PARAMETER: return "parameter";
     case MOTOR_COMMISSIONING_ERROR_FLUX: return "flux";
+    case MOTOR_COMMISSIONING_ERROR_INERTIA: return "inertia";
+    case MOTOR_COMMISSIONING_ERROR_SPEED_PI: return "speed_pi";
     default: return "unknown";
   }
 }
@@ -208,6 +211,22 @@ const char *motor_commissioning_error_detail_name_get(
 {
   if (error == MOTOR_COMMISSIONING_ERROR_NONE) return "none";
   if (error == MOTOR_COMMISSIONING_ERROR_ABORTED) return "requested";
+  if (error == MOTOR_COMMISSIONING_ERROR_SPEED_PI)
+    return detail == 1U ? "model_missing" : "gain_out_of_range";
+  if (error == MOTOR_COMMISSIONING_ERROR_INERTIA)
+  {
+    switch ((inertia_identification_status_t)detail)
+    {
+      case INERTIA_IDENT_CANCELLED: return "cancelled";
+      case INERTIA_IDENT_TIMEOUT: return "timeout";
+      case INERTIA_IDENT_FEEDBACK: return "feedback_or_not_still";
+      case INERTIA_IDENT_OVERCURRENT: return "overcurrent";
+      case INERTIA_IDENT_OUTPUT_ERROR: return "control_output_failed";
+      case INERTIA_IDENT_INVALID_RESULT: return "measurement_rejected";
+      case INERTIA_IDENT_OVERSPEED: return "overspeed";
+      default: return "unknown";
+    }
+  }
   if (error == MOTOR_COMMISSIONING_ERROR_CURRENT_OFFSET)
     return (detail == 1U) ? "calibration_failed" :
            ((detail == 2U) ? "offset_apply_failed" : "unknown");
@@ -949,6 +968,197 @@ static bool commissioning_hall_run(void)
   return true;
 }
 
+static bool commissioning_speed_pi_run(void)
+{
+  motor_parameter_t candidate;
+  if (!motor_parameter_candidate_read(&candidate) ||
+      candidate.speed_inertia_nkg_m2 == 0U || candidate.flux_linkage_uwb == 0U ||
+      candidate.pole_pairs == 0U)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_SPEED_PI, 1U);
+    return false;
+  }
+
+  const double two_pi = 6.283185307179586;
+  const double inertia = candidate.speed_inertia_nkg_m2 / 1000000000.0;
+  const double torque_constant = 1.5 * candidate.pole_pairs *
+    (candidate.flux_linkage_uwb / 1000000.0);
+  const double omega = two_pi * MOTOR_SPEED_PI_TUNING_BANDWIDTH_HZ;
+  const double kp_q20 = inertia * omega / torque_constant * (two_pi / 60.0) * 1048576.0;
+  /* Flash Ki keeps the 1 ms parameter convention; the ADC speed loop scales it. */
+  const double ki_q20 = kp_q20 * omega /
+    (MOTOR_SPEED_PI_TUNING_ZERO_RATIO * MOTOR_SPEED_LOOP_FREQUENCY_HZ);
+  if (!(kp_q20 >= 0.5 && kp_q20 <= INT32_MAX - 0.5 &&
+        ki_q20 >= 0.5 && ki_q20 <= INT32_MAX - 0.5))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_SPEED_PI, 2U);
+    return false;
+  }
+
+  candidate.speed_kp_q20 = (int32_t)(kp_q20 + 0.5);
+  candidate.speed_ki_q20 = (int32_t)(ki_q20 + 0.5);
+  if (!motor_parameter_candidate_set(&candidate))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U);
+    return false;
+  }
+  LOGI("Commissioning speed PI: PASS kp_q20=%ld ki_q20=%ld bandwidth_hz=%u candidate=1\r\n",
+    (long)candidate.speed_kp_q20, (long)candidate.speed_ki_q20,
+    (unsigned int)MOTOR_SPEED_PI_TUNING_BANDWIDTH_HZ);
+  return true;
+}
+
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+#define COMMISSIONING_INERTIA_MAX_MS 60000U
+#define COMMISSIONING_INERTIA_SAMPLES_PER_MS (MOTOR_PWM_FREQUENCY_HZ / 1000U)
+#define COMMISSIONING_INERTIA_CURRENT_MAX_MA 2400L
+#define COMMISSIONING_INERTIA_STOP_MRPM 30000L
+
+static inertia_identification_t commissioning_inertia;
+static volatile bool commissioning_inertia_active;
+static volatile uint32_t commissioning_inertia_last_tick_cycles;
+static uint32_t commissioning_inertia_current_count;
+static int32_t commissioning_inertia_iq_ma;
+
+static void commissioning_inertia_end(inertia_identification_status_t status)
+{
+  commissioning_inertia.capture.status = status;
+  motor_current_control_stop();
+  commissioning_inertia_active = false;
+}
+
+void motor_commissioning_inertia_fast_process(void)
+{
+  if (!commissioning_inertia_active) return;
+
+  motor_current_control_status_t current;
+  if (commissioning_abort_requested || !motor_pwm_port_fault_check() ||
+      !motor_pwm_port_output_is_enabled() || !motor_current_control_status_read(&current) ||
+      current.state != MOTOR_CURRENT_CONTROL_RUNNING)
+  {
+    commissioning_inertia_end(commissioning_abort_requested ?
+      INERTIA_IDENT_CANCELLED : INERTIA_IDENT_OUTPUT_ERROR);
+    return;
+  }
+
+  inertia_identification_sample_t sample = {0};
+  const bool fresh_speed = motor_rotor_feedback_encoder_fast_speed_read(&sample.speed_mrpm);
+  sample.id_ma = current.direct_feedback_ma;
+  sample.iq_ma = current.quadrature_feedback_ma;
+  sample.valid = fresh_speed && current.sample_count != commissioning_inertia_current_count &&
+                 !current.voltage_limited;
+  commissioning_inertia_current_count = current.sample_count;
+  commissioning_inertia_last_tick_cycles = motor_timebase_cycles_get();
+
+  inertia_identification_tick(&commissioning_inertia, &sample);
+  if (commissioning_inertia.capture.status != INERTIA_IDENT_RUNNING)
+  {
+    commissioning_inertia_end(commissioning_inertia.capture.status);
+    return;
+  }
+
+  const int32_t target_ma = inertia_identification_target(&commissioning_inertia);
+  if (target_ma != commissioning_inertia_iq_ma)
+  {
+    const motor_current_control_command_t command = {0, target_ma};
+    if (!motor_current_control_command_set(&command))
+    {
+      commissioning_inertia_end(INERTIA_IDENT_OUTPUT_ERROR);
+      return;
+    }
+    commissioning_inertia_iq_ma = target_ma;
+  }
+}
+
+static bool commissioning_inertia_start(void)
+{
+  motor_parameter_t parameter;
+  motor_rotor_feedback_t rotor;
+  const motor_current_control_command_t zero_current = {0, 0};
+  if (!motor_parameter_active_read(&parameter) ||
+      !motor_rotor_feedback_read(&rotor) || !rotor.valid || !rotor.speed_valid ||
+      rotor.mechanical_speed_millirpm > COMMISSIONING_INERTIA_STOP_MRPM ||
+      rotor.mechanical_speed_millirpm < -COMMISSIONING_INERTIA_STOP_MRPM)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_INERTIA, INERTIA_IDENT_FEEDBACK);
+    return false;
+  }
+
+  const inertia_identification_config_t capture_config = {
+    .confirmed = true,
+    .sample_rate_hz = MOTOR_PWM_FREQUENCY_HZ,
+    .block_samples = COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .start_samples = 50U * COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .coast_settle_samples = 2U * COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .stop_hold_samples = 100U * COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .timeout_samples = 5000U * COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .total_samples = COMMISSIONING_INERTIA_MAX_MS * COMMISSIONING_INERTIA_SAMPLES_PER_MS,
+    .cycles = 10U,
+    .warmup_cycles = 2U,
+    .iq_step_ma = 1000L,
+    .speed_low_mrpm = 100000L,
+    .speed_high_mrpm = 600000L,
+    .speed_turn_mrpm = 700000L,
+    .maximum_speed_mrpm = 1000000L,
+    .stop_speed_mrpm = COMMISSIONING_INERTIA_STOP_MRPM,
+    .maximum_current_ma = COMMISSIONING_INERTIA_CURRENT_MAX_MA,
+    .pole_pairs = parameter.pole_pairs,
+    .maximum_error_percent = 30U,
+    .maximum_reject_percent = 20U
+  };
+  if (!inertia_identification_init(&commissioning_inertia, &capture_config) ||
+      !inertia_identification_start(&commissioning_inertia, parameter.flux_linkage_uwb,
+        parameter.direct_inductance_uh * 1000U, parameter.quadrature_inductance_uh * 1000U, false) ||
+      !motor_control_current_control_start(&zero_current))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_INERTIA, INERTIA_IDENT_OUTPUT_ERROR);
+    return false;
+  }
+
+  commissioning_inertia_last_tick_cycles = motor_timebase_cycles_get();
+  commissioning_inertia_current_count = 0U;
+  commissioning_inertia_iq_ma = 0;
+  commissioning_inertia_active = true;
+  return true;
+}
+
+static bool commissioning_inertia_evaluate(void)
+{
+  motor_control_status_t motor;
+  (void)motor_control_status_read(&motor);
+  if (motor.state == MOTOR_CONTROL_STATE_FAULT || commissioning_abort_requested)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_INERTIA,
+      commissioning_abort_requested ? INERTIA_IDENT_CANCELLED : INERTIA_IDENT_OUTPUT_ERROR);
+    return false;
+  }
+
+  inertia_identification_result_t result;
+  inertia_identification_evaluate(&commissioning_inertia.config,
+    &commissioning_inertia.capture, &result);
+  if (result.status != INERTIA_IDENT_SUCCESS)
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_INERTIA, (uint32_t)result.status);
+    LOGE("Commissioning inertia: cycle=%lu phase=%lu\r\n",
+         (unsigned long)result.cycle, (unsigned long)result.phase);
+    return false;
+  }
+
+  const uint32_t inertia_nkg_m2 = (uint32_t)((double)result.inertia_kg_m2 * 1000000000.0 + 0.5);
+  if (!motor_parameter_candidate_field_set(MOTOR_PARAMETER_FIELD_SPEED_INERTIA_NKG_M2,
+                                           (int32_t)inertia_nkg_m2))
+  {
+    commissioning_error_set(MOTOR_COMMISSIONING_ERROR_PARAMETER, 1U);
+    return false;
+  }
+  LOGI("Commissioning inertia: PASS J_nkg_m2=%lu candidate=1\r\n",
+       (unsigned long)inertia_nkg_m2);
+  return true;
+}
+#endif
+
+static bool commissioning_finish(bool ok);
+
 bool motor_commissioning_run(motor_commissioning_task_t task)
 {
   bool ok=false;
@@ -970,12 +1180,25 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
     ok=commissioning_hall_offset_run(&q_result);
   }
   else if(task==MOTOR_COMMISSIONING_TASK_CURRENT_PI) ok=commissioning_pi_run();
+  else if(task==MOTOR_COMMISSIONING_TASK_SPEED_PI) ok=commissioning_speed_pi_run();
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  else if(task==MOTOR_COMMISSIONING_TASK_INERTIA)
+  {
+    if (commissioning_inertia_start()) return true;
+  }
+#endif
   else if(task==MOTOR_COMMISSIONING_TASK_FLUX)
   {
     ok=commissioning_offset_measurement_run(&q_result);
     if(ok) ok=commissioning_flux_result_print(&q_result);
     else commissioning_error_set(MOTOR_COMMISSIONING_ERROR_FLUX, 1U);
   }
+  return commissioning_finish(ok);
+}
+
+static bool commissioning_finish(bool ok)
+{
+  const motor_commissioning_task_t task = commissioning_status.task;
   motor_control_stop(); commissioning_hall_collecting=false;
   commissioning_status.run_count++;
   if(ok && !commissioning_abort_requested)
@@ -998,6 +1221,34 @@ bool motor_commissioning_run(motor_commissioning_task_t task)
                                                commissioning_status.error_detail),
     (unsigned long)commissioning_status.error_detail);
   return false;
+}
+
+void motor_commissioning_poll(void)
+{
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  if (commissioning_status.state != MOTOR_COMMISSIONING_RUNNING ||
+      commissioning_status.task != MOTOR_COMMISSIONING_TASK_INERTIA)
+    return;
+
+  const uint32_t timeout_cycles = system_core_clock / 200U;
+  if (commissioning_inertia_active &&
+      (commissioning_abort_requested ||
+       motor_timebase_cycles_elapsed(commissioning_inertia_last_tick_cycles) >= timeout_cycles))
+  {
+    const uint32_t primask = __get_PRIMASK();
+    __disable_irq();
+    if (commissioning_inertia_active &&
+        (commissioning_abort_requested ||
+         motor_timebase_cycles_elapsed(commissioning_inertia_last_tick_cycles) >= timeout_cycles))
+    {
+      commissioning_inertia_end(commissioning_abort_requested ?
+        INERTIA_IDENT_CANCELLED : INERTIA_IDENT_TIMEOUT);
+    }
+    __set_PRIMASK(primask);
+  }
+  if (!commissioning_inertia_active)
+    (void)commissioning_finish(commissioning_inertia_evaluate());
+#endif
 }
 
 bool motor_commissioning_abort(void)

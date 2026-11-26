@@ -26,7 +26,7 @@ static volatile motor_rotor_feedback_t motor_rotor_feedback_override;
 static volatile bool motor_rotor_feedback_override_enabled;
 
 #if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
-/* Speed-loop feedback published once per SysTick window. */
+/* Speed-loop feedback published once per control window. */
 static volatile struct {
   uint32_t last_cycles;
   int32_t speed_millirpm;
@@ -45,6 +45,8 @@ static uint16_t encoder_mechanical_zero_u16;
 static struct {
   uint32_t previous_position;
   int64_t electrical_counts_per_second;
+  int32_t mechanical_counts_per_second;
+  bool velocity_valid;
   uint16_t sample_advance_u16;
   uint16_t voltage_advance_u16;
   bool previous_valid;
@@ -77,6 +79,7 @@ void motor_rotor_feedback_init(void)
   encoder_mechanical_zero_u16 = 0U;
   enc_fast_phase.previous_valid = false;
   enc_fast_phase.electrical_counts_per_second = 0;
+  enc_fast_phase.velocity_valid = false;
   enc_fast_phase.sample_advance_u16 = 0U;
   enc_fast_phase.voltage_advance_u16 = 0U;
   enc_speed_window.velocity_sum = 0;
@@ -173,6 +176,7 @@ void motor_rotor_feedback_process_fast(void)
 
   (void)encoder_rs485_read_control(&enc);
   enc_fast_phase.electrical_counts_per_second = 0;
+  enc_fast_phase.velocity_valid = false;
   enc_fast_phase.sample_advance_u16 = 0U;
   enc_fast_phase.voltage_advance_u16 = 0U;
   if (enc.valid && enc_fast_phase.previous_valid)
@@ -181,6 +185,8 @@ void motor_rotor_feedback_process_fast(void)
        two mechanical counts correspond to one U16 angle unit. */
     const int32_t delta = encoder_position_delta(enc.abs_pos, enc_fast_phase.previous_position);
     const int32_t counts_per_second = delta * (int32_t)MOTOR_PWM_FREQUENCY_HZ;
+    enc_fast_phase.mechanical_counts_per_second = counts_per_second;
+    enc_fast_phase.velocity_valid = true;
     enc_speed_window.velocity_sum += counts_per_second;
     enc_speed_window.last_cycles = enc.timestamp_cycles;
     enc_speed_window.samples++;
@@ -199,6 +205,21 @@ void motor_rotor_feedback_process_fast(void)
   enc_fast_phase.previous_position = enc.abs_pos;
   enc_fast_phase.previous_valid = enc.valid;
 #endif
+}
+
+bool motor_rotor_feedback_encoder_fast_speed_read(int32_t *speed_millirpm)
+{
+#if (MOTOR_POS_SENSOR_TYPE == MOTOR_POS_SENSOR_ENCODER)
+  if (speed_millirpm != NULL && enc_fast_phase.velocity_valid)
+  {
+    *speed_millirpm = (int32_t)((int64_t)enc_fast_phase.mechanical_counts_per_second *
+                               60000 / ENC_SINGLE_MAX);
+    return true;
+  }
+#else
+  (void)speed_millirpm;
+#endif
+  return false;
 }
 
 int64_t motor_rotor_feedback_foc_omega_mrad_s(void)
@@ -372,7 +393,7 @@ bool motor_rotor_feedback_read(motor_rotor_feedback_t *feedback)
 #endif
 }
 
-void motor_rotor_feedback_process_1khz(void)
+void motor_rotor_feedback_process_speed(void)
 {
   uint32_t primask;
 

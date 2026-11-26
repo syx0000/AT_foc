@@ -640,6 +640,11 @@
               <FilePath>..\foc\foc_kernel\motor_current_pi_design.c</FilePath>
             </File>
             <File>
+              <FileName>inertia_identification.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>..\foc\foc_kernel\inertia_identification.c</FilePath>
+            </File>
+            <File>
               <FileName>motor_hall_offset_identification.c</FileName>
               <FileType>1</FileType>
               <FilePath>..\foc\foc_kernel\motor_hall_offset_identification.c</FilePath>

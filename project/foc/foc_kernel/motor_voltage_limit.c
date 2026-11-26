@@ -9,8 +9,8 @@
 #include <stddef.h>
 #include "motor_voltage_limit.h"
 
-/* Restoring integer square root. Round upward to keep the output inside the circle. */
-static uint64_t motor_voltage_magnitude_ceil(uint64_t square)
+/* Restoring integer square root rounded down. */
+static uint64_t motor_vector_sqrt_floor(uint64_t square)
 {
   uint64_t root = 0;
   uint64_t bit = UINT64_C(1) << 62;
@@ -29,7 +29,16 @@ static uint64_t motor_voltage_magnitude_ceil(uint64_t square)
     }
     bit >>= 2;
   }
-  return root + (square != 0);
+  return root;
+}
+
+int32_t motor_vector_axis_headroom(int32_t occupied, int32_t limit)
+{
+  if (limit <= 0 || occupied >= limit || occupied <= -limit) return 0;
+  if (occupied == 0) return limit;
+  const uint64_t remaining = (uint64_t)((int64_t)limit * limit -
+                                       (int64_t)occupied * occupied);
+  return (int32_t)motor_vector_sqrt_floor(remaining);
 }
 
 bool motor_voltage_limit_apply(int32_t *direct_mv,
@@ -50,7 +59,8 @@ bool motor_voltage_limit_apply(int32_t *direct_mv,
     return false;
   }
 
-  const int64_t magnitude = (int64_t)motor_voltage_magnitude_ceil(square);
+  const uint64_t floor = motor_vector_sqrt_floor(square);
+  const int64_t magnitude = (int64_t)(floor + (floor * floor < square));
   *direct_mv = (int32_t)(direct * limit_mv / magnitude);
   *quadrature_mv = (int32_t)(quadrature * limit_mv / magnitude);
   return true;

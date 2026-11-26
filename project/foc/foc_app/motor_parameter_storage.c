@@ -16,7 +16,7 @@
 #include "motor_pwm_port.h"
 
 #define MOTOR_PARAMETER_STORAGE_MAGIC          0x4D50524DU
-#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 8U
+#define MOTOR_PARAMETER_STORAGE_FORMAT_VERSION 9U
 /* v2不含速度上限/加速度，v3不含速度Iq限幅，v4不含新增调试参数；均为前缀。 */
 #define MOTOR_PARAMETER_STORAGE_V2_LENGTH  \
   offsetof(motor_parameter_t, speed_maximum_rpm)
@@ -103,9 +103,9 @@ static bool motor_parameter_storage_slot_read(
   {
     if (length != offsetof(motor_parameter_t, speed_startup_iq_slew_ma_s)) return false;
   }
-  else if (version == 7U)
+  else if (version == 7U || version == 8U)
   {
-    if (length != sizeof(motor_parameter_t)) return false;
+    if (length != offsetof(motor_parameter_t, speed_inertia_nkg_m2)) return false;
   }
   else return false;
   if ((record->magic != MOTOR_PARAMETER_STORAGE_MAGIC) ||
@@ -120,9 +120,15 @@ static bool motor_parameter_storage_slot_read(
   motor_parameter_defaults_build(&record->parameter);
   (void)memcpy(&record->parameter, &raw[header_length], length);
   /* v7 stored the encoder zero in mechanical-angle units in the same slot. */
-  record->parameter.encoder_electrical_zero_u16 = (version == 7U) ?
-    (uint16_t)((uint32_t)record->parameter.encoder_electrical_zero_u16 *
-               record->parameter.pole_pairs) : 0U;
+  if (version == 7U)
+  {
+    record->parameter.encoder_electrical_zero_u16 = (uint16_t)(
+      (uint32_t)record->parameter.encoder_electrical_zero_u16 * record->parameter.pole_pairs);
+  }
+  else if (version < 7U)
+  {
+    record->parameter.encoder_electrical_zero_u16 = 0U;
+  }
   record->format_version = MOTOR_PARAMETER_STORAGE_FORMAT_VERSION;
   record->length = sizeof(motor_parameter_t);
   record->commit_marker = MOTOR_PARAMETER_STORAGE_COMMIT_MARKER;

@@ -28,6 +28,17 @@ typedef enum
   MOTOR_CURRENT_CONTROL_FAULT_PWM
 } motor_current_control_fault_t;
 
+typedef enum
+{
+  MOTOR_CURRENT_VOLTAGE_BLOCK_POSITIVE = 1U,
+  MOTOR_CURRENT_VOLTAGE_BLOCK_NEGATIVE = 2U
+} motor_current_voltage_block_t;
+
+/* Consume physical-q voltage saturation directions accumulated since the last speed step. */
+uint8_t motor_current_control_voltage_block_take(void);
+
+int32_t motor_current_control_available_iq(int32_t direct_reference_ma);
+
 typedef struct
 {
   int32_t direct_kp_q15;

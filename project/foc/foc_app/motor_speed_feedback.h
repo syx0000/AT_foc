@@ -32,15 +32,16 @@ typedef struct
 void motor_speed_feedback_init(void);
 
 /**
- * @brief 执行一次1 kHz机械转速换算与低通滤波。
+ * @brief 更新供速度 PI 使用的机械转速。
  * @param 无。
  * @return 无。
  * @details 读取Hall物理电频率和方向，按活动极对数换算机械milli-rpm，再按逻辑方向配置变换符号；
  *          仅当Hall边沿产生新测速结果时更新IIR滤波，边沿之间保持最近结果；
  *          Hall无效、频率为0、方向未知或边沿超时时立即将反馈置为无效并归零。
- * @note 通常由1 kHz SysTick调用；启动同步可在关闭中断后调用，防止重入。
+ * @note 由速度环调度，启动同步也可在关闭中断后调用。
  */
-void motor_speed_feedback_process_1khz(void);
+void motor_speed_feedback_process(void);
+void motor_speed_feedback_display_process_1khz(void);
 
 /**
  * @brief 原子读取机械转速反馈快照。

@@ -47,12 +47,13 @@ typedef struct
   int32_t feedback_speed_millirpm;
   int32_t quadrature_current_command_ma; /**< 速度PI输出的逻辑Iq指令，单位mA。 */
   int32_t proportional_ma, integral_ma, pi_output_ma, current_limit_ma;
+  int32_t acceleration_feedforward_ma;
   bool current_limited;
   uint32_t update_count;
 } motor_speed_control_status_t;
 
 /**
- * @brief 使用motor_control_config.h默认参数初始化1 kHz速度控制器。
+ * @brief 使用motor_control_config.h默认参数初始化速度控制器。
  * @param 无。
  * @return 无。
  * @details 初始化速度PI、速度斜坡和状态，不操作电流环与PWM。
@@ -92,14 +93,14 @@ bool motor_speed_control_target_set(int32_t target_speed_millirpm);
 void motor_speed_control_stop(void);
 
 /**
- * @brief 执行一次1 kHz速度外环。
+ * @brief 执行一次速度外环。
  * @param 无。
  * @return 无。
  * @details 推进逻辑目标速度斜坡，经速度PI生成逻辑Iq，再按方向配置转换为物理Iq写入10 kHz电流环；
  *          速度反馈或电流环失效时进入FAULT并停止电流控制。
- * @note 仅供1 kHz周期中断调用。
+ * @note 由 Hall 的 SysTick 或 RS485 的 ADC 分频调度。
  */
-void motor_speed_control_process_1khz(void);
+void motor_speed_control_process(void);
 
 /**
  * @brief 原子读取速度控制状态。

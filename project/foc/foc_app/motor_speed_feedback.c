@@ -94,14 +94,14 @@ void motor_speed_feedback_init(void)
   motor_speed_display_reset();
 }
 
-void motor_speed_feedback_process_1khz(void)
+void motor_speed_feedback_process(void)
 {
   motor_rotor_feedback_t rotor_feedback;
   int32_t raw_speed_millirpm;
   bool direction_inverted;
   int8_t logical_direction;
 
-  /* 反馈源正在原子更新时保留上一结果，下一次1 kHz周期重新读取。 */
+  /* 反馈源正在原子更新时保留上一结果，下一次速度环周期重新读取。 */
   if (!motor_rotor_feedback_read(&rotor_feedback)) return;
 
   if ((!rotor_feedback.valid) || (!rotor_feedback.speed_valid) ||
@@ -115,7 +115,6 @@ void motor_speed_feedback_process_1khz(void)
     motor_speed_feedback.direction = 0;
     motor_speed_feedback.valid = false;
     /* 反馈失效按0 rpm继续平均，与控制侧"无效即0"保持一致。 */
-    motor_speed_display_push(0);
     return;
   }
 
@@ -151,6 +150,10 @@ void motor_speed_feedback_process_1khz(void)
       rotor_feedback.update_count;
   }
   motor_speed_feedback.valid = true;
+}
+
+void motor_speed_feedback_display_process_1khz(void)
+{
   motor_speed_display_push(motor_speed_feedback.filtered_speed_millirpm);
 }
 

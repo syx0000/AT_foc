@@ -19,7 +19,9 @@ typedef enum {
   MOTOR_COMMISSIONING_TASK_HALL,
   MOTOR_COMMISSIONING_TASK_HALL_OFFSET,
   MOTOR_COMMISSIONING_TASK_CURRENT_PI,
-  MOTOR_COMMISSIONING_TASK_FLUX
+  MOTOR_COMMISSIONING_TASK_FLUX,
+  MOTOR_COMMISSIONING_TASK_INERTIA,
+  MOTOR_COMMISSIONING_TASK_SPEED_PI
 } motor_commissioning_task_t;
 typedef enum {
   MOTOR_COMMISSIONING_IDLE = 0,
@@ -41,7 +43,9 @@ typedef enum
   MOTOR_COMMISSIONING_ERROR_CURRENT_PI,
   MOTOR_COMMISSIONING_ERROR_CURRENT_Q,
   MOTOR_COMMISSIONING_ERROR_PARAMETER,
-  MOTOR_COMMISSIONING_ERROR_FLUX
+  MOTOR_COMMISSIONING_ERROR_FLUX,
+  MOTOR_COMMISSIONING_ERROR_INERTIA,
+  MOTOR_COMMISSIONING_ERROR_SPEED_PI
 } motor_commissioning_error_t;
 
 typedef struct {
@@ -57,8 +61,10 @@ typedef struct {
 void motor_commissioning_init(void);
 /** @brief 阻塞执行完整流程或一个辨识/测试单项。 @param task 任务类型。 @return 成功返回true。 */
 bool motor_commissioning_run(motor_commissioning_task_t task);
+void motor_commissioning_poll(void);
 /** @brief 在Hall外部中断中提交边沿状态和开环角度。 @param 无。 @return 无。 */
 void motor_commissioning_hall_edge_process(void);
+void motor_commissioning_inertia_fast_process(void);
 /** @brief 请求中止任务；阻塞步骤之间生效并立即关闭PWM。 @param 无。 @return 有任务时返回true。 */
 bool motor_commissioning_abort(void);
 /** @brief 原子读取任务状态。 @param status 输出状态。 @return 参数有效返回true。 */
